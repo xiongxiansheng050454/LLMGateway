@@ -69,6 +69,18 @@ var _ store.ChannelStore = (*memory.Store)(nil)
 - 领域文件边界与 `db/queries/*.sql` 的领域划分保持一致（channels/models/pricing/users/rate_limits/usage_logs）。
 - 拆分与移动只做等价搬迁，不得顺手改变路由、响应结构、状态码或错误语义。
 
+## 下游代理（/v1）
+
+- `GET /v1/models` 与 `POST /v1/chat/completions` 由 `internal/handler/openai.go` 暴露，业务编排在 `internal/service`（auth/route/billing/ratelimit/proxy）。
+- 认证使用 `Authorization: Bearer <gateway-key>`；密钥经 `internal/crypto.HashKey` 后查询，明文不落日志/响应。
+- 路由候选按 `priority` 越大越优先，同级内按 `weight` 加权随机；非正余额渠道被排除。
+- 计费：缓存 token 已包含在 `prompt_tokens` 中，仅按 `(prompt_tokens - cached_tokens)` 计输入价，缓存部分计缓存价，避免重复计费。
+- 已知限制（后续 issue 处理）：
+  - 未配置 `model_pricing` 的渠道×模型按 cost=0 放行（建议为所有可路由模型配置定价）。
+  - 用户扣费、渠道扣费、usage log 不是单一事务；渠道扣费为 best-effort，`last_used_at` 更新为 best-effort。
+  - `model` 维度的 rpm 规则按用户/Key 计数，未按模型细分；`channel` 维度未在限流阶段评估。
+  - `queue` 动作未实现；`stream=true` 返回 400（SSE 未实现）。
+
 ## 本地 PostgreSQL
 
 ```powershell

@@ -10,26 +10,53 @@ import (
 	"strings"
 	"time"
 
+	"LLMGateway/internal/service"
 	"LLMGateway/internal/store"
 )
 
 type app struct {
 	store  store.Store
 	client *http.Client
+	proxy  *service.Proxy
+}
+
+type options struct {
+	upstreamTimeout time.Duration
+}
+
+// Option customizes handler assembly.
+type Option func(*options)
+
+// WithUpstreamTimeout sets the HTTP client timeout for downstream proxy calls.
+// The default is intentionally longer than the admin timeout.
+func WithUpstreamTimeout(timeout time.Duration) Option {
+	return func(o *options) {
+		if timeout > 0 {
+			o.upstreamTimeout = timeout
+		}
+	}
 }
 
 // NewHandlerWithStore builds the HTTP handler around an injected store.
 // Store assembly belongs to the process composition root (cmd/llmgateway).
-func NewHandlerWithStore(dashboardDir string, st store.Store) http.Handler {
+func NewHandlerWithStore(dashboardDir string, st store.Store, opts ...Option) http.Handler {
+	settings := options{upstreamTimeout: 60 * time.Second}
+	for _, opt := range opts {
+		opt(&settings)
+	}
+	client := &http.Client{Timeout: settings.upstreamTimeout}
 	a := &app{
 		store:  st,
-		client: &http.Client{Timeout: 5 * time.Second},
+		client: client,
+		proxy:  service.New(st, client),
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthzHandler)
 	mux.HandleFunc("/admin/", a.adminHandler)
 	mux.HandleFunc("/admin", a.adminHandler)
+	mux.HandleFunc("/v1/", a.openaiHandler)
+	mux.HandleFunc("/v1", a.openaiHandler)
 
 	dashboard := http.FileServer(http.Dir(dashboardDir))
 	mux.HandleFunc("/dashboard/index.html", dashboardIndexHandler(dashboardDir))
