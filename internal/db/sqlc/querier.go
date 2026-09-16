@@ -13,7 +13,15 @@ import (
 type Querier interface {
 	CountRateLimitRules(ctx context.Context, enabled pgtype.Bool) (int32, error)
 	CountUsers(ctx context.Context) (int32, error)
+	CreateChannel(ctx context.Context, arg CreateChannelParams) (int64, error)
+	CreateChannelModel(ctx context.Context, arg CreateChannelModelParams) (CreateChannelModelRow, error)
+	DeleteChannel(ctx context.Context, id int64) (int64, error)
+	DeleteChannelModel(ctx context.Context, arg DeleteChannelModelParams) (int64, error)
+	DeletePricing(ctx context.Context, arg DeletePricingParams) error
+	GetChannel(ctx context.Context, id int64) (GetChannelRow, error)
+	GetChannelModel(ctx context.Context, arg GetChannelModelParams) (GetChannelModelRow, error)
 	GetChannelSecret(ctx context.Context, id int64) (GetChannelSecretRow, error)
+	GetPricing(ctx context.Context, arg GetPricingParams) (GetPricingRow, error)
 	GetUsageLog(ctx context.Context, id int64) (GetUsageLogRow, error)
 	GetUserBalance(ctx context.Context, userID int64) (GetUserBalanceRow, error)
 	ListBalanceTransactions(ctx context.Context, arg ListBalanceTransactionsParams) ([]BalanceTransaction, error)
@@ -28,6 +36,11 @@ type Querier interface {
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error)
 	StatsChannels(ctx context.Context, arg StatsChannelsParams) ([]StatsChannelsRow, error)
 	StatsOverview(ctx context.Context, arg StatsOverviewParams) (StatsOverviewRow, error)
+	UpdateChannel(ctx context.Context, arg UpdateChannelParams) (int64, error)
+	UpdateChannelBalance(ctx context.Context, arg UpdateChannelBalanceParams) (int64, error)
+	UpdateChannelModel(ctx context.Context, arg UpdateChannelModelParams) (UpdateChannelModelRow, error)
+	UpdateChannelStatus(ctx context.Context, arg UpdateChannelStatusParams) (int64, error)
+	UpsertPricing(ctx context.Context, arg UpsertPricingParams) (int64, error)
 }
 
 var _ Querier = (*Queries)(nil)

@@ -7,26 +7,133 @@ package sqlc
 
 import (
 	"context"
-
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const createChannel = `-- name: CreateChannel :one
+INSERT INTO channels (name, base_url, api_key_ciphertext, auth_type, status, weight, priority, balance)
+VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    NULLIF($8, '')::numeric
+)
+RETURNING id
+`
+
+type CreateChannelParams struct {
+	Name             string      `json:"name"`
+	BaseUrl          string      `json:"base_url"`
+	ApiKeyCiphertext string      `json:"api_key_ciphertext"`
+	AuthType         string      `json:"auth_type"`
+	Status           int32       `json:"status"`
+	Weight           int32       `json:"weight"`
+	Priority         int32       `json:"priority"`
+	Balance          interface{} `json:"balance"`
+}
+
+func (q *Queries) CreateChannel(ctx context.Context, arg CreateChannelParams) (int64, error) {
+	row := q.db.QueryRow(ctx, createChannel,
+		arg.Name,
+		arg.BaseUrl,
+		arg.ApiKeyCiphertext,
+		arg.AuthType,
+		arg.Status,
+		arg.Weight,
+		arg.Priority,
+		arg.Balance,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const deleteChannel = `-- name: DeleteChannel :execrows
+DELETE FROM channels WHERE id = $1
+`
+
+func (q *Queries) DeleteChannel(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteChannel, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const getChannel = `-- name: GetChannel :one
+SELECT
+    c.id,
+    c.name,
+    c.base_url,
+    c.auth_type,
+    c.status,
+    c.weight,
+    c.priority,
+    COALESCE(c.balance::text, ''::text) AS balance,
+    count(cm.id)::int AS model_count
+FROM channels c
+LEFT JOIN channel_models cm ON cm.channel_id = c.id
+WHERE c.id = $1
+GROUP BY c.id
+`
+
+type GetChannelRow struct {
+	ID         int64       `json:"id"`
+	Name       string      `json:"name"`
+	BaseUrl    string      `json:"base_url"`
+	AuthType   string      `json:"auth_type"`
+	Status     int32       `json:"status"`
+	Weight     int32       `json:"weight"`
+	Priority   int32       `json:"priority"`
+	Balance    interface{} `json:"balance"`
+	ModelCount int32       `json:"model_count"`
+}
+
+func (q *Queries) GetChannel(ctx context.Context, id int64) (GetChannelRow, error) {
+	row := q.db.QueryRow(ctx, getChannel, id)
+	var i GetChannelRow
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.BaseUrl,
+		&i.AuthType,
+		&i.Status,
+		&i.Weight,
+		&i.Priority,
+		&i.Balance,
+		&i.ModelCount,
+	)
+	return i, err
+}
+
 const getChannelSecret = `-- name: GetChannelSecret :one
-SELECT id, name, base_url, api_key_ciphertext, auth_type, status, weight, priority, balance
+SELECT
+    id,
+    name,
+    base_url,
+    api_key_ciphertext,
+    auth_type,
+    status,
+    weight,
+    priority,
+    COALESCE(balance::text, ''::text) AS balance
 FROM channels
 WHERE id = $1
 `
 
 type GetChannelSecretRow struct {
-	ID               int64          `json:"id"`
-	Name             string         `json:"name"`
-	BaseUrl          string         `json:"base_url"`
-	ApiKeyCiphertext string         `json:"api_key_ciphertext"`
-	AuthType         string         `json:"auth_type"`
-	Status           int32          `json:"status"`
-	Weight           int32          `json:"weight"`
-	Priority         int32          `json:"priority"`
-	Balance          pgtype.Numeric `json:"balance"`
+	ID               int64       `json:"id"`
+	Name             string      `json:"name"`
+	BaseUrl          string      `json:"base_url"`
+	ApiKeyCiphertext string      `json:"api_key_ciphertext"`
+	AuthType         string      `json:"auth_type"`
+	Status           int32       `json:"status"`
+	Weight           int32       `json:"weight"`
+	Priority         int32       `json:"priority"`
+	Balance          interface{} `json:"balance"`
 }
 
 func (q *Queries) GetChannelSecret(ctx context.Context, id int64) (GetChannelSecretRow, error) {
@@ -55,7 +162,7 @@ SELECT
     c.status,
     c.weight,
     c.priority,
-    c.balance,
+    COALESCE(c.balance::text, ''::text) AS balance,
     count(cm.id)::int AS model_count
 FROM channels c
 LEFT JOIN channel_models cm ON cm.channel_id = c.id
@@ -64,15 +171,15 @@ ORDER BY c.id
 `
 
 type ListChannelsRow struct {
-	ID         int64          `json:"id"`
-	Name       string         `json:"name"`
-	BaseUrl    string         `json:"base_url"`
-	AuthType   string         `json:"auth_type"`
-	Status     int32          `json:"status"`
-	Weight     int32          `json:"weight"`
-	Priority   int32          `json:"priority"`
-	Balance    pgtype.Numeric `json:"balance"`
-	ModelCount int32          `json:"model_count"`
+	ID         int64       `json:"id"`
+	Name       string      `json:"name"`
+	BaseUrl    string      `json:"base_url"`
+	AuthType   string      `json:"auth_type"`
+	Status     int32       `json:"status"`
+	Weight     int32       `json:"weight"`
+	Priority   int32       `json:"priority"`
+	Balance    interface{} `json:"balance"`
+	ModelCount int32       `json:"model_count"`
 }
 
 func (q *Queries) ListChannels(ctx context.Context) ([]ListChannelsRow, error) {
@@ -103,4 +210,86 @@ func (q *Queries) ListChannels(ctx context.Context) ([]ListChannelsRow, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateChannel = `-- name: UpdateChannel :execrows
+UPDATE channels
+SET name = $1,
+    base_url = $2,
+    auth_type = $3,
+    status = $4,
+    weight = $5,
+    priority = $6,
+    balance = NULLIF($7, '')::numeric,
+    api_key_ciphertext = COALESCE(NULLIF($8, ''), api_key_ciphertext),
+    updated_at = now()
+WHERE id = $9
+`
+
+type UpdateChannelParams struct {
+	Name             string      `json:"name"`
+	BaseUrl          string      `json:"base_url"`
+	AuthType         string      `json:"auth_type"`
+	Status           int32       `json:"status"`
+	Weight           int32       `json:"weight"`
+	Priority         int32       `json:"priority"`
+	Balance          interface{} `json:"balance"`
+	ApiKeyCiphertext interface{} `json:"api_key_ciphertext"`
+	ID               int64       `json:"id"`
+}
+
+func (q *Queries) UpdateChannel(ctx context.Context, arg UpdateChannelParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateChannel,
+		arg.Name,
+		arg.BaseUrl,
+		arg.AuthType,
+		arg.Status,
+		arg.Weight,
+		arg.Priority,
+		arg.Balance,
+		arg.ApiKeyCiphertext,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updateChannelBalance = `-- name: UpdateChannelBalance :execrows
+UPDATE channels
+SET balance = NULLIF($1, '')::numeric, updated_at = now()
+WHERE id = $2
+`
+
+type UpdateChannelBalanceParams struct {
+	Balance interface{} `json:"balance"`
+	ID      int64       `json:"id"`
+}
+
+func (q *Queries) UpdateChannelBalance(ctx context.Context, arg UpdateChannelBalanceParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateChannelBalance, arg.Balance, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updateChannelStatus = `-- name: UpdateChannelStatus :execrows
+UPDATE channels
+SET status = $1, updated_at = now()
+WHERE id = $2
+`
+
+type UpdateChannelStatusParams struct {
+	Status int32 `json:"status"`
+	ID     int64 `json:"id"`
+}
+
+func (q *Queries) UpdateChannelStatus(ctx context.Context, arg UpdateChannelStatusParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateChannelStatus, arg.Status, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

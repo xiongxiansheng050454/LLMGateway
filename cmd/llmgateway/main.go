@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"LLMGateway/internal/config"
+	"LLMGateway/internal/crypto"
 	"LLMGateway/internal/db/migrate"
 	"LLMGateway/internal/handler"
 	"LLMGateway/internal/store"
@@ -71,6 +72,11 @@ func buildStore(ctx context.Context, cfg config.Config) (store.Store, func(), er
 		return memory.New(), func() {}, nil
 	}
 
+	cipher, err := crypto.NewCipher([]byte(cfg.ChannelKeyEncryptionKey))
+	if err != nil {
+		return nil, nil, fmt.Errorf("channel key encryption: %w", err)
+	}
+
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
 		return nil, nil, fmt.Errorf("connect postgres: %w", err)
@@ -85,5 +91,5 @@ func buildStore(ctx context.Context, cfg config.Config) (store.Store, func(), er
 	}
 
 	log.Print("using PostgreSQL store")
-	return postgres.New(pool), pool.Close, nil
+	return postgres.New(pool, cipher), pool.Close, nil
 }
