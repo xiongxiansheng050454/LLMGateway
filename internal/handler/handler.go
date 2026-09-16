@@ -1,4 +1,4 @@
-package server
+package handler
 
 import (
 	"encoding/json"
@@ -8,16 +8,21 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"LLMGateway/internal/domain"
+	"LLMGateway/internal/store"
 )
 
 type app struct {
-	store  Store
+	store  store.Store
 	client *http.Client
 }
 
-func NewHandler(dashboardDir string) http.Handler {
+// NewHandlerWithStore builds the HTTP handler around an injected store.
+// Store assembly belongs to the process composition root (cmd/llmgateway).
+func NewHandlerWithStore(dashboardDir string, st store.Store) http.Handler {
 	a := &app{
-		store:  NewMemoryStore(),
+		store:  st,
 		client: &http.Client{Timeout: 5 * time.Second},
 	}
 
@@ -107,7 +112,7 @@ func dashboardStartupData(r *http.Request) (any, bool) {
 		}, true
 	case "/admin/stats/daily", "/admin/channels", "/admin/usage-logs", "/admin/users", "/admin/rate-limits", "/admin/models":
 		ParsePagination(r)
-		return listResponse{List: []any{}, Total: 0}, true
+		return domain.ListResponse{List: []any{}, Total: 0}, true
 	case "/admin/stats/channels":
 		return map[string]any{"list": []any{}}, true
 	default:
