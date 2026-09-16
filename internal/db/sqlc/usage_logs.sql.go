@@ -11,6 +11,62 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countStatsDaily = `-- name: CountStatsDaily :one
+SELECT count(*)::int FROM (
+    SELECT (l.created_at AT TIME ZONE 'UTC')::date AS stat_date
+    FROM usage_logs l
+    WHERE (l.created_at AT TIME ZONE 'UTC')::date >= $1::text::date
+      AND (l.created_at AT TIME ZONE 'UTC')::date <= $2::text::date
+    GROUP BY stat_date
+) AS days
+`
+
+type CountStatsDailyParams struct {
+	DateFrom string `json:"date_from"`
+	DateTo   string `json:"date_to"`
+}
+
+func (q *Queries) CountStatsDaily(ctx context.Context, arg CountStatsDailyParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countStatsDaily, arg.DateFrom, arg.DateTo)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
+const countUsageLogs = `-- name: CountUsageLogs :one
+SELECT count(*)::int
+FROM usage_logs l
+WHERE ($1::bigint IS NULL OR l.user_id = $1::bigint)
+  AND ($2::bigint IS NULL OR l.channel_id = $2::bigint)
+  AND ($3::text IS NULL OR l.model = $3::text)
+  AND ($4::text IS NULL OR l.status = $4::text)
+  AND ($5::timestamptz IS NULL OR l.created_at >= $5::timestamptz)
+  AND ($6::timestamptz IS NULL OR l.created_at <= $6::timestamptz)
+`
+
+type CountUsageLogsParams struct {
+	UserID    pgtype.Int8        `json:"user_id"`
+	ChannelID pgtype.Int8        `json:"channel_id"`
+	Model     pgtype.Text        `json:"model"`
+	Status    pgtype.Text        `json:"status"`
+	StartTime pgtype.Timestamptz `json:"start_time"`
+	EndTime   pgtype.Timestamptz `json:"end_time"`
+}
+
+func (q *Queries) CountUsageLogs(ctx context.Context, arg CountUsageLogsParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countUsageLogs,
+		arg.UserID,
+		arg.ChannelID,
+		arg.Model,
+		arg.Status,
+		arg.StartTime,
+		arg.EndTime,
+	)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const getUsageLog = `-- name: GetUsageLog :one
 SELECT
     l.id,
@@ -25,9 +81,9 @@ SELECT
     l.output_tokens,
     l.cached_input_tokens,
     l.total_tokens,
-    l.unit_price_input_per_1m,
-    l.unit_price_output_per_1m,
-    l.total_cost,
+    l.unit_price_input_per_1m::text AS unit_price_input_per_1m,
+    l.unit_price_output_per_1m::text AS unit_price_output_per_1m,
+    l.total_cost::text AS total_cost,
     l.duration_ms,
     l.ttft_ms,
     l.status,
@@ -52,9 +108,9 @@ type GetUsageLogRow struct {
 	OutputTokens         int64              `json:"output_tokens"`
 	CachedInputTokens    int64              `json:"cached_input_tokens"`
 	TotalTokens          int64              `json:"total_tokens"`
-	UnitPriceInputPer1m  pgtype.Numeric     `json:"unit_price_input_per_1m"`
-	UnitPriceOutputPer1m pgtype.Numeric     `json:"unit_price_output_per_1m"`
-	TotalCost            pgtype.Numeric     `json:"total_cost"`
+	UnitPriceInputPer1m  string             `json:"unit_price_input_per_1m"`
+	UnitPriceOutputPer1m string             `json:"unit_price_output_per_1m"`
+	TotalCost            string             `json:"total_cost"`
 	DurationMs           int64              `json:"duration_ms"`
 	TtftMs               pgtype.Int8        `json:"ttft_ms"`
 	Status               string             `json:"status"`
@@ -92,6 +148,83 @@ func (q *Queries) GetUsageLog(ctx context.Context, id int64) (GetUsageLogRow, er
 	return i, err
 }
 
+const insertUsageLog = `-- name: InsertUsageLog :one
+INSERT INTO usage_logs (
+    request_id, user_id, api_key_id, channel_id, model, upstream_model,
+    input_tokens, output_tokens, cached_input_tokens, total_tokens,
+    unit_price_input_per_1m, unit_price_output_per_1m, total_cost,
+    duration_ms, ttft_ms, status, error_code, client_ip
+)
+VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9,
+    $10,
+    COALESCE(NULLIF($11, '')::numeric, 0),
+    COALESCE(NULLIF($12, '')::numeric, 0),
+    COALESCE(NULLIF($13, '')::numeric, 0),
+    $14,
+    $15,
+    $16,
+    $17,
+    $18
+)
+RETURNING id
+`
+
+type InsertUsageLogParams struct {
+	RequestID            string      `json:"request_id"`
+	UserID               pgtype.Int8 `json:"user_id"`
+	ApiKeyID             pgtype.Int8 `json:"api_key_id"`
+	ChannelID            pgtype.Int8 `json:"channel_id"`
+	Model                string      `json:"model"`
+	UpstreamModel        string      `json:"upstream_model"`
+	InputTokens          int64       `json:"input_tokens"`
+	OutputTokens         int64       `json:"output_tokens"`
+	CachedInputTokens    int64       `json:"cached_input_tokens"`
+	TotalTokens          int64       `json:"total_tokens"`
+	UnitPriceInputPer1m  interface{} `json:"unit_price_input_per_1m"`
+	UnitPriceOutputPer1m interface{} `json:"unit_price_output_per_1m"`
+	TotalCost            interface{} `json:"total_cost"`
+	DurationMs           int64       `json:"duration_ms"`
+	TtftMs               pgtype.Int8 `json:"ttft_ms"`
+	Status               string      `json:"status"`
+	ErrorCode            string      `json:"error_code"`
+	ClientIp             string      `json:"client_ip"`
+}
+
+func (q *Queries) InsertUsageLog(ctx context.Context, arg InsertUsageLogParams) (int64, error) {
+	row := q.db.QueryRow(ctx, insertUsageLog,
+		arg.RequestID,
+		arg.UserID,
+		arg.ApiKeyID,
+		arg.ChannelID,
+		arg.Model,
+		arg.UpstreamModel,
+		arg.InputTokens,
+		arg.OutputTokens,
+		arg.CachedInputTokens,
+		arg.TotalTokens,
+		arg.UnitPriceInputPer1m,
+		arg.UnitPriceOutputPer1m,
+		arg.TotalCost,
+		arg.DurationMs,
+		arg.TtftMs,
+		arg.Status,
+		arg.ErrorCode,
+		arg.ClientIp,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
 const listUsageLogs = `-- name: ListUsageLogs :many
 SELECT
     l.id,
@@ -106,9 +239,9 @@ SELECT
     l.output_tokens,
     l.cached_input_tokens,
     l.total_tokens,
-    l.unit_price_input_per_1m,
-    l.unit_price_output_per_1m,
-    l.total_cost,
+    l.unit_price_input_per_1m::text AS unit_price_input_per_1m,
+    l.unit_price_output_per_1m::text AS unit_price_output_per_1m,
+    l.total_cost::text AS total_cost,
     l.duration_ms,
     l.ttft_ms,
     l.status,
@@ -117,13 +250,25 @@ SELECT
     l.created_at
 FROM usage_logs l
 LEFT JOIN channels c ON c.id = l.channel_id
+WHERE ($1::bigint IS NULL OR l.user_id = $1::bigint)
+  AND ($2::bigint IS NULL OR l.channel_id = $2::bigint)
+  AND ($3::text IS NULL OR l.model = $3::text)
+  AND ($4::text IS NULL OR l.status = $4::text)
+  AND ($5::timestamptz IS NULL OR l.created_at >= $5::timestamptz)
+  AND ($6::timestamptz IS NULL OR l.created_at <= $6::timestamptz)
 ORDER BY l.created_at DESC, l.id DESC
-LIMIT $1 OFFSET $2
+LIMIT $8 OFFSET $7
 `
 
 type ListUsageLogsParams struct {
-	Limit  int32 `json:"limit"`
-	Offset int32 `json:"offset"`
+	UserID     pgtype.Int8        `json:"user_id"`
+	ChannelID  pgtype.Int8        `json:"channel_id"`
+	Model      pgtype.Text        `json:"model"`
+	Status     pgtype.Text        `json:"status"`
+	StartTime  pgtype.Timestamptz `json:"start_time"`
+	EndTime    pgtype.Timestamptz `json:"end_time"`
+	PageOffset int32              `json:"page_offset"`
+	PageLimit  int32              `json:"page_limit"`
 }
 
 type ListUsageLogsRow struct {
@@ -139,9 +284,9 @@ type ListUsageLogsRow struct {
 	OutputTokens         int64              `json:"output_tokens"`
 	CachedInputTokens    int64              `json:"cached_input_tokens"`
 	TotalTokens          int64              `json:"total_tokens"`
-	UnitPriceInputPer1m  pgtype.Numeric     `json:"unit_price_input_per_1m"`
-	UnitPriceOutputPer1m pgtype.Numeric     `json:"unit_price_output_per_1m"`
-	TotalCost            pgtype.Numeric     `json:"total_cost"`
+	UnitPriceInputPer1m  string             `json:"unit_price_input_per_1m"`
+	UnitPriceOutputPer1m string             `json:"unit_price_output_per_1m"`
+	TotalCost            string             `json:"total_cost"`
 	DurationMs           int64              `json:"duration_ms"`
 	TtftMs               pgtype.Int8        `json:"ttft_ms"`
 	Status               string             `json:"status"`
@@ -151,7 +296,16 @@ type ListUsageLogsRow struct {
 }
 
 func (q *Queries) ListUsageLogs(ctx context.Context, arg ListUsageLogsParams) ([]ListUsageLogsRow, error) {
-	rows, err := q.db.Query(ctx, listUsageLogs, arg.Limit, arg.Offset)
+	rows, err := q.db.Query(ctx, listUsageLogs,
+		arg.UserID,
+		arg.ChannelID,
+		arg.Model,
+		arg.Status,
+		arg.StartTime,
+		arg.EndTime,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -200,7 +354,7 @@ SELECT
     count(*) FILTER (WHERE l.status = 'success')::bigint AS success_count,
     count(*) FILTER (WHERE l.status <> 'success')::bigint AS error_count,
     coalesce(sum(l.total_tokens), 0)::bigint AS total_tokens,
-    coalesce(sum(l.total_cost), 0)::numeric(20, 6) AS total_cost
+    coalesce(sum(l.total_cost), 0)::numeric(20, 6)::text AS total_cost
 FROM usage_logs l
 LEFT JOIN channels c ON c.id = l.channel_id
 WHERE l.created_at >= $1 AND l.created_at <= $2
@@ -214,13 +368,13 @@ type StatsChannelsParams struct {
 }
 
 type StatsChannelsRow struct {
-	ChannelID    pgtype.Int8    `json:"channel_id"`
-	ChannelName  string         `json:"channel_name"`
-	RequestCount int64          `json:"request_count"`
-	SuccessCount int64          `json:"success_count"`
-	ErrorCount   int64          `json:"error_count"`
-	TotalTokens  int64          `json:"total_tokens"`
-	TotalCost    pgtype.Numeric `json:"total_cost"`
+	ChannelID    pgtype.Int8 `json:"channel_id"`
+	ChannelName  string      `json:"channel_name"`
+	RequestCount int64       `json:"request_count"`
+	SuccessCount int64       `json:"success_count"`
+	ErrorCount   int64       `json:"error_count"`
+	TotalTokens  int64       `json:"total_tokens"`
+	TotalCost    string      `json:"total_cost"`
 }
 
 func (q *Queries) StatsChannels(ctx context.Context, arg StatsChannelsParams) ([]StatsChannelsRow, error) {
@@ -251,13 +405,77 @@ func (q *Queries) StatsChannels(ctx context.Context, arg StatsChannelsParams) ([
 	return items, nil
 }
 
+const statsDaily = `-- name: StatsDaily :many
+SELECT
+    (l.created_at AT TIME ZONE 'UTC')::date AS stat_date,
+    count(*)::bigint AS request_count,
+    count(*) FILTER (WHERE l.status = 'success')::bigint AS success_count,
+    count(*) FILTER (WHERE l.status <> 'success')::bigint AS error_count,
+    coalesce(sum(l.total_tokens), 0)::bigint AS total_tokens,
+    coalesce(sum(l.total_cost), 0)::numeric(20, 6)::text AS total_cost
+FROM usage_logs l
+WHERE (l.created_at AT TIME ZONE 'UTC')::date >= $1::text::date
+  AND (l.created_at AT TIME ZONE 'UTC')::date <= $2::text::date
+GROUP BY stat_date
+ORDER BY stat_date
+LIMIT $4 OFFSET $3
+`
+
+type StatsDailyParams struct {
+	DateFrom   string `json:"date_from"`
+	DateTo     string `json:"date_to"`
+	PageOffset int32  `json:"page_offset"`
+	PageLimit  int32  `json:"page_limit"`
+}
+
+type StatsDailyRow struct {
+	StatDate     pgtype.Date `json:"stat_date"`
+	RequestCount int64       `json:"request_count"`
+	SuccessCount int64       `json:"success_count"`
+	ErrorCount   int64       `json:"error_count"`
+	TotalTokens  int64       `json:"total_tokens"`
+	TotalCost    string      `json:"total_cost"`
+}
+
+func (q *Queries) StatsDaily(ctx context.Context, arg StatsDailyParams) ([]StatsDailyRow, error) {
+	rows, err := q.db.Query(ctx, statsDaily,
+		arg.DateFrom,
+		arg.DateTo,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []StatsDailyRow{}
+	for rows.Next() {
+		var i StatsDailyRow
+		if err := rows.Scan(
+			&i.StatDate,
+			&i.RequestCount,
+			&i.SuccessCount,
+			&i.ErrorCount,
+			&i.TotalTokens,
+			&i.TotalCost,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const statsOverview = `-- name: StatsOverview :one
 SELECT
     count(*)::bigint AS request_count,
     count(*) FILTER (WHERE status = 'success')::bigint AS success_count,
     count(*) FILTER (WHERE status <> 'success')::bigint AS error_count,
     coalesce(sum(total_tokens), 0)::bigint AS total_tokens,
-    coalesce(sum(total_cost), 0)::numeric(20, 6) AS total_cost,
+    coalesce(sum(total_cost), 0)::numeric(20, 6)::text AS total_cost,
     count(DISTINCT user_id)::bigint AS active_user_count
 FROM usage_logs
 WHERE created_at >= $1 AND created_at <= $2
@@ -269,12 +487,12 @@ type StatsOverviewParams struct {
 }
 
 type StatsOverviewRow struct {
-	RequestCount    int64          `json:"request_count"`
-	SuccessCount    int64          `json:"success_count"`
-	ErrorCount      int64          `json:"error_count"`
-	TotalTokens     int64          `json:"total_tokens"`
-	TotalCost       pgtype.Numeric `json:"total_cost"`
-	ActiveUserCount int64          `json:"active_user_count"`
+	RequestCount    int64  `json:"request_count"`
+	SuccessCount    int64  `json:"success_count"`
+	ErrorCount      int64  `json:"error_count"`
+	TotalTokens     int64  `json:"total_tokens"`
+	TotalCost       string `json:"total_cost"`
+	ActiveUserCount int64  `json:"active_user_count"`
 }
 
 func (q *Queries) StatsOverview(ctx context.Context, arg StatsOverviewParams) (StatsOverviewRow, error) {

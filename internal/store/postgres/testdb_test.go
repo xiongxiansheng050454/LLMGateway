@@ -42,8 +42,8 @@ func testStore(t *testing.T) *Store {
 		t.Fatalf("run migrations: %v", err)
 	}
 	// CASCADE clears dependent tables (channel_models, model_pricing,
-	// client_api_keys, user_balances, balance_transactions, usage_logs,
-	// daily_usage_stats) so the fixture is reusable across domains.
+	// client_api_keys, user_balances, balance_transactions, usage_logs) so the
+	// fixture is reusable across domains.
 	if _, err := pool.Exec(ctx, "TRUNCATE users, channels, rate_limit_rules RESTART IDENTITY CASCADE"); err != nil {
 		t.Fatalf("truncate business tables: %v", err)
 	}

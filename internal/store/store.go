@@ -17,5 +17,6 @@ var (
 type Store interface {
 	ChannelStore
 	UserStore
-	// UsageStore and RateLimitStore are added by issue #5.
+	RateLimitStore
+	UsageStore
 }

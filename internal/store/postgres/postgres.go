@@ -52,7 +52,9 @@ func mapError(err error) error {
 			"23503", // foreign_key_violation
 			"23502", // not_null_violation
 			"22P02", // invalid_text_representation
-			"22003": // numeric_value_out_of_range
+			"22003", // numeric_value_out_of_range
+			"22007", // invalid_datetime_format
+			"22008": // datetime_field_overflow
 			return fmt.Errorf("%w: %s", store.ErrInvalid, pgErr.Message)
 		}
 	}
@@ -94,6 +96,32 @@ func optionalTimestamp(value pgtype.Timestamptz) *string {
 	}
 	formatted := value.Time.UTC().Format(time.RFC3339)
 	return &formatted
+}
+
+func timestampValue(value string) pgtype.Timestamptz {
+	if value == "" {
+		return pgtype.Timestamptz{}
+	}
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: parsed, Valid: true}
+}
+
+func optionalInt(value pgtype.Int8) *int {
+	if !value.Valid {
+		return nil
+	}
+	converted := int(value.Int64)
+	return &converted
+}
+
+func int8Value(value *int) pgtype.Int8 {
+	if value == nil {
+		return pgtype.Int8{}
+	}
+	return pgtype.Int8{Int64: int64(*value), Valid: true}
 }
 
 func channelDTO(id int64, name, baseURL, authType string, status, weight, priority int32, balance string, modelCount int32) map[string]any {

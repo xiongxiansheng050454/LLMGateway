@@ -28,12 +28,19 @@ type Store struct {
 	transactions map[int][]domain.BalanceTransaction
 	keys         map[int]*memoryKey
 	orders       map[string]domain.BalanceTransaction
+
+	nextRateLimitID int
+	rateLimits      map[int]*domain.RateLimitRule
+	nextUsageLogID  int
+	usageLogs       []domain.UsageLog
 }
 
 var (
-	_ store.Store        = (*Store)(nil)
-	_ store.ChannelStore = (*Store)(nil)
-	_ store.UserStore    = (*Store)(nil)
+	_ store.Store          = (*Store)(nil)
+	_ store.ChannelStore   = (*Store)(nil)
+	_ store.UserStore      = (*Store)(nil)
+	_ store.RateLimitStore = (*Store)(nil)
+	_ store.UsageStore     = (*Store)(nil)
 )
 
 // memoryKey is the in-memory gateway key record. Only the hash is retained;
@@ -53,19 +60,22 @@ type memoryKey struct {
 
 func New() *Store {
 	return &Store{
-		nextChannelID: 1,
-		nextModelID:   1,
-		nextPricingID: 1,
-		channels:      map[int]*domain.Channel{},
-		models:        map[int]map[int]*domain.ChannelModel{},
-		pricing:       map[string]*domain.Pricing{},
-		nextUserID:    1,
-		nextKeyID:     1,
-		nextTxID:      1,
-		users:         map[int]*domain.User{},
-		transactions:  map[int][]domain.BalanceTransaction{},
-		keys:          map[int]*memoryKey{},
-		orders:        map[string]domain.BalanceTransaction{},
+		nextChannelID:   1,
+		nextModelID:     1,
+		nextPricingID:   1,
+		channels:        map[int]*domain.Channel{},
+		models:          map[int]map[int]*domain.ChannelModel{},
+		pricing:         map[string]*domain.Pricing{},
+		nextUserID:      1,
+		nextKeyID:       1,
+		nextTxID:        1,
+		users:           map[int]*domain.User{},
+		transactions:    map[int][]domain.BalanceTransaction{},
+		keys:            map[int]*memoryKey{},
+		orders:          map[string]domain.BalanceTransaction{},
+		nextRateLimitID: 1,
+		rateLimits:      map[int]*domain.RateLimitRule{},
+		nextUsageLogID:  1,
 	}
 }
 
