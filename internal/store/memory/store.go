@@ -2,11 +2,11 @@ package memory
 
 import (
 	"fmt"
-	"strconv"
 	"strings"
 	"sync"
 
 	"LLMGateway/internal/domain"
+	"LLMGateway/internal/money"
 	"LLMGateway/internal/store"
 )
 
@@ -98,25 +98,29 @@ func (s *Store) UpdateChannelBalance(id int, balance string, delta string) (map[
 		return nil, store.ErrNotFound
 	}
 
-	base := int64(0)
-	var err error
+	base := money.Amount(0)
 	if balance != "" {
-		base, err = parseMoney6(balance)
+		parsed, err := money.Parse6(balance)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
+		}
+		base = parsed
 	} else if ch.Balance != nil {
-		base, err = parseMoney6(*ch.Balance)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
+		parsed, err := money.Parse6(*ch.Balance)
+		if err != nil {
+			return nil, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
+		}
+		base = parsed
 	}
 	if delta != "" {
-		d, err := parseMoney6(delta)
+		parsed, err := money.Parse6(delta)
 		if err != nil {
 			return nil, fmt.Errorf("%w: invalid delta", store.ErrInvalid)
 		}
-		base += d
+		base = base.Add(parsed)
 	}
-	b := formatMoney6(base)
-	ch.Balance = &b
+	formatted := money.Format6(base)
+	ch.Balance = &formatted
 	return s.channelDTO(ch), nil
 }
 
@@ -318,50 +322,4 @@ func cleanBalance(balance *string) *string {
 
 func pricingKey(channelID int, model string) string {
 	return fmt.Sprintf("%d:%s", channelID, model)
-}
-
-func parseMoney6(value string) (int64, error) {
-	if value == "" {
-		return 0, nil
-	}
-	negative := strings.HasPrefix(value, "-")
-	if negative {
-		value = strings.TrimPrefix(value, "-")
-	}
-	parts := strings.Split(value, ".")
-	if len(parts) > 2 || parts[0] == "" {
-		return 0, store.ErrInvalid
-	}
-	whole, err := strconv.ParseInt(parts[0], 10, 64)
-	if err != nil {
-		return 0, store.ErrInvalid
-	}
-	fraction := ""
-	if len(parts) == 2 {
-		fraction = parts[1]
-	}
-	if len(fraction) > 6 {
-		return 0, store.ErrInvalid
-	}
-	for len(fraction) < 6 {
-		fraction += "0"
-	}
-	frac, err := strconv.ParseInt(fraction, 10, 64)
-	if err != nil {
-		return 0, store.ErrInvalid
-	}
-	amount := whole*1_000_000 + frac
-	if negative {
-		return -amount, nil
-	}
-	return amount, nil
-}
-
-func formatMoney6(value int64) string {
-	sign := ""
-	if value < 0 {
-		sign = "-"
-		value = -value
-	}
-	return fmt.Sprintf("%s%d.%06d", sign, value/1_000_000, value%1_000_000)
 }
