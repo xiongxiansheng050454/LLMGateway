@@ -107,6 +107,13 @@ func TestKeyLifecycleHidesPlaintext(t *testing.T) {
 	}
 }
 
+func TestListKeysMissingUserReturnsNotFound(t *testing.T) {
+	res := adminRaw(t, newTestHandler(), http.MethodGet, "/admin/users/404/keys", nil)
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d; body=%s", res.Code, http.StatusNotFound, res.Body.String())
+	}
+}
+
 func TestUserListReturnsFrozenBalanceFields(t *testing.T) {
 	handler := newTestHandler()
 	adminDo(t, handler, http.MethodPost, "/admin/users", map[string]any{"nickname": "Alice"})

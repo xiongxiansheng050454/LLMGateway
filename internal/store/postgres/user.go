@@ -124,17 +124,6 @@ func (s *Store) RechargeUser(id int, in domain.RechargeInput) (map[string]any, e
 
 	ctx := context.Background()
 
-	// Idempotency: a repeated related_order_id returns the original result.
-	if in.RelatedOrderID != "" {
-		existing, err := s.queries.GetBalanceTransactionByOrder(ctx, sqlc.GetBalanceTransactionByOrderParams{UserID: int64(id), RelatedOrderID: pgtype.Text{String: in.RelatedOrderID, Valid: true}})
-		if err == nil {
-			return map[string]any{"balance_after": existing.BalanceAfter}, nil
-		}
-		if !errors.Is(mapError(err), store.ErrNotFound) {
-			return nil, mapError(err)
-		}
-	}
-
 	tx, err := s.pool.Begin(ctx)
 	if err != nil {
 		return nil, mapError(err)
@@ -144,6 +133,19 @@ func (s *Store) RechargeUser(id int, in domain.RechargeInput) (map[string]any, e
 
 	if _, err := queries.LockUserBalance(ctx, int64(id)); err != nil {
 		return nil, mapError(err)
+	}
+
+	// Idempotency is scoped per user and evaluated after the balance row lock,
+	// so concurrent repeats of the same order serialize and return the original
+	// result instead of a unique-violation error.
+	if in.RelatedOrderID != "" {
+		existing, err := queries.GetBalanceTransactionByOrder(ctx, sqlc.GetBalanceTransactionByOrderParams{UserID: int64(id), RelatedOrderID: pgtype.Text{String: in.RelatedOrderID, Valid: true}})
+		if err == nil {
+			return map[string]any{"balance_after": existing.BalanceAfter}, nil
+		}
+		if !errors.Is(mapError(err), store.ErrNotFound) {
+			return nil, mapError(err)
+		}
 	}
 	balanceRow, err := queries.GetUserBalanceText(ctx, int64(id))
 	if err != nil {

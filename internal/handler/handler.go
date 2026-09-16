@@ -133,7 +133,7 @@ func dashboardStartupData(r *http.Request) (any, bool) {
 			"total_cost":        "0.000000",
 			"active_user_count": 0,
 		}, true
-	case "/admin/stats/daily", "/admin/channels", "/admin/usage-logs", "/admin/users", "/admin/rate-limits", "/admin/models":
+	case "/admin/stats/daily", "/admin/channels", "/admin/usage-logs", "/admin/rate-limits", "/admin/models":
 		ParsePagination(r)
 		return domain.ListResponse{List: []any{}, Total: 0}, true
 	case "/admin/stats/channels":

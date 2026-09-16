@@ -175,6 +175,9 @@ func (s *Store) ListBalanceTransactions(userID, page, pageSize int) (domain.List
 func (s *Store) ListUserKeys(userID, page, pageSize int) (domain.ListResponse, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if _, ok := s.users[userID]; !ok {
+		return domain.ListResponse{}, store.ErrNotFound
+	}
 	keys := s.sortedKeysLocked(userID)
 	start, end := pageBounds(len(keys), page, pageSize)
 	list := []any{}
@@ -230,7 +233,7 @@ func (s *Store) CreateKey(userID int, in domain.KeyInput) (map[string]any, error
 		permissions:        normalizeJSON(in.Permissions, defaultPermissions),
 		rateLimitOverrides: normalizeJSON(in.RateLimitOverrides, ""),
 		isActive:           isActive,
-		expiresAt:          optionalString(in.ExpiresAt),
+		expiresAt:          normalizeTimestampPtr(in.ExpiresAt),
 	}
 	s.nextKeyID++
 	s.keys[key.id] = key
@@ -329,9 +332,16 @@ func normalizeJSON(value json.RawMessage, fallback string) json.RawMessage {
 	return value
 }
 
-func optionalString(value string) *string {
+// normalizeTimestampPtr parses an RFC3339 timestamp and returns it in UTC so
+// the in-memory store matches the PostgreSQL timestamptz output. Unparseable
+// values are preserved as-is.
+func normalizeTimestampPtr(value string) *string {
 	if value == "" {
 		return nil
+	}
+	if parsed, err := time.Parse(time.RFC3339, value); err == nil {
+		formatted := parsed.UTC().Format(time.RFC3339)
+		return &formatted
 	}
 	return &value
 }

@@ -188,6 +188,55 @@ func TestKeysLifecycleHidesPlaintext(t *testing.T) {
 	}
 }
 
+func TestListUserKeysMissingUserReturnsNotFound(t *testing.T) {
+	st := New()
+	if _, err := st.ListUserKeys(404, 1, 20); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("ListUserKeys missing user err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestCreateKeyNormalizesExpiresAtToUTC(t *testing.T) {
+	st := New()
+	if _, err := st.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
+		t.Fatal(err)
+	}
+	created, err := st.CreateKey(1, domain.KeyInput{ExpiresAt: "2027-01-01T00:00:00+08:00"})
+	if err != nil {
+		t.Fatalf("CreateKey: %v", err)
+	}
+	keyID := created["id"].(int)
+
+	listed, err := st.ListUserKeys(1, 1, 20)
+	if err != nil {
+		t.Fatal(err)
+	}
+	row := listed.List[0].(map[string]any)
+	expires, ok := row["expires_at"].(*string)
+	if !ok || expires == nil || *expires != "2026-12-31T16:00:00Z" {
+		t.Fatalf("expires_at = %v, want 2026-12-31T16:00:00Z (UTC)", row["expires_at"])
+	}
+	if keyID == 0 {
+		t.Fatal("unexpected key id")
+	}
+}
+
+func TestRechargeOrderScopedPerUser(t *testing.T) {
+	st := New()
+	if _, err := st.CreateUser(domain.UserInput{Nickname: "A"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateUser(domain.UserInput{Nickname: "B"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := st.RechargeUser(1, domain.RechargeInput{Amount: "1.000000", RelatedOrderID: "order-x"}); err != nil {
+		t.Fatalf("user 1 order: %v", err)
+	}
+	if _, err := st.RechargeUser(2, domain.RechargeInput{Amount: "1.000000", RelatedOrderID: "order-x"}); err != nil {
+		t.Fatalf("same order id for another user should be allowed: %v", err)
+	}
+}
+
 func TestDeleteUserRemovesKeysAndTransactions(t *testing.T) {
 	st := New()
 	if _, err := st.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {

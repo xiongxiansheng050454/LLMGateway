@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"LLMGateway/internal/crypto"
@@ -88,6 +89,59 @@ func TestPGUserCRUDAndBalance(t *testing.T) {
 	}
 	if _, err := st.UpdateUser(404, domain.UserInput{Nickname: "x"}); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing user err = %v, want ErrNotFound", err)
+	}
+}
+
+func TestPGRechargeOrderScopedPerUserAndConcurrent(t *testing.T) {
+	st := testStore(t)
+
+	if _, err := st.CreateUser(domain.UserInput{Nickname: "A"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateUser(domain.UserInput{Nickname: "B"}); err != nil {
+		t.Fatal(err)
+	}
+
+	// The same related_order_id is allowed for different users.
+	if _, err := st.RechargeUser(1, domain.RechargeInput{Amount: "1.000000", RelatedOrderID: "order-x"}); err != nil {
+		t.Fatalf("user 1 order: %v", err)
+	}
+	if _, err := st.RechargeUser(2, domain.RechargeInput{Amount: "1.000000", RelatedOrderID: "order-x"}); err != nil {
+		t.Fatalf("same order id for another user should be allowed: %v", err)
+	}
+
+	// Concurrent repeats of the same order for the same user must be idempotent.
+	const workers = 8
+	results := make([]map[string]any, workers)
+	errs := make([]error, workers)
+	var wg sync.WaitGroup
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			results[i], errs[i] = st.RechargeUser(1, domain.RechargeInput{Amount: "5.000000", RelatedOrderID: "order-concurrent"})
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("worker %d: %v", i, err)
+		}
+	}
+	first := results[0]["balance_after"]
+	for i, result := range results {
+		if result["balance_after"] != first {
+			t.Fatalf("worker %d balance_after = %v, want %v", i, result["balance_after"], first)
+		}
+	}
+
+	// Only two transactions for user 1: order-x and order-concurrent.
+	txs, err := st.ListBalanceTransactions(1, 1, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if txs.Total != 2 {
+		t.Fatalf("user 1 transactions total = %d, want 2", txs.Total)
 	}
 }
 
