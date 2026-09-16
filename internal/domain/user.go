@@ -35,6 +35,7 @@ type BalanceTransaction struct {
 	TxType       string `json:"tx_type"`
 	Amount       string `json:"amount"`
 	BalanceAfter string `json:"balance_after"`
+	Description  string `json:"description"`
 	CreatedAt    string `json:"created_at"`
 }
 

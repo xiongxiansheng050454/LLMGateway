@@ -225,4 +225,7 @@ func TestCountRequestsSince(t *testing.T) {
 	if _, err := st.CountRequestsSince(1, nil, "abc"); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid since err = %v, want ErrInvalid", err)
 	}
+	if _, err := st.CountRequestsSince(1, nil, ""); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("empty since err = %v, want ErrInvalid", err)
+	}
 }

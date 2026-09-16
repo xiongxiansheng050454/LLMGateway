@@ -142,6 +142,9 @@ func TestPGProxyStoreCapabilities(t *testing.T) {
 	if _, err := st.CountRequestsSince(1, nil, "abc"); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid since err = %v, want ErrInvalid", err)
 	}
+	if _, err := st.CountRequestsSince(1, nil, ""); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("empty since err = %v, want ErrInvalid", err)
+	}
 }
 
 func TestPGDebitUserBalanceConcurrent(t *testing.T) {
@@ -189,8 +192,11 @@ type proxySnapshot struct {
 	authPermissions  string
 	pricingInput     string
 	pricingUpstream  string
+	pricingCached    string
+	pricingCurrency  string
 	routeOrder       []int
 	routeUpstream    string
+	routeBalance     string
 	afterDebit       string
 	insufficientErr  string
 	missingPricingIs bool
@@ -213,21 +219,25 @@ func runProxyScenario(t *testing.T, st store.Store) proxySnapshot {
 		t.Fatal(err)
 	}
 
-	create := func(name string, priority, weight int) int {
-		created, err := st.CreateChannel(domain.ChannelInput{Name: name, BaseURL: "https://" + name + ".test", APIKey: "sk", Status: 1, Priority: priority, Weight: weight})
+	create := func(name string, priority, weight int, balance string) int {
+		var balancePtr *string
+		if balance != "" {
+			balancePtr = &balance
+		}
+		created, err := st.CreateChannel(domain.ChannelInput{Name: name, BaseURL: "https://" + name + ".test", APIKey: "sk", Status: 1, Priority: priority, Weight: weight, Balance: balancePtr})
 		if err != nil {
 			t.Fatal(err)
 		}
 		return created["id"].(int)
 	}
-	channelA := create("A", 10, 100)
-	channelB := create("B", 10, 200)
+	channelA := create("A", 10, 100, "5.000000")
+	channelB := create("B", 10, 200, "")
 	for _, id := range []int{channelA, channelB} {
 		if _, err := st.CreateChannelModel(id, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := st.UpsertPricing(domain.PricingInput{ChannelID: channelA, ModelName: "gpt", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000", Currency: "USD"}); err != nil {
+	if _, err := st.UpsertPricing(domain.PricingInput{ChannelID: channelA, ModelName: "gpt", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000", CachedInputPricePer1M: "0.05000000", Currency: "USD"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -243,10 +253,14 @@ func runProxyScenario(t *testing.T, st store.Store) proxySnapshot {
 	}
 	routeOrder := []int{}
 	routeUpstream := ""
+	routeBalance := ""
 	for _, item := range candidates.List {
 		entry := item.(map[string]any)
 		routeOrder = append(routeOrder, entry["channel_id"].(int))
 		routeUpstream = entry["upstream_model"].(string)
+		if balance, ok := entry["balance"].(*string); ok && balance != nil {
+			routeBalance = *balance
+		}
 	}
 
 	debit, err := st.DebitUserBalance(1, "3.5", "request")
@@ -270,8 +284,11 @@ func runProxyScenario(t *testing.T, st store.Store) proxySnapshot {
 		authPermissions:  string(auth.Permissions),
 		pricingInput:     pricing["input_price_per_1m"].(string),
 		pricingUpstream:  pricing["upstream_model"].(string),
+		pricingCached:    pricing["cached_input_price_per_1m"].(string),
+		pricingCurrency:  pricing["currency"].(string),
 		routeOrder:       routeOrder,
 		routeUpstream:    routeUpstream,
+		routeBalance:     routeBalance,
 		afterDebit:       debit["balance_after"].(string),
 		insufficientErr:  errorKind(insufficientErr),
 		missingPricingIs: errors.Is(missingPricingErr, store.ErrNotFound),

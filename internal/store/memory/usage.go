@@ -80,7 +80,7 @@ func (s *Store) GetUsageLog(id int) (map[string]any, error) {
 }
 
 func (s *Store) CountRequestsSince(userID int, apiKeyID *int, since string) (int, error) {
-	if err := store.ValidateTimeRange(since, ""); err != nil {
+	if err := store.ValidateSince(since); err != nil {
 		return 0, err
 	}
 	sinceTime, _ := time.Parse(time.RFC3339, since)

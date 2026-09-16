@@ -135,6 +135,7 @@ func (s *Store) RechargeUser(id int, in domain.RechargeInput) (map[string]any, e
 		TxType:       "recharge",
 		Amount:       money.Format6(amount),
 		BalanceAfter: user.AvailableBalance,
+		Description:  in.Description,
 		CreatedAt:    nowRFC3339(),
 	}
 	s.nextTxID++
@@ -350,6 +351,7 @@ func (s *Store) DebitUserBalance(userID int, amount string, description string) 
 		TxType:       "consume",
 		Amount:       money.Format6(parsed),
 		BalanceAfter: user.AvailableBalance,
+		Description:  description,
 		CreatedAt:    nowRFC3339(),
 	}
 	s.nextTxID++

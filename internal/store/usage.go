@@ -23,6 +23,15 @@ func ValidateTimeRange(startTime, endTime string) error {
 	return nil
 }
 
+// ValidateSince requires a non-empty RFC3339 timestamp. Used by window
+// counting so memory and PostgreSQL cannot diverge on an empty value.
+func ValidateSince(since string) error {
+	if since == "" {
+		return fmt.Errorf("%w: since is required", ErrInvalid)
+	}
+	return ValidateTimeRange(since, "")
+}
+
 // ValidateDateRange checks optional YYYY-MM-DD bounds.
 func ValidateDateRange(dateFrom, dateTo string) error {
 	if dateFrom != "" {

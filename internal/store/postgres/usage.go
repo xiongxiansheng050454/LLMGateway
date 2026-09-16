@@ -87,7 +87,7 @@ func (s *Store) InsertUsageLog(in domain.UsageLogInput) (int, error) {
 }
 
 func (s *Store) CountRequestsSince(userID int, apiKeyID *int, since string) (int, error) {
-	if err := store.ValidateTimeRange(since, ""); err != nil {
+	if err := store.ValidateSince(since); err != nil {
 		return 0, err
 	}
 	count, err := s.queries.CountRequestsSince(context.Background(), sqlc.CountRequestsSinceParams{
