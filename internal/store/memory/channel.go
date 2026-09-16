@@ -30,15 +30,25 @@ func (s *Store) CreateChannel(in domain.ChannelInput) (map[string]any, error) {
 		in.Weight = 100
 	}
 
+	balance, err := normalizeBalance(in.Balance)
+	if err != nil {
+		return nil, err
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ch := &domain.Channel{ID: s.nextChannelID, Name: in.Name, BaseURL: in.BaseURL, APIKey: in.APIKey, AuthType: in.AuthType, Status: in.Status, Weight: in.Weight, Priority: in.Priority, Balance: cleanBalance(in.Balance)}
+	ch := &domain.Channel{ID: s.nextChannelID, Name: in.Name, BaseURL: in.BaseURL, APIKey: in.APIKey, AuthType: in.AuthType, Status: in.Status, Weight: in.Weight, Priority: in.Priority, Balance: balance}
 	s.nextChannelID++
 	s.channels[ch.ID] = ch
 	return s.channelDTO(ch), nil
 }
 
 func (s *Store) UpdateChannel(id int, in domain.ChannelInput) (map[string]any, error) {
+	balance, err := normalizeBalance(in.Balance)
+	if err != nil {
+		return nil, err
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ch, ok := s.channels[id]
@@ -49,7 +59,7 @@ func (s *Store) UpdateChannel(id int, in domain.ChannelInput) (map[string]any, e
 	if strings.TrimSpace(in.APIKey) != "" {
 		ch.APIKey = in.APIKey
 	}
-	ch.Balance = cleanBalance(in.Balance)
+	ch.Balance = balance
 	return s.channelDTO(ch), nil
 }
 
@@ -145,6 +155,9 @@ func (s *Store) CreateChannelModel(channelID int, in domain.ChannelModel) (domai
 	if _, ok := s.channels[channelID]; !ok {
 		return domain.ChannelModel{}, store.ErrNotFound
 	}
+	if s.hasChannelModelLocked(channelID, in.ModelName) {
+		return domain.ChannelModel{}, fmt.Errorf("%w: model mapping already exists", store.ErrInvalid)
+	}
 	in.ID = s.nextModelID
 	s.nextModelID++
 	if s.models[channelID] == nil {
@@ -221,6 +234,20 @@ func (s *Store) UpsertPricing(in domain.PricingInput) (map[string]any, error) {
 	if in.ChannelID <= 0 || strings.TrimSpace(in.ModelName) == "" {
 		return nil, fmt.Errorf("%w: channel_id and model_name are required", store.ErrInvalid)
 	}
+
+	inputPrice, err := normalizePrice8(in.InputPricePer1M, "input_price_per_1m")
+	if err != nil {
+		return nil, err
+	}
+	outputPrice, err := normalizePrice8(in.OutputPricePer1M, "output_price_per_1m")
+	if err != nil {
+		return nil, err
+	}
+	cachedPrice, err := normalizeOptionalPrice8(in.CachedInputPricePer1M, "cached_input_price_per_1m")
+	if err != nil {
+		return nil, err
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.channels[in.ChannelID]; !ok {
@@ -237,7 +264,7 @@ func (s *Store) UpsertPricing(in domain.PricingInput) (map[string]any, error) {
 		s.nextPricingID++
 		s.pricing[key] = p
 	}
-	p.InputPricePer1M, p.OutputPricePer1M, p.CachedInputPricePer1M, p.Currency = in.InputPricePer1M, in.OutputPricePer1M, in.CachedInputPricePer1M, in.Currency
+	p.InputPricePer1M, p.OutputPricePer1M, p.CachedInputPricePer1M, p.Currency = inputPrice, outputPrice, cachedPrice, in.Currency
 	if p.Currency == "" {
 		p.Currency = "USD"
 	}

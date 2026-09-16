@@ -11,6 +11,71 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const deletePricing = `-- name: DeletePricing :exec
+DELETE FROM model_pricing WHERE channel_id = $1 AND model_name = $2
+`
+
+type DeletePricingParams struct {
+	ChannelID int64  `json:"channel_id"`
+	ModelName string `json:"model_name"`
+}
+
+func (q *Queries) DeletePricing(ctx context.Context, arg DeletePricingParams) error {
+	_, err := q.db.Exec(ctx, deletePricing, arg.ChannelID, arg.ModelName)
+	return err
+}
+
+const getPricing = `-- name: GetPricing :one
+SELECT
+    p.id,
+    p.channel_id,
+    c.name AS channel_name,
+    p.model_name,
+    cm.upstream_model,
+    p.input_price_per_1m::text AS input_price_per_1m,
+    p.output_price_per_1m::text AS output_price_per_1m,
+    COALESCE(p.cached_input_price_per_1m::text, ''::text) AS cached_input_price_per_1m,
+    p.currency
+FROM model_pricing p
+JOIN channels c ON c.id = p.channel_id
+LEFT JOIN channel_models cm ON cm.channel_id = p.channel_id AND cm.model_name = p.model_name
+WHERE p.channel_id = $1 AND p.model_name = $2
+`
+
+type GetPricingParams struct {
+	ChannelID int64  `json:"channel_id"`
+	ModelName string `json:"model_name"`
+}
+
+type GetPricingRow struct {
+	ID                    int64       `json:"id"`
+	ChannelID             int64       `json:"channel_id"`
+	ChannelName           string      `json:"channel_name"`
+	ModelName             string      `json:"model_name"`
+	UpstreamModel         pgtype.Text `json:"upstream_model"`
+	InputPricePer1m       string      `json:"input_price_per_1m"`
+	OutputPricePer1m      string      `json:"output_price_per_1m"`
+	CachedInputPricePer1m interface{} `json:"cached_input_price_per_1m"`
+	Currency              string      `json:"currency"`
+}
+
+func (q *Queries) GetPricing(ctx context.Context, arg GetPricingParams) (GetPricingRow, error) {
+	row := q.db.QueryRow(ctx, getPricing, arg.ChannelID, arg.ModelName)
+	var i GetPricingRow
+	err := row.Scan(
+		&i.ID,
+		&i.ChannelID,
+		&i.ChannelName,
+		&i.ModelName,
+		&i.UpstreamModel,
+		&i.InputPricePer1m,
+		&i.OutputPricePer1m,
+		&i.CachedInputPricePer1m,
+		&i.Currency,
+	)
+	return i, err
+}
+
 const listPricing = `-- name: ListPricing :many
 SELECT
     p.id,
@@ -18,9 +83,9 @@ SELECT
     c.name AS channel_name,
     p.model_name,
     cm.upstream_model,
-    p.input_price_per_1m,
-    p.output_price_per_1m,
-    p.cached_input_price_per_1m,
+    p.input_price_per_1m::text AS input_price_per_1m,
+    p.output_price_per_1m::text AS output_price_per_1m,
+    COALESCE(p.cached_input_price_per_1m::text, ''::text) AS cached_input_price_per_1m,
     p.currency
 FROM model_pricing p
 JOIN channels c ON c.id = p.channel_id
@@ -29,15 +94,15 @@ ORDER BY p.id
 `
 
 type ListPricingRow struct {
-	ID                    int64          `json:"id"`
-	ChannelID             int64          `json:"channel_id"`
-	ChannelName           string         `json:"channel_name"`
-	ModelName             string         `json:"model_name"`
-	UpstreamModel         pgtype.Text    `json:"upstream_model"`
-	InputPricePer1m       pgtype.Numeric `json:"input_price_per_1m"`
-	OutputPricePer1m      pgtype.Numeric `json:"output_price_per_1m"`
-	CachedInputPricePer1m pgtype.Numeric `json:"cached_input_price_per_1m"`
-	Currency              string         `json:"currency"`
+	ID                    int64       `json:"id"`
+	ChannelID             int64       `json:"channel_id"`
+	ChannelName           string      `json:"channel_name"`
+	ModelName             string      `json:"model_name"`
+	UpstreamModel         pgtype.Text `json:"upstream_model"`
+	InputPricePer1m       string      `json:"input_price_per_1m"`
+	OutputPricePer1m      string      `json:"output_price_per_1m"`
+	CachedInputPricePer1m interface{} `json:"cached_input_price_per_1m"`
+	Currency              string      `json:"currency"`
 }
 
 func (q *Queries) ListPricing(ctx context.Context) ([]ListPricingRow, error) {
@@ -68,4 +133,47 @@ func (q *Queries) ListPricing(ctx context.Context) ([]ListPricingRow, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const upsertPricing = `-- name: UpsertPricing :one
+INSERT INTO model_pricing (channel_id, model_name, input_price_per_1m, output_price_per_1m, cached_input_price_per_1m, currency)
+VALUES (
+    $1,
+    $2,
+    NULLIF($3, '')::numeric,
+    NULLIF($4, '')::numeric,
+    NULLIF($5, '')::numeric,
+    $6
+)
+ON CONFLICT (channel_id, model_name)
+DO UPDATE SET
+    input_price_per_1m = EXCLUDED.input_price_per_1m,
+    output_price_per_1m = EXCLUDED.output_price_per_1m,
+    cached_input_price_per_1m = EXCLUDED.cached_input_price_per_1m,
+    currency = EXCLUDED.currency,
+    updated_at = now()
+RETURNING id
+`
+
+type UpsertPricingParams struct {
+	ChannelID             int64       `json:"channel_id"`
+	ModelName             string      `json:"model_name"`
+	InputPricePer1m       interface{} `json:"input_price_per_1m"`
+	OutputPricePer1m      interface{} `json:"output_price_per_1m"`
+	CachedInputPricePer1m interface{} `json:"cached_input_price_per_1m"`
+	Currency              string      `json:"currency"`
+}
+
+func (q *Queries) UpsertPricing(ctx context.Context, arg UpsertPricingParams) (int64, error) {
+	row := q.db.QueryRow(ctx, upsertPricing,
+		arg.ChannelID,
+		arg.ModelName,
+		arg.InputPricePer1m,
+		arg.OutputPricePer1m,
+		arg.CachedInputPricePer1m,
+		arg.Currency,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
 }

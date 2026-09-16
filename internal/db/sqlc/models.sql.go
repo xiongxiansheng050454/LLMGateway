@@ -9,6 +9,90 @@ import (
 	"context"
 )
 
+const createChannelModel = `-- name: CreateChannelModel :one
+INSERT INTO channel_models (channel_id, model_name, upstream_model, enabled)
+VALUES ($1, $2, $3, $4)
+RETURNING id, model_name, upstream_model, enabled
+`
+
+type CreateChannelModelParams struct {
+	ChannelID     int64  `json:"channel_id"`
+	ModelName     string `json:"model_name"`
+	UpstreamModel string `json:"upstream_model"`
+	Enabled       bool   `json:"enabled"`
+}
+
+type CreateChannelModelRow struct {
+	ID            int64  `json:"id"`
+	ModelName     string `json:"model_name"`
+	UpstreamModel string `json:"upstream_model"`
+	Enabled       bool   `json:"enabled"`
+}
+
+func (q *Queries) CreateChannelModel(ctx context.Context, arg CreateChannelModelParams) (CreateChannelModelRow, error) {
+	row := q.db.QueryRow(ctx, createChannelModel,
+		arg.ChannelID,
+		arg.ModelName,
+		arg.UpstreamModel,
+		arg.Enabled,
+	)
+	var i CreateChannelModelRow
+	err := row.Scan(
+		&i.ID,
+		&i.ModelName,
+		&i.UpstreamModel,
+		&i.Enabled,
+	)
+	return i, err
+}
+
+const deleteChannelModel = `-- name: DeleteChannelModel :execrows
+DELETE FROM channel_models WHERE channel_id = $1 AND id = $2
+`
+
+type DeleteChannelModelParams struct {
+	ChannelID int64 `json:"channel_id"`
+	ID        int64 `json:"id"`
+}
+
+func (q *Queries) DeleteChannelModel(ctx context.Context, arg DeleteChannelModelParams) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteChannelModel, arg.ChannelID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const getChannelModel = `-- name: GetChannelModel :one
+SELECT id, model_name, upstream_model, enabled
+FROM channel_models
+WHERE channel_id = $1 AND model_name = $2
+`
+
+type GetChannelModelParams struct {
+	ChannelID int64  `json:"channel_id"`
+	ModelName string `json:"model_name"`
+}
+
+type GetChannelModelRow struct {
+	ID            int64  `json:"id"`
+	ModelName     string `json:"model_name"`
+	UpstreamModel string `json:"upstream_model"`
+	Enabled       bool   `json:"enabled"`
+}
+
+func (q *Queries) GetChannelModel(ctx context.Context, arg GetChannelModelParams) (GetChannelModelRow, error) {
+	row := q.db.QueryRow(ctx, getChannelModel, arg.ChannelID, arg.ModelName)
+	var i GetChannelModelRow
+	err := row.Scan(
+		&i.ID,
+		&i.ModelName,
+		&i.UpstreamModel,
+		&i.Enabled,
+	)
+	return i, err
+}
+
 const listCatalogModels = `-- name: ListCatalogModels :many
 SELECT
     cm.model_name,
@@ -93,4 +177,42 @@ func (q *Queries) ListChannelModels(ctx context.Context, channelID int64) ([]Lis
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateChannelModel = `-- name: UpdateChannelModel :one
+UPDATE channel_models
+SET upstream_model = $1, enabled = $2, updated_at = now()
+WHERE channel_id = $3 AND id = $4
+RETURNING id, model_name, upstream_model, enabled
+`
+
+type UpdateChannelModelParams struct {
+	UpstreamModel string `json:"upstream_model"`
+	Enabled       bool   `json:"enabled"`
+	ChannelID     int64  `json:"channel_id"`
+	ID            int64  `json:"id"`
+}
+
+type UpdateChannelModelRow struct {
+	ID            int64  `json:"id"`
+	ModelName     string `json:"model_name"`
+	UpstreamModel string `json:"upstream_model"`
+	Enabled       bool   `json:"enabled"`
+}
+
+func (q *Queries) UpdateChannelModel(ctx context.Context, arg UpdateChannelModelParams) (UpdateChannelModelRow, error) {
+	row := q.db.QueryRow(ctx, updateChannelModel,
+		arg.UpstreamModel,
+		arg.Enabled,
+		arg.ChannelID,
+		arg.ID,
+	)
+	var i UpdateChannelModelRow
+	err := row.Scan(
+		&i.ID,
+		&i.ModelName,
+		&i.UpstreamModel,
+		&i.Enabled,
+	)
+	return i, err
 }
