@@ -17,6 +17,24 @@ func newUsageTestHandler(t *testing.T) (http.Handler, *memory.Store) {
 	return NewHandlerWithStore(filepath.Join("..", "..", "dashboard"), st), st
 }
 
+func TestUsageInvalidTimeParamsReturnBadRequest(t *testing.T) {
+	handler := newTestHandler()
+
+	for _, path := range []string{
+		"/admin/stats/overview?start_time=abc",
+		"/admin/stats/channels?end_time=abc",
+		"/admin/stats/daily?date_from=abc",
+		"/admin/stats/daily?date_to=abc",
+		"/admin/usage-logs?start_time=abc",
+		"/admin/usage-logs?end_time=abc",
+	} {
+		res := adminRaw(t, handler, http.MethodGet, path, nil)
+		if res.Code != http.StatusBadRequest {
+			t.Fatalf("%s status = %d, want 400; body=%s", path, res.Code, res.Body.String())
+		}
+	}
+}
+
 func TestUsageLogsAndStats(t *testing.T) {
 	handler, st := newUsageTestHandler(t)
 

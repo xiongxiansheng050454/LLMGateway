@@ -58,18 +58,6 @@ type ClientApiKey struct {
 	UpdatedAt          pgtype.Timestamptz `json:"updated_at"`
 }
 
-type DailyUsageStat struct {
-	StatDate     pgtype.Date    `json:"stat_date"`
-	UserID       int64          `json:"user_id"`
-	ChannelID    int64          `json:"channel_id"`
-	Model        string         `json:"model"`
-	RequestCount int64          `json:"request_count"`
-	SuccessCount int64          `json:"success_count"`
-	ErrorCount   int64          `json:"error_count"`
-	TotalTokens  int64          `json:"total_tokens"`
-	TotalCost    pgtype.Numeric `json:"total_cost"`
-}
-
 type ModelPricing struct {
 	ID                    int64              `json:"id"`
 	ChannelID             int64              `json:"channel_id"`

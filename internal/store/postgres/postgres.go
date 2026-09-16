@@ -52,7 +52,9 @@ func mapError(err error) error {
 			"23503", // foreign_key_violation
 			"23502", // not_null_violation
 			"22P02", // invalid_text_representation
-			"22003": // numeric_value_out_of_range
+			"22003", // numeric_value_out_of_range
+			"22007", // invalid_datetime_format
+			"22008": // datetime_field_overflow
 			return fmt.Errorf("%w: %s", store.ErrInvalid, pgErr.Message)
 		}
 	}

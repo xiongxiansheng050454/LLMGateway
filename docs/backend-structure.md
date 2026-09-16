@@ -27,7 +27,8 @@ dashboard/                   静态前端控制台
 - 当前默认仍使用 `internal/store/memory`，后续接入 PG 时在 `internal/store/postgres` 实现同一个 `store.Store` 接口。
 - sqlc 查询写在 `db/queries/*.sql`，schema 写在 `db/migrations/*.sql`，生成代码输出到 `internal/db/sqlc`。
 - 不要手改 `internal/db/sqlc` 生成文件；修改 SQL 后运行 `sqlc generate`。
-- 初始 schema 覆盖渠道、模型映射、定价、用户、余额、Key、限流、用量日志和日汇总，后续 issue 应优先扩展现有表而不是新建重复概念。
+- 初始 schema 覆盖渠道、模型映射、定价、用户、余额、Key、限流和用量日志，后续 issue 应优先扩展现有表而不是新建重复概念。
+- 统计接口（overview/daily/channels）在 `usage_logs` 上实时聚合，按 UTC 自然日分组；`daily_usage_stats` 因未被使用且复合主键无法表达全局日汇总，已在迁移 `000004_drop_daily_usage_stats.sql` 中删除。
 - 进程启动时按 `DATABASE_URL` 选择实现：未设置使用 memory，设置则建立 pgxpool 连接并选用 PostgreSQL store。
 - PostgreSQL store 当前对未接线方法返回 `store.ErrNotImplemented`（HTTP 501），具体查询由 PostgreSQL store 子 issue 实现，避免静默返回空数据。
 - `cmd/llmgateway` 使用 `http.Server` 并在收到 `SIGINT`/`SIGTERM` 后优雅关闭。

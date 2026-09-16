@@ -249,10 +249,6 @@ func TestPGDeleteUserCascadesAllRelatedRows(t *testing.T) {
 	if _, err := st.pool.Exec(ctx, "INSERT INTO usage_logs (request_id, user_id, channel_id, model, status) VALUES ('req-1', 1, 1, 'gpt', 'success')"); err != nil {
 		t.Fatalf("seed usage_logs: %v", err)
 	}
-	if _, err := st.pool.Exec(ctx, "INSERT INTO daily_usage_stats (stat_date, user_id, channel_id, model, request_count) VALUES (CURRENT_DATE, 1, 1, 'gpt', 1)"); err != nil {
-		t.Fatalf("seed daily_usage_stats: %v", err)
-	}
-
 	if err := st.DeleteUser(1); err != nil {
 		t.Fatalf("DeleteUser: %v", err)
 	}
@@ -265,7 +261,6 @@ func TestPGDeleteUserCascadesAllRelatedRows(t *testing.T) {
 		{"user_balances", "SELECT count(*) FROM user_balances WHERE user_id = 1"},
 		{"balance_transactions", "SELECT count(*) FROM balance_transactions WHERE user_id = 1"},
 		{"usage_logs", "SELECT count(*) FROM usage_logs WHERE user_id = 1"},
-		{"daily_usage_stats", "SELECT count(*) FROM daily_usage_stats WHERE user_id = 1"},
 	} {
 		var count int
 		if err := st.pool.QueryRow(ctx, tc.query).Scan(&count); err != nil {

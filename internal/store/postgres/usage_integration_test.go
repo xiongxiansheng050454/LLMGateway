@@ -116,6 +116,23 @@ func TestPGUsageLogsAndStats(t *testing.T) {
 	}
 }
 
+func TestPGUsageInvalidTimeParams(t *testing.T) {
+	st := testStore(t)
+
+	if _, err := st.ListUsageLogs(domain.UsageLogFilter{StartTime: "abc", Page: 1, PageSize: 20}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("invalid start_time err = %v, want ErrInvalid", err)
+	}
+	if _, err := st.StatsOverview("abc", ""); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("invalid overview start err = %v, want ErrInvalid", err)
+	}
+	if _, err := st.StatsChannels("", "abc"); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("invalid channels end err = %v, want ErrInvalid", err)
+	}
+	if _, err := st.StatsDaily("abc", "2026-01-01", 1, 100); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("invalid date_from err = %v, want ErrInvalid", err)
+	}
+}
+
 func TestPGStatsEmptyReturnsZeroValues(t *testing.T) {
 	st := testStore(t)
 

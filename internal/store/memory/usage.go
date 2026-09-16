@@ -42,10 +42,17 @@ func (s *Store) InsertUsageLog(in domain.UsageLogInput) (int, error) {
 }
 
 func (s *Store) ListUsageLogs(filter domain.UsageLogFilter) (domain.ListResponse, error) {
+	if err := store.ValidateTimeRange(filter.StartTime, filter.EndTime); err != nil {
+		return domain.ListResponse{}, err
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	rows := s.filterUsageLogsLocked(filter)
+	rows, err := s.filterUsageLogsLocked(filter)
+	if err != nil {
+		return domain.ListResponse{}, err
+	}
 	sort.Slice(rows, func(i, j int) bool {
 		if rows[i].CreatedAt != rows[j].CreatedAt {
 			return rows[i].CreatedAt > rows[j].CreatedAt
@@ -122,6 +129,10 @@ func (s *Store) StatsOverview(startTime, endTime string) (map[string]any, error)
 }
 
 func (s *Store) StatsDaily(dateFrom, dateTo string, page, pageSize int) (domain.ListResponse, error) {
+	if err := store.ValidateDateRange(dateFrom, dateTo); err != nil {
+		return domain.ListResponse{}, err
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -261,8 +272,11 @@ func orZero8(value string) string {
 	return value
 }
 
-func (s *Store) filterUsageLogsLocked(filter domain.UsageLogFilter) []domain.UsageLog {
-	start, end, _ := parseRange(filter.StartTime, filter.EndTime)
+func (s *Store) filterUsageLogsLocked(filter domain.UsageLogFilter) ([]domain.UsageLog, error) {
+	start, end, err := parseRange(filter.StartTime, filter.EndTime)
+	if err != nil {
+		return nil, err
+	}
 	rows := []domain.UsageLog{}
 	for _, log := range s.usageLogs {
 		if filter.UserID != nil && (log.UserID == nil || *log.UserID != *filter.UserID) {
@@ -282,7 +296,7 @@ func (s *Store) filterUsageLogsLocked(filter domain.UsageLogFilter) []domain.Usa
 		}
 		rows = append(rows, log)
 	}
-	return rows
+	return rows, nil
 }
 
 func (s *Store) channelNameLocked(channelID *int) string {

@@ -6,11 +6,15 @@ import (
 
 	"LLMGateway/internal/db/sqlc"
 	"LLMGateway/internal/domain"
+	"LLMGateway/internal/store"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func (s *Store) ListUsageLogs(filter domain.UsageLogFilter) (domain.ListResponse, error) {
+	if err := store.ValidateTimeRange(filter.StartTime, filter.EndTime); err != nil {
+		return domain.ListResponse{}, err
+	}
 	ctx := context.Background()
 	limit, offset := limitOffset(filter.Page, filter.PageSize)
 	params := sqlc.ListUsageLogsParams{
@@ -83,6 +87,9 @@ func (s *Store) InsertUsageLog(in domain.UsageLogInput) (int, error) {
 }
 
 func (s *Store) StatsOverview(startTime, endTime string) (map[string]any, error) {
+	if err := store.ValidateTimeRange(startTime, endTime); err != nil {
+		return nil, err
+	}
 	row, err := s.queries.StatsOverview(context.Background(), sqlc.StatsOverviewParams{
 		CreatedAt:   timestampValue(startTime),
 		CreatedAt_2: timestampValue(endTime),
@@ -101,6 +108,9 @@ func (s *Store) StatsOverview(startTime, endTime string) (map[string]any, error)
 }
 
 func (s *Store) StatsDaily(dateFrom, dateTo string, page, pageSize int) (domain.ListResponse, error) {
+	if err := store.ValidateDateRange(dateFrom, dateTo); err != nil {
+		return domain.ListResponse{}, err
+	}
 	ctx := context.Background()
 	limit, offset := limitOffset(page, pageSize)
 
@@ -128,6 +138,9 @@ func (s *Store) StatsDaily(dateFrom, dateTo string, page, pageSize int) (domain.
 }
 
 func (s *Store) StatsChannels(startTime, endTime string) (domain.ListResponse, error) {
+	if err := store.ValidateTimeRange(startTime, endTime); err != nil {
+		return domain.ListResponse{}, err
+	}
 	rows, err := s.queries.StatsChannels(context.Background(), sqlc.StatsChannelsParams{
 		CreatedAt:   timestampValue(startTime),
 		CreatedAt_2: timestampValue(endTime),
