@@ -1,56 +1,61 @@
 # Backend Structure
 
-后端目录按职责分层，避免后续功能继续堆在 `internal/handler`。
+后端目录按职责分层，避免后续功能继续堆在 `server/internal/handler`。
 
 ```text
-cmd/llmgateway/              进程入口，只做装配：config -> store -> handler -> http.Server
-internal/config/             环境变量配置读取，集中管理默认值
-internal/handler/            HTTP 路由、请求解析、响应封装、Dashboard 静态托管
-internal/domain/             API 与业务共享类型，不依赖 HTTP 或数据库
-internal/money/              定点金额（int64 最小单位）解析与格式化（子 issue #11）
-internal/crypto/             渠道 api_key 加解密、网关 Key 生成与哈希（子 issue #11）
-internal/store/              存储接口（Store）与通用存储错误
-internal/store/memory/       默认内存实现，用于 MVP、测试和未接入 PG 前的功能迭代
-internal/store/postgres/     PostgreSQL Store 实现（查询接线见子 issue）
-internal/db/migrate/         最小迁移 runner，按文件名顺序应用 db/migrations/*.sql
-internal/db/sqlc/            sqlc 生成代码输出目录，不手写业务逻辑
-db/migrations/               PostgreSQL schema 迁移 SQL
-db/queries/                  sqlc 查询 SQL
-deployments/                 本地开发部署配置，如 PostgreSQL docker compose
-dashboard/                   静态前端控制台
+server/                             Go 模块根（go.mod / go.sum / sqlc.yaml）
+server/cmd/llmgateway/              进程入口与 HTTP 路由表（router.go）：config -> store -> handler -> http.Server
+server/internal/config/             环境变量配置读取，集中管理默认值
+server/internal/handler/            请求解析、响应封装、Dashboard 静态资源、/admin 与 /v1 分派编排
+server/internal/domain/             API 与业务共享类型，不依赖 HTTP 或数据库
+server/internal/money/              定点金额（int64 最小单位）解析与格式化
+server/internal/crypto/             渠道 api_key 加解密、网关 Key 生成与哈希
+server/internal/store/              存储接口（Store）与通用存储错误
+server/internal/store/memory/       默认内存实现，用于 MVP、测试和未接入 PG 前的功能迭代
+server/internal/store/postgres/     PostgreSQL Store 实现
+server/internal/db/migrate/         最小迁移 runner，按文件名顺序应用 server/db/migrations/*.sql
+server/internal/db/sqlc/            sqlc 生成代码输出目录，不手写业务逻辑
+server/db/migrations/               PostgreSQL schema 迁移 SQL
+server/db/queries/                  sqlc 查询 SQL
+deployments/                        本地开发部署配置，如 PostgreSQL docker compose
+dashboard/                          静态前端控制台（仓库根，由 server 通过 ../dashboard 托管）
 ```
+
+Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执行（或在仓库根使用 `go -C server ...`）。
 
 ## 约定
 
-- HTTP handler 只依赖 `internal/store.Store` 接口，不直接访问 PostgreSQL 或 sqlc。
-- 业务/API 共享结构放在 `internal/domain`，避免 handler、memory store、postgres store 互相引用具体实现。
-- 当前默认仍使用 `internal/store/memory`，后续接入 PG 时在 `internal/store/postgres` 实现同一个 `store.Store` 接口。
-- sqlc 查询写在 `db/queries/*.sql`，schema 写在 `db/migrations/*.sql`，生成代码输出到 `internal/db/sqlc`。
-- 不要手改 `internal/db/sqlc` 生成文件；修改 SQL 后运行 `sqlc generate`。
+- HTTP handler 只依赖 `server/internal/store.Store` 接口，不直接访问 PostgreSQL 或 sqlc。
+- 业务/API 共享结构放在 `server/internal/domain`，避免 handler、memory store、postgres store 互相引用具体实现。
+- 当前默认仍使用 `server/internal/store/memory`，后续接入 PG 时在 `server/internal/store/postgres` 实现同一个 `store.Store` 接口。
+- sqlc 查询写在 `server/db/queries/*.sql`，schema 写在 `server/db/migrations/*.sql`，生成代码输出到 `server/internal/db/sqlc`。
+- 不要手改 `server/internal/db/sqlc` 生成文件；修改 SQL 后运行 `sqlc generate`。
 - 初始 schema 覆盖渠道、模型映射、定价、用户、余额、Key、限流和用量日志，后续 issue 应优先扩展现有表而不是新建重复概念。
 - 统计接口（overview/daily/channels）在 `usage_logs` 上实时聚合，按 UTC 自然日分组；`daily_usage_stats` 因未被使用且复合主键无法表达全局日汇总，已在迁移 `000004_drop_daily_usage_stats.sql` 中删除。
 - 进程启动时按 `DATABASE_URL` 选择实现：未设置使用 memory，设置则建立 pgxpool 连接并选用 PostgreSQL store。
 - PostgreSQL store 当前对未接线方法返回 `store.ErrNotImplemented`（HTTP 501），具体查询由 PostgreSQL store 子 issue 实现，避免静默返回空数据。
-- `cmd/llmgateway` 使用 `http.Server` 并在收到 `SIGINT`/`SIGTERM` 后优雅关闭。
-- 金额能力集中在 `internal/money`，密钥能力集中在 `internal/crypto`；`internal/store/memory` 中现有的 `parseMoney6`/`formatMoney6` 需在 #11 迁移过去，禁止各 store 各自实现金额解析。
+- `server/cmd/llmgateway` 使用 `http.Server` 并在收到 `SIGINT`/`SIGTERM` 后优雅关闭。
+- 金额能力集中在 `server/internal/money`，密钥能力集中在 `server/internal/crypto`；`server/internal/store/memory` 中现有的 `parseMoney6`/`formatMoney6` 需在 #11 迁移过去，禁止各 store 各自实现金额解析。
 - 禁止用 `float64` 参与计费；金额在 DB 用 `NUMERIC`，在 Go 用定点整数，对外输出字符串。
 - 渠道 `api_key` 落库为密文，网关 Key 只存哈希；任何响应、日志、错误都不得出现明文密钥。
-- `internal/money` 与 `internal/crypto` 为叶子包，不得依赖 `internal/store` 或 `internal/handler`。
-- `internal/crypto` 的渠道密钥加密密钥来自环境变量 `CHANNEL_KEY_ENCRYPTION_KEY`（原始字节，长度 16/24/32）；缺失或非法时返回错误，禁止明文回退。
-- 网关 Key 仅保存 `internal/crypto.HashKey` 的哈希，明文 `full_key` 只在创建/重置时返回一次。
-- 阶段说明：本阶段 `internal/store/memory` 仍以进程内明文 `api_key` 支撑 MVP（不落盘），`internal/crypto` 先提供加解密与哈希能力；PostgreSQL store（#12）落库时使用 `api_key_ciphertext`，并复用本包完成加解密。
-- 预留 `internal/service` 用于 #6 的跨 store 业务编排（auth/routing/billing/ratelimit/usage）；是否引入由 #6 决定，本阶段不创建空包。
+- `server/internal/money` 与 `server/internal/crypto` 为叶子包，不得依赖 `server/internal/store` 或 `server/internal/handler`。
+- `server/internal/crypto` 的渠道密钥加密密钥来自环境变量 `CHANNEL_KEY_ENCRYPTION_KEY`（原始字节，长度 16/24/32）；缺失或非法时返回错误，禁止明文回退。
+- 网关 Key 仅保存 `server/internal/crypto.HashKey` 的哈希，明文 `full_key` 只在创建/重置时返回一次。
+- 阶段说明：本阶段 `server/internal/store/memory` 仍以进程内明文 `api_key` 支撑 MVP（不落盘），`server/internal/crypto` 先提供加解密与哈希能力；PostgreSQL store（#12）落库时使用 `api_key_ciphertext`，并复用本包完成加解密。
+- 不引入 service 层：HTTP 编排位于 `server/internal/handler`，与既有 `admin_*.go` 一致；下游代理按关注点分 `openai*.go`。
+- HTTP 路由表（路径到入口的映射）集中在 `server/cmd/llmgateway/router.go`；`server/internal/handler` 只提供入口方法，不构造 mux。
 
 ## 文件组织约定
 
 目录保持现有深度与扁平度：包内按领域拆文件，不再新增子包。这样既避免单文件膨胀，也避免 import 环和过度分层。
 
 - 每个包内按领域命名文件，禁止把多个领域堆进同一个文件：
-  - `internal/domain/`：`common.go`、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
-  - `internal/store/`：`store.go`（错误 + 组合接口）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
-  - `internal/store/memory/`：`memory.go`（结构体/构造函数/共享辅助）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
-  - `internal/store/postgres/`：`postgres.go`（结构体/构造函数）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
-  - `internal/handler/`：`handler.go`（路由/分派/响应/分页/静态托管）、`admin_channel.go`、`admin_pricing.go`、`admin_user.go`、`admin_usage.go`、`channel_upstream.go`、`openai.go`
+  - `server/internal/domain/`：`common.go`、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
+  - `server/internal/store/`：`store.go`（错误 + 组合接口）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
+  - `server/internal/store/memory/`：`memory.go`（结构体/构造函数/共享辅助）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
+  - `server/internal/store/postgres/`：`postgres.go`（结构体/构造函数）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
+  - `server/cmd/llmgateway/`：`main.go`（装配与优雅关闭）、`router.go`（唯一 HTTP 路由表）
+  - `server/internal/handler/`：`handler.go`（入口方法/分派/响应/分页/静态托管）、`admin_channel.go`、`admin_pricing.go`、`admin_user.go`、`admin_key.go`、`admin_ratelimit.go`、`admin_usage.go`、`channel_upstream.go`、`openai.go`（/v1 分派与错误映射）、`openai_auth.go`、`openai_route.go`、`openai_billing.go`、`openai_ratelimit.go`、`openai_proxy.go`
 - `store.Store` 由领域子接口组合而成，禁止继续往 `store.go` 堆方法：
 
 ```go
@@ -60,19 +65,19 @@ type Store interface {
 }
 ```
 
-- 实现必须放在 `internal/store/memory` 与 `internal/store/postgres`，并以编译期断言固定：
+- 实现必须放在 `server/internal/store/memory` 与 `server/internal/store/postgres`，并以编译期断言固定：
 
 ```go
 var _ store.ChannelStore = (*memory.Store)(nil)
 ```
 
-- 领域文件边界与 `db/queries/*.sql` 的领域划分保持一致（channels/models/pricing/users/rate_limits/usage_logs）。
+- 领域文件边界与 `server/db/queries/*.sql` 的领域划分保持一致（channels/models/pricing/users/rate_limits/usage_logs）。
 - 拆分与移动只做等价搬迁，不得顺手改变路由、响应结构、状态码或错误语义。
 
 ## 下游代理（/v1）
 
-- `GET /v1/models` 与 `POST /v1/chat/completions` 由 `internal/handler/openai.go` 暴露，业务编排在 `internal/service`（auth/route/billing/ratelimit/proxy）。
-- 认证使用 `Authorization: Bearer <gateway-key>`；密钥经 `internal/crypto.HashKey` 后查询，明文不落日志/响应。
+- `GET /v1/models` 与 `POST /v1/chat/completions` 由 `server/internal/handler` 暴露，按关注点分文件：`openai.go`（分派/错误映射）、`openai_auth.go`、`openai_route.go`、`openai_billing.go`、`openai_ratelimit.go`、`openai_proxy.go`。
+- 认证使用 `Authorization: Bearer <gateway-key>`；密钥经 `server/internal/crypto.HashKey` 后查询，明文不落日志/响应。
 - 路由候选按 `priority` 越大越优先，同级内按 `weight` 加权随机；非正余额渠道被排除。
 - 计费：缓存 token 已包含在 `prompt_tokens` 中，仅按 `(prompt_tokens - cached_tokens)` 计输入价，缓存部分计缓存价，避免重复计费。
 - 已知限制（后续 issue 处理）：
@@ -97,29 +102,35 @@ postgres://llmgateway:llmgateway_dev@localhost:5432/llmgateway?sslmode=disable
 
 ```text
 ADDR=:8080
-DASHBOARD_DIR=dashboard
+DASHBOARD_DIR=../dashboard
 DATABASE_URL=postgres://llmgateway:llmgateway_dev@localhost:5432/llmgateway?sslmode=disable
 MIGRATIONS_DIR=db/migrations
 ```
 
+路径均相对于运行目录 `server/`：`DASHBOARD_DIR` 默认 `../dashboard`，`MIGRATIONS_DIR` 默认 `db/migrations`。
+
 未设置 `DATABASE_URL` 时使用内存 store，可直接启动：
 
 ```powershell
+cd server
 go run ./cmd/llmgateway
 ```
 
 ## 迁移
 
-本仓库选择**最小自建 runner**（`internal/db/migrate`），基于 pgx，不引入额外迁移依赖。
+本仓库选择**最小自建 runner**（`server/internal/db/migrate`），基于 pgx，不引入额外迁移依赖。
 
-- 迁移文件为 `db/migrations/*.sql`，按文件名（版本前缀）字典序执行。
+- 迁移文件为 `server/db/migrations/*.sql`，按文件名（版本前缀）字典序执行。
 - 每个文件在独立事务中执行，并在 `schema_migrations(version)` 中记录，已执行版本会跳过。
 - 设置 `DATABASE_URL` 时，进程启动会自动执行 `MIGRATIONS_DIR`（默认 `db/migrations`）下的待执行迁移；失败时启动报错退出。
 
 ## sqlc
 
+在 `server/` 目录下执行：
+
 ```powershell
+cd server
 sqlc generate
 ```
 
-配置文件：`sqlc.yaml`
+配置文件：`server/sqlc.yaml`；`schema` 指向 `server/db/migrations`，`queries` 指向 `server/db/queries`，生成代码输出到 `server/internal/db/sqlc`。
