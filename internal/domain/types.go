@@ -1,17 +1,11 @@
-package server
+package domain
 
-type adminResponse struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-	Data    any    `json:"data"`
-}
-
-type listResponse struct {
+type ListResponse struct {
 	List  []any `json:"list"`
 	Total int   `json:"total"`
 }
 
-type channel struct {
+type Channel struct {
 	ID       int
 	Name     string
 	BaseURL  string
@@ -23,14 +17,14 @@ type channel struct {
 	Balance  *string
 }
 
-type channelModel struct {
+type ChannelModel struct {
 	ID            int    `json:"id"`
 	ModelName     string `json:"model_name"`
 	UpstreamModel string `json:"upstream_model"`
 	Enabled       bool   `json:"enabled"`
 }
 
-type pricing struct {
+type Pricing struct {
 	ID                    int
 	ChannelID             int
 	ModelName             string
@@ -40,7 +34,7 @@ type pricing struct {
 	Currency              string
 }
 
-type channelInput struct {
+type ChannelInput struct {
 	Name     string  `json:"name"`
 	BaseURL  string  `json:"base_url"`
 	APIKey   string  `json:"api_key"`
@@ -51,7 +45,7 @@ type channelInput struct {
 	Balance  *string `json:"balance"`
 }
 
-type pricingInput struct {
+type PricingInput struct {
 	ChannelID             int    `json:"channel_id"`
 	ModelName             string `json:"model_name"`
 	InputPricePer1M       string `json:"input_price_per_1m"`
@@ -60,7 +54,7 @@ type pricingInput struct {
 	Currency              string `json:"currency"`
 }
 
-type deletePricingInput struct {
+type DeletePricingInput struct {
 	ChannelID int    `json:"channel_id"`
 	ModelName string `json:"model_name"`
 }

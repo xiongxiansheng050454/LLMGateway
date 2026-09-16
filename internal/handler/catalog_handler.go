@@ -1,4 +1,4 @@
-package server
+package handler
 
 import (
 	"errors"
@@ -6,6 +6,9 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+
+	"LLMGateway/internal/domain"
+	"LLMGateway/internal/store"
 )
 
 func (a *app) catalogData(r *http.Request) (any, bool, int, string) {
@@ -17,7 +20,7 @@ func (a *app) catalogData(r *http.Request) (any, bool, int, string) {
 		return a.channelData(r, parts)
 	}
 	if parts[1] == "models" && len(parts) == 2 && r.Method == http.MethodGet {
-		return a.store.ListCatalogModels(r.URL.Query().Get("status") == "1"), true, 0, ""
+		return a.result(a.store.ListCatalogModels(r.URL.Query().Get("status") == "1"))
 	}
 	if parts[1] == "pricing" && len(parts) == 2 {
 		return a.pricingData(r)
@@ -29,7 +32,7 @@ func (a *app) channelData(r *http.Request, parts []string) (any, bool, int, stri
 	if len(parts) == 2 {
 		switch r.Method {
 		case http.MethodGet:
-			return a.store.ListChannels(), true, 0, ""
+			return a.result(a.store.ListChannels())
 		case http.MethodPost:
 			return a.createChannel(r)
 		}
@@ -71,9 +74,9 @@ func (a *app) channelModelData(r *http.Request, parts []string, channelID int) (
 	if len(parts) == 4 {
 		switch r.Method {
 		case http.MethodGet:
-			return a.store.ListChannelModels(channelID), true, 0, ""
+			return a.result(a.store.ListChannelModels(channelID))
 		case http.MethodPost:
-			var req channelModel
+			var req domain.ChannelModel
 			if err := readJSON(r, &req); err != nil {
 				return nil, true, http.StatusBadRequest, "invalid json"
 			}
@@ -103,7 +106,7 @@ func (a *app) channelModelData(r *http.Request, parts []string, channelID int) (
 }
 
 func (a *app) createChannel(r *http.Request) (any, bool, int, string) {
-	var req channelInput
+	var req domain.ChannelInput
 	if err := readJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
@@ -111,7 +114,7 @@ func (a *app) createChannel(r *http.Request) (any, bool, int, string) {
 }
 
 func (a *app) updateChannel(r *http.Request, id int) (any, bool, int, string) {
-	var req channelInput
+	var req domain.ChannelInput
 	if err := readJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
@@ -142,15 +145,15 @@ func (a *app) updateChannelBalance(r *http.Request, id int) (any, bool, int, str
 func (a *app) pricingData(r *http.Request) (any, bool, int, string) {
 	switch r.Method {
 	case http.MethodGet:
-		return a.store.ListPricing(), true, 0, ""
+		return a.result(a.store.ListPricing())
 	case http.MethodPost:
-		var req pricingInput
+		var req domain.PricingInput
 		if err := readJSON(r, &req); err != nil {
 			return nil, true, http.StatusBadRequest, "invalid json"
 		}
 		return a.result(a.store.UpsertPricing(req))
 	case http.MethodDelete:
-		var req deletePricingInput
+		var req domain.DeletePricingInput
 		if err := readJSON(r, &req); err != nil && err != io.EOF {
 			return nil, true, http.StatusBadRequest, "invalid json"
 		}
@@ -176,11 +179,14 @@ func (a *app) noBody(err error) (any, bool, int, string) {
 
 func errorResponse(err error) (any, bool, int, string) {
 	status := http.StatusInternalServerError
-	if errors.Is(err, errNotFound) {
+	if errors.Is(err, store.ErrNotFound) {
 		status = http.StatusNotFound
 	}
-	if errors.Is(err, errInvalid) {
+	if errors.Is(err, store.ErrInvalid) {
 		status = http.StatusBadRequest
 	}
-	return nil, true, status, strings.TrimPrefix(err.Error(), errInvalid.Error()+": ")
+	if errors.Is(err, store.ErrNotImplemented) {
+		status = http.StatusNotImplemented
+	}
+	return nil, true, status, strings.TrimPrefix(err.Error(), store.ErrInvalid.Error()+": ")
 }
