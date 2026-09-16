@@ -1,8 +1,10 @@
-package main
+package server
 
 import (
 	"encoding/json"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
@@ -18,13 +20,40 @@ type listResponse struct {
 	Total int   `json:"total"`
 }
 
-func NewHandler() http.Handler {
+func NewHandler(dashboardDir string) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthzHandler)
 	mux.HandleFunc("/admin/", adminHandler)
 	mux.HandleFunc("/admin", adminHandler)
-	mux.Handle("/", http.FileServer(http.Dir("dashboard")))
+
+	dashboard := http.FileServer(http.Dir(dashboardDir))
+	mux.HandleFunc("/dashboard/index.html", dashboardIndexHandler(dashboardDir))
+	mux.Handle("/dashboard/", http.StripPrefix("/dashboard", dashboard))
+	mux.Handle("/", dashboard)
 	return mux
+}
+
+func dashboardIndexHandler(dashboardDir string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			writeMethodNotAllowed(w)
+			return
+		}
+
+		file, err := os.Open(filepath.Join(dashboardDir, "index.html"))
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		defer file.Close()
+
+		info, err := file.Stat()
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		http.ServeContent(w, r, "index.html", info.ModTime(), file)
+	}
 }
 
 func healthzHandler(w http.ResponseWriter, r *http.Request) {
@@ -36,6 +65,11 @@ func healthzHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func adminHandler(w http.ResponseWriter, r *http.Request) {
+	writeCORSHeaders(w, r)
+	if r.Method == http.MethodOptions {
+		w.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if r.Method != http.MethodGet {
 		writeAdminError(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
@@ -61,7 +95,7 @@ func dashboardStartupData(r *http.Request) (any, bool) {
 			"active_user_count": 0,
 		}, true
 	case "/admin/stats/daily", "/admin/channels", "/admin/usage-logs", "/admin/users", "/admin/rate-limits", "/admin/models":
-		parsePagination(r)
+		ParsePagination(r)
 		return listResponse{List: []any{}, Total: 0}, true
 	case "/admin/stats/channels":
 		return map[string]any{"list": []any{}}, true
@@ -70,7 +104,7 @@ func dashboardStartupData(r *http.Request) (any, bool) {
 	}
 }
 
-func parsePagination(r *http.Request) (int, int) {
+func ParsePagination(r *http.Request) (int, int) {
 	q := r.URL.Query()
 	page := parsePositiveInt(q.Get("page"), 1)
 	pageSize := parsePositiveInt(q.Get("page_size"), 20)
@@ -95,6 +129,17 @@ func writeAdminError(w http.ResponseWriter, status int, message string) {
 
 func writeMethodNotAllowed(w http.ResponseWriter) {
 	writeJSON(w, http.StatusMethodNotAllowed, map[string]string{"error": "method not allowed"})
+}
+
+func writeCORSHeaders(w http.ResponseWriter, r *http.Request) {
+	origin := r.Header.Get("Origin")
+	if origin == "" {
+		return
+	}
+	w.Header().Set("Access-Control-Allow-Origin", origin)
+	w.Header().Set("Vary", "Origin")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type")
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {

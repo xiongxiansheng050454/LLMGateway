@@ -1,16 +1,17 @@
-package main
+package server
 
 import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 )
 
 func TestHealthz(t *testing.T) {
 	res := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
-	NewHandler().ServeHTTP(res, req)
+	newTestHandler().ServeHTTP(res, req)
 
 	if res.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", res.Code, http.StatusOK)
@@ -39,7 +40,7 @@ func TestDashboardStartupEndpoints(t *testing.T) {
 		{"/admin/models?status=1", nil, true},
 	}
 
-	handler := NewHandler()
+	handler := newTestHandler()
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
 			res := httptest.NewRecorder()
@@ -73,29 +74,65 @@ func TestDashboardStartupEndpoints(t *testing.T) {
 	}
 }
 
-func TestPaginationParsing(t *testing.T) {
-	page, pageSize := parsePagination(httptest.NewRequest(http.MethodGet, "/?page=2&page_size=50", nil))
-	if page != 2 || pageSize != 50 {
-		t.Fatalf("parsePagination valid = %d,%d; want 2,50", page, pageSize)
+func TestAdminCORS(t *testing.T) {
+	handler := newTestHandler()
+
+	res := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/admin/stats/overview", nil)
+	req.Header.Set("Origin", "http://example.test")
+	handler.ServeHTTP(res, req)
+	if res.Code != http.StatusOK {
+		t.Fatalf("GET status = %d, want %d", res.Code, http.StatusOK)
+	}
+	if got := res.Header().Get("Access-Control-Allow-Origin"); got != "http://example.test" {
+		t.Fatalf("GET Access-Control-Allow-Origin = %q", got)
 	}
 
-	page, pageSize = parsePagination(httptest.NewRequest(http.MethodGet, "/?page=-1&page_size=abc", nil))
+	res = httptest.NewRecorder()
+	req = httptest.NewRequest(http.MethodOptions, "/admin/stats/overview", nil)
+	req.Header.Set("Origin", "http://example.test")
+	req.Header.Set("Access-Control-Request-Method", http.MethodGet)
+	handler.ServeHTTP(res, req)
+	if res.Code != http.StatusNoContent {
+		t.Fatalf("OPTIONS status = %d, want %d", res.Code, http.StatusNoContent)
+	}
+	if got := res.Header().Get("Access-Control-Allow-Methods"); got != "GET, OPTIONS" {
+		t.Fatalf("OPTIONS Access-Control-Allow-Methods = %q", got)
+	}
+}
+
+func TestPaginationParsing(t *testing.T) {
+	page, pageSize := ParsePagination(httptest.NewRequest(http.MethodGet, "/?page=2&page_size=50", nil))
+	if page != 2 || pageSize != 50 {
+		t.Fatalf("ParsePagination valid = %d,%d; want 2,50", page, pageSize)
+	}
+
+	page, pageSize = ParsePagination(httptest.NewRequest(http.MethodGet, "/?page=-1&page_size=abc", nil))
 	if page != 1 || pageSize != 20 {
-		t.Fatalf("parsePagination fallback = %d,%d; want 1,20", page, pageSize)
+		t.Fatalf("ParsePagination fallback = %d,%d; want 1,20", page, pageSize)
 	}
 }
 
 func TestStaticDashboardServed(t *testing.T) {
-	res := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	NewHandler().ServeHTTP(res, req)
+	tests := []string{"/", "/dashboard/index.html", "/dashboard/js/data.js"}
+	for _, path := range tests {
+		t.Run(path, func(t *testing.T) {
+			res := httptest.NewRecorder()
+			req := httptest.NewRequest(http.MethodGet, path, nil)
+			newTestHandler().ServeHTTP(res, req)
 
-	if res.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d", res.Code, http.StatusOK)
+			if res.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", res.Code, http.StatusOK)
+			}
+			if res.Body.Len() == 0 {
+				t.Fatal("empty dashboard response")
+			}
+		})
 	}
-	if res.Body.Len() == 0 {
-		t.Fatal("empty dashboard response")
-	}
+}
+
+func newTestHandler() http.Handler {
+	return NewHandler(filepath.Join("..", "..", "dashboard"))
 }
 
 func assertListResponse(t *testing.T, data map[string]any) {

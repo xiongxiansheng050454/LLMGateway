@@ -4,6 +4,8 @@ import (
 	"log"
 	"net/http"
 	"os"
+
+	"LLMGateway/internal/server"
 )
 
 func main() {
@@ -13,7 +15,7 @@ func main() {
 	}
 
 	log.Printf("LLMGateway listening on %s", addr)
-	if err := http.ListenAndServe(addr, NewHandler()); err != nil {
+	if err := http.ListenAndServe(addr, server.NewHandler("dashboard")); err != nil {
 		log.Fatal(err)
 	}
 }
