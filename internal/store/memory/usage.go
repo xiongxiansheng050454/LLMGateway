@@ -79,6 +79,34 @@ func (s *Store) GetUsageLog(id int) (map[string]any, error) {
 	return nil, store.ErrNotFound
 }
 
+func (s *Store) CountRequestsSince(userID int, apiKeyID *int, since string) (int, error) {
+	if err := store.ValidateSince(since); err != nil {
+		return 0, err
+	}
+	sinceTime, _ := time.Parse(time.RFC3339, since)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	count := 0
+	for _, log := range s.usageLogs {
+		if log.UserID == nil || *log.UserID != userID {
+			continue
+		}
+		if apiKeyID != nil {
+			if log.APIKeyID == nil || *log.APIKeyID != *apiKeyID {
+				continue
+			}
+		}
+		created, err := time.Parse(time.RFC3339, log.CreatedAt)
+		if err != nil || created.Before(sinceTime) {
+			continue
+		}
+		count++
+	}
+	return count, nil
+}
+
 func (s *Store) StatsOverview(startTime, endTime string) (map[string]any, error) {
 	start, end, err := parseRange(startTime, endTime)
 	if err != nil {

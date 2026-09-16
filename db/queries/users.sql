@@ -150,3 +150,25 @@ WHERE id = sqlc.arg(id) AND user_id = sqlc.arg(user_id);
 
 -- name: DeleteKey :execrows
 DELETE FROM client_api_keys WHERE id = $1 AND user_id = $2;
+
+-- name: GetAuthContextByKeyHash :one
+SELECT
+    k.id AS key_id,
+    k.user_id,
+    k.key_name,
+    k.is_active AS key_active,
+    k.expires_at,
+    k.permissions,
+    k.rate_limit_overrides,
+    u.status AS user_status,
+    COALESCE(b.available_balance::text, '0.000000') AS available_balance,
+    COALESCE(b.frozen_balance::text, '0.000000') AS frozen_balance
+FROM client_api_keys k
+JOIN users u ON u.id = k.user_id
+LEFT JOIN user_balances b ON b.user_id = k.user_id
+WHERE k.key_hash = $1;
+
+-- name: UpdateKeyLastUsed :execrows
+UPDATE client_api_keys
+SET last_used_at = now(), updated_at = now()
+WHERE id = $1;

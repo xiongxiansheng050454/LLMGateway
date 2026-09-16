@@ -371,6 +371,33 @@ func (s *Store) DeletePricing(in domain.DeletePricingInput) error {
 	return nil
 }
 
+func (s *Store) GetPricing(channelID int, modelName string) (map[string]any, error) {
+	row, err := s.queries.GetPricing(context.Background(), sqlc.GetPricingParams{ChannelID: int64(channelID), ModelName: modelName})
+	if err != nil {
+		return nil, mapError(err)
+	}
+	return pricingDTO(row.ID, row.ChannelID, row.ChannelName, row.ModelName, textOrEmpty(row.UpstreamModel), row.InputPricePer1m, row.OutputPricePer1m, textValue(row.CachedInputPricePer1m), row.Currency), nil
+}
+
+func (s *Store) RouteCandidates(modelName string) (domain.ListResponse, error) {
+	rows, err := s.queries.ListRouteCandidates(context.Background(), modelName)
+	if err != nil {
+		return domain.ListResponse{}, mapError(err)
+	}
+	list := []any{}
+	for _, row := range rows {
+		list = append(list, map[string]any{
+			"channel_id":     int(row.ChannelID),
+			"channel_name":   row.ChannelName,
+			"upstream_model": row.UpstreamModel,
+			"priority":       int(row.Priority),
+			"weight":         int(row.Weight),
+			"balance":        optionalString(textValue(row.Balance)),
+		})
+	}
+	return domain.ListResponse{List: list, Total: len(list)}, nil
+}
+
 func (s *Store) TestChannel(channelID int) (map[string]any, error) {
 	ctx := context.Background()
 	if _, err := s.queries.GetChannel(ctx, int64(channelID)); err != nil {

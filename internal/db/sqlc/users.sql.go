@@ -192,6 +192,55 @@ func (q *Queries) DeleteUser(ctx context.Context, id int64) (int64, error) {
 	return result.RowsAffected(), nil
 }
 
+const getAuthContextByKeyHash = `-- name: GetAuthContextByKeyHash :one
+SELECT
+    k.id AS key_id,
+    k.user_id,
+    k.key_name,
+    k.is_active AS key_active,
+    k.expires_at,
+    k.permissions,
+    k.rate_limit_overrides,
+    u.status AS user_status,
+    COALESCE(b.available_balance::text, '0.000000') AS available_balance,
+    COALESCE(b.frozen_balance::text, '0.000000') AS frozen_balance
+FROM client_api_keys k
+JOIN users u ON u.id = k.user_id
+LEFT JOIN user_balances b ON b.user_id = k.user_id
+WHERE k.key_hash = $1
+`
+
+type GetAuthContextByKeyHashRow struct {
+	KeyID              int64              `json:"key_id"`
+	UserID             int64              `json:"user_id"`
+	KeyName            string             `json:"key_name"`
+	KeyActive          bool               `json:"key_active"`
+	ExpiresAt          pgtype.Timestamptz `json:"expires_at"`
+	Permissions        []byte             `json:"permissions"`
+	RateLimitOverrides []byte             `json:"rate_limit_overrides"`
+	UserStatus         string             `json:"user_status"`
+	AvailableBalance   interface{}        `json:"available_balance"`
+	FrozenBalance      interface{}        `json:"frozen_balance"`
+}
+
+func (q *Queries) GetAuthContextByKeyHash(ctx context.Context, keyHash string) (GetAuthContextByKeyHashRow, error) {
+	row := q.db.QueryRow(ctx, getAuthContextByKeyHash, keyHash)
+	var i GetAuthContextByKeyHashRow
+	err := row.Scan(
+		&i.KeyID,
+		&i.UserID,
+		&i.KeyName,
+		&i.KeyActive,
+		&i.ExpiresAt,
+		&i.Permissions,
+		&i.RateLimitOverrides,
+		&i.UserStatus,
+		&i.AvailableBalance,
+		&i.FrozenBalance,
+	)
+	return i, err
+}
+
 const getBalanceTransactionByOrder = `-- name: GetBalanceTransactionByOrder :one
 SELECT
     id,
@@ -563,6 +612,20 @@ type UpdateKeyActiveParams struct {
 
 func (q *Queries) UpdateKeyActive(ctx context.Context, arg UpdateKeyActiveParams) (int64, error) {
 	result, err := q.db.Exec(ctx, updateKeyActive, arg.IsActive, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updateKeyLastUsed = `-- name: UpdateKeyLastUsed :execrows
+UPDATE client_api_keys
+SET last_used_at = now(), updated_at = now()
+WHERE id = $1
+`
+
+func (q *Queries) UpdateKeyLastUsed(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, updateKeyLastUsed, id)
 	if err != nil {
 		return 0, err
 	}

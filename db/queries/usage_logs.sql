@@ -98,6 +98,13 @@ VALUES (
 )
 RETURNING id;
 
+-- name: CountRequestsSince :one
+SELECT count(*)::int
+FROM usage_logs
+WHERE user_id = sqlc.arg(user_id)
+  AND created_at >= sqlc.arg(since)::timestamptz
+  AND (sqlc.narg(api_key_id)::bigint IS NULL OR api_key_id = sqlc.narg(api_key_id)::bigint);
+
 -- name: StatsOverview :one
 SELECT
     count(*)::bigint AS request_count,

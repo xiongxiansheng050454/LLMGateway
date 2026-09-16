@@ -23,6 +23,15 @@ func ValidateTimeRange(startTime, endTime string) error {
 	return nil
 }
 
+// ValidateSince requires a non-empty RFC3339 timestamp. Used by window
+// counting so memory and PostgreSQL cannot diverge on an empty value.
+func ValidateSince(since string) error {
+	if since == "" {
+		return fmt.Errorf("%w: since is required", ErrInvalid)
+	}
+	return ValidateTimeRange(since, "")
+}
+
 // ValidateDateRange checks optional YYYY-MM-DD bounds.
 func ValidateDateRange(dateFrom, dateTo string) error {
 	if dateFrom != "" {
@@ -49,4 +58,9 @@ type UsageStore interface {
 	StatsOverview(startTime, endTime string) (map[string]any, error)
 	StatsDaily(dateFrom, dateTo string, page, pageSize int) (domain.ListResponse, error)
 	StatsChannels(startTime, endTime string) (domain.ListResponse, error)
+
+	// CountRequestsSince counts request attempts for a user (optionally scoped
+	// to a key) since an RFC3339 timestamp. It counts all attempts, including
+	// failures, for window-based rate limiting.
+	CountRequestsSince(userID int, apiKeyID *int, since string) (int, error)
 }

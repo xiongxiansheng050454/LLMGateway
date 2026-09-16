@@ -20,4 +20,11 @@ type ChannelStore interface {
 	UpsertPricing(domain.PricingInput) (map[string]any, error)
 	DeletePricing(domain.DeletePricingInput) error
 	TestChannel(int) (map[string]any, error)
+
+	// GetPricing returns the single pricing row for a channel + public model.
+	// Missing rows return ErrNotFound.
+	GetPricing(channelID int, modelName string) (map[string]any, error)
+	// RouteCandidates returns enabled model mappings on enabled channels for a
+	// public model name, ordered by priority desc, weight desc, channel id.
+	RouteCandidates(modelName string) (domain.ListResponse, error)
 }

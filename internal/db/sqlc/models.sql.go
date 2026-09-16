@@ -179,6 +179,56 @@ func (q *Queries) ListChannelModels(ctx context.Context, channelID int64) ([]Lis
 	return items, nil
 }
 
+const listRouteCandidates = `-- name: ListRouteCandidates :many
+SELECT
+    c.id AS channel_id,
+    c.name AS channel_name,
+    cm.upstream_model,
+    c.priority,
+    c.weight,
+    COALESCE(c.balance::text, '') AS balance
+FROM channel_models cm
+JOIN channels c ON c.id = cm.channel_id
+WHERE cm.model_name = $1 AND cm.enabled = true AND c.status = 1
+ORDER BY c.priority DESC, c.weight DESC, c.id
+`
+
+type ListRouteCandidatesRow struct {
+	ChannelID     int64       `json:"channel_id"`
+	ChannelName   string      `json:"channel_name"`
+	UpstreamModel string      `json:"upstream_model"`
+	Priority      int32       `json:"priority"`
+	Weight        int32       `json:"weight"`
+	Balance       interface{} `json:"balance"`
+}
+
+func (q *Queries) ListRouteCandidates(ctx context.Context, modelName string) ([]ListRouteCandidatesRow, error) {
+	rows, err := q.db.Query(ctx, listRouteCandidates, modelName)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRouteCandidatesRow{}
+	for rows.Next() {
+		var i ListRouteCandidatesRow
+		if err := rows.Scan(
+			&i.ChannelID,
+			&i.ChannelName,
+			&i.UpstreamModel,
+			&i.Priority,
+			&i.Weight,
+			&i.Balance,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateChannelModel = `-- name: UpdateChannelModel :one
 UPDATE channel_models
 SET upstream_model = $1, enabled = $2, updated_at = now()
