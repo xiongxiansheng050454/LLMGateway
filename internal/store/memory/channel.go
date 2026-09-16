@@ -3,33 +3,11 @@ package memory
 import (
 	"fmt"
 	"strings"
-	"sync"
 
 	"LLMGateway/internal/domain"
 	"LLMGateway/internal/money"
 	"LLMGateway/internal/store"
 )
-
-type Store struct {
-	mu            sync.Mutex
-	nextChannelID int
-	nextModelID   int
-	nextPricingID int
-	channels      map[int]*domain.Channel
-	models        map[int]map[int]*domain.ChannelModel
-	pricing       map[string]*domain.Pricing
-}
-
-func New() *Store {
-	return &Store{
-		nextChannelID: 1,
-		nextModelID:   1,
-		nextPricingID: 1,
-		channels:      map[int]*domain.Channel{},
-		models:        map[int]map[int]*domain.ChannelModel{},
-		pricing:       map[string]*domain.Pricing{},
-	}
-}
 
 func (s *Store) ListChannels() (domain.ListResponse, error) {
 	s.mu.Lock()
@@ -284,42 +262,4 @@ func (s *Store) TestChannel(channelID int) (map[string]any, error) {
 		items = append(items, map[string]any{"model_alias": m.ModelName, "upstream_model": m.UpstreamModel, "http_status": 0, "latency_ms": 0, "ok": false, "error": "not tested in MVP"})
 	}
 	return map[string]any{"list": items}, nil
-}
-
-func (s *Store) channelDTO(ch *domain.Channel) map[string]any {
-	return map[string]any{"id": ch.ID, "name": ch.Name, "base_url": ch.BaseURL, "auth_type": ch.AuthType, "status": ch.Status, "weight": ch.Weight, "priority": ch.Priority, "balance": ch.Balance, "model_count": len(s.models[ch.ID])}
-}
-
-func (s *Store) pricingDTO(p *domain.Pricing) map[string]any {
-	channelName, upstream := "", ""
-	if ch := s.channels[p.ChannelID]; ch != nil {
-		channelName = ch.Name
-	}
-	for _, m := range s.models[p.ChannelID] {
-		if m.ModelName == p.ModelName {
-			upstream = m.UpstreamModel
-			break
-		}
-	}
-	return map[string]any{"id": p.ID, "channel_id": p.ChannelID, "channel_name": channelName, "model_name": p.ModelName, "upstream_model": upstream, "input_price_per_1m": p.InputPricePer1M, "output_price_per_1m": p.OutputPricePer1M, "cached_input_price_per_1m": p.CachedInputPricePer1M, "currency": p.Currency}
-}
-
-func (s *Store) hasChannelModelLocked(channelID int, modelName string) bool {
-	for _, m := range s.models[channelID] {
-		if m.ModelName == modelName {
-			return true
-		}
-	}
-	return false
-}
-
-func cleanBalance(balance *string) *string {
-	if balance == nil || *balance == "" {
-		return nil
-	}
-	return balance
-}
-
-func pricingKey(channelID int, model string) string {
-	return fmt.Sprintf("%d:%s", channelID, model)
 }

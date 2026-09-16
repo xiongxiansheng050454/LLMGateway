@@ -1,0 +1,75 @@
+package memory
+
+import (
+	"fmt"
+	"sync"
+
+	"LLMGateway/internal/domain"
+	"LLMGateway/internal/store"
+)
+
+// Store is the in-memory implementation of store.Store. It is the default for
+// local runs, tests and feature work before PostgreSQL is wired up.
+type Store struct {
+	mu            sync.Mutex
+	nextChannelID int
+	nextModelID   int
+	nextPricingID int
+	channels      map[int]*domain.Channel
+	models        map[int]map[int]*domain.ChannelModel
+	pricing       map[string]*domain.Pricing
+}
+
+var (
+	_ store.Store        = (*Store)(nil)
+	_ store.ChannelStore = (*Store)(nil)
+)
+
+func New() *Store {
+	return &Store{
+		nextChannelID: 1,
+		nextModelID:   1,
+		nextPricingID: 1,
+		channels:      map[int]*domain.Channel{},
+		models:        map[int]map[int]*domain.ChannelModel{},
+		pricing:       map[string]*domain.Pricing{},
+	}
+}
+
+func (s *Store) channelDTO(ch *domain.Channel) map[string]any {
+	return map[string]any{"id": ch.ID, "name": ch.Name, "base_url": ch.BaseURL, "auth_type": ch.AuthType, "status": ch.Status, "weight": ch.Weight, "priority": ch.Priority, "balance": ch.Balance, "model_count": len(s.models[ch.ID])}
+}
+
+func (s *Store) pricingDTO(p *domain.Pricing) map[string]any {
+	channelName, upstream := "", ""
+	if ch := s.channels[p.ChannelID]; ch != nil {
+		channelName = ch.Name
+	}
+	for _, m := range s.models[p.ChannelID] {
+		if m.ModelName == p.ModelName {
+			upstream = m.UpstreamModel
+			break
+		}
+	}
+	return map[string]any{"id": p.ID, "channel_id": p.ChannelID, "channel_name": channelName, "model_name": p.ModelName, "upstream_model": upstream, "input_price_per_1m": p.InputPricePer1M, "output_price_per_1m": p.OutputPricePer1M, "cached_input_price_per_1m": p.CachedInputPricePer1M, "currency": p.Currency}
+}
+
+func (s *Store) hasChannelModelLocked(channelID int, modelName string) bool {
+	for _, m := range s.models[channelID] {
+		if m.ModelName == modelName {
+			return true
+		}
+	}
+	return false
+}
+
+func cleanBalance(balance *string) *string {
+	if balance == nil || *balance == "" {
+		return nil
+	}
+	return balance
+}
+
+func pricingKey(channelID int, model string) string {
+	return fmt.Sprintf("%d:%s", channelID, model)
+}

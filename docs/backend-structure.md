@@ -40,6 +40,34 @@ dashboard/                   静态前端控制台
 - 阶段说明：本阶段 `internal/store/memory` 仍以进程内明文 `api_key` 支撑 MVP（不落盘），`internal/crypto` 先提供加解密与哈希能力；PostgreSQL store（#12）落库时使用 `api_key_ciphertext`，并复用本包完成加解密。
 - 预留 `internal/service` 用于 #6 的跨 store 业务编排（auth/routing/billing/ratelimit/usage）；是否引入由 #6 决定，本阶段不创建空包。
 
+## 文件组织约定
+
+目录保持现有深度与扁平度：包内按领域拆文件，不再新增子包。这样既避免单文件膨胀，也避免 import 环和过度分层。
+
+- 每个包内按领域命名文件，禁止把多个领域堆进同一个文件：
+  - `internal/domain/`：`common.go`、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
+  - `internal/store/`：`store.go`（错误 + 组合接口）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
+  - `internal/store/memory/`：`memory.go`（结构体/构造函数/共享辅助）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
+  - `internal/store/postgres/`：`postgres.go`（结构体/构造函数）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
+  - `internal/handler/`：`handler.go`（路由/分派/响应/分页/静态托管）、`admin_channel.go`、`admin_pricing.go`、`admin_user.go`、`admin_usage.go`、`channel_upstream.go`、`openai.go`
+- `store.Store` 由领域子接口组合而成，禁止继续往 `store.go` 堆方法：
+
+```go
+type Store interface {
+    ChannelStore
+    // UserStore / UsageStore / RateLimitStore 由对应 issue 加入
+}
+```
+
+- 实现必须放在 `internal/store/memory` 与 `internal/store/postgres`，并以编译期断言固定：
+
+```go
+var _ store.ChannelStore = (*memory.Store)(nil)
+```
+
+- 领域文件边界与 `db/queries/*.sql` 的领域划分保持一致（channels/models/pricing/users/rate_limits/usage_logs）。
+- 拆分与移动只做等价搬迁，不得顺手改变路由、响应结构、状态码或错误语义。
+
 ## 本地 PostgreSQL
 
 ```powershell

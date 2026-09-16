@@ -1,12 +1,8 @@
 package handler
 
 import (
-	"bytes"
-	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"strconv"
-	"strings"
 	"testing"
 )
 
@@ -137,65 +133,4 @@ func TestDeleteMissingModelMappingReturnsNotFound(t *testing.T) {
 	if res.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d; body=%s", res.Code, http.StatusNotFound, res.Body.String())
 	}
-}
-
-func TestPricingRejectsInvalidChannelOrModel(t *testing.T) {
-	handler := newTestHandler()
-
-	res := adminRaw(t, handler, http.MethodPost, "/admin/pricing", map[string]any{"channel_id": 404, "model_name": "missing", "input_price_per_1m": "0.10000000", "output_price_per_1m": "0.20000000", "currency": "USD"})
-	if res.Code != http.StatusNotFound {
-		t.Fatalf("missing channel status = %d, want %d; body=%s", res.Code, http.StatusNotFound, res.Body.String())
-	}
-
-	adminDo(t, handler, http.MethodPost, "/admin/channels", map[string]any{"name": "OpenAI", "base_url": "https://api.openai.test", "api_key": "sk-secret", "auth_type": "bearer", "status": 1})
-	res = adminRaw(t, handler, http.MethodPost, "/admin/pricing", map[string]any{"channel_id": 1, "model_name": "missing", "input_price_per_1m": "0.10000000", "output_price_per_1m": "0.20000000", "currency": "USD"})
-	if res.Code != http.StatusBadRequest {
-		t.Fatalf("missing model status = %d, want %d; body=%s", res.Code, http.StatusBadRequest, res.Body.String())
-	}
-}
-
-func adminDo(t *testing.T, handler http.Handler, method, path string, body any) map[string]any {
-	t.Helper()
-	res := adminRaw(t, handler, method, path, body)
-	if res.Code != http.StatusOK {
-		t.Fatalf("%s %s status = %d, want 200; body=%s", method, path, res.Code, res.Body.String())
-	}
-	var out map[string]any
-	decodeJSON(t, res, &out)
-	if out["code"].(float64) != 0 {
-		t.Fatalf("%s %s code = %v; body=%s", method, path, out["code"], res.Body.String())
-	}
-	return out
-}
-
-func adminRaw(t *testing.T, handler http.Handler, method, path string, body any) *httptest.ResponseRecorder {
-	t.Helper()
-	var buf bytes.Buffer
-	if body != nil {
-		if err := json.NewEncoder(&buf).Encode(body); err != nil {
-			t.Fatal(err)
-		}
-	}
-	req := httptest.NewRequest(method, path, &buf)
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-	res := httptest.NewRecorder()
-	handler.ServeHTTP(res, req)
-	return res
-}
-
-func assertNoSecret(t *testing.T, value any, secret string) {
-	t.Helper()
-	b, err := json.Marshal(value)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if strings.Contains(string(b), secret) || strings.Contains(string(b), "api_key") {
-		t.Fatalf("response leaked secret or api_key: %s", b)
-	}
-}
-
-func itoa(v int) string {
-	return strconv.Itoa(v)
 }

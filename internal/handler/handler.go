@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -99,6 +100,25 @@ func (a *app) adminData(r *http.Request) (any, bool, int, string) {
 	return data, ok, 0, ""
 }
 
+// catalogData dispatches /admin requests to the channel, model and pricing
+// domain handlers.
+func (a *app) catalogData(r *http.Request) (any, bool, int, string) {
+	parts := splitPath(strings.TrimSuffix(r.URL.Path, "/"))
+	if len(parts) < 2 || parts[0] != "admin" {
+		return nil, false, 0, ""
+	}
+	if parts[1] == "channels" {
+		return a.channelData(r, parts)
+	}
+	if parts[1] == "models" && len(parts) == 2 && r.Method == http.MethodGet {
+		return a.result(a.store.ListCatalogModels(r.URL.Query().Get("status") == "1"))
+	}
+	if parts[1] == "pricing" && len(parts) == 2 {
+		return a.pricingData(r)
+	}
+	return nil, false, 0, ""
+}
+
 func dashboardStartupData(r *http.Request) (any, bool) {
 	switch strings.TrimSuffix(r.URL.Path, "/") {
 	case "/admin/stats/overview":
@@ -145,6 +165,34 @@ func parsePositiveInt(value string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+func (a *app) result(data any, err error) (any, bool, int, string) {
+	if err != nil {
+		return errorResponse(err)
+	}
+	return data, true, 0, ""
+}
+
+func (a *app) noBody(err error) (any, bool, int, string) {
+	if err != nil {
+		return errorResponse(err)
+	}
+	return map[string]any{"deleted": true}, true, 0, ""
+}
+
+func errorResponse(err error) (any, bool, int, string) {
+	status := http.StatusInternalServerError
+	if errors.Is(err, store.ErrNotFound) {
+		status = http.StatusNotFound
+	}
+	if errors.Is(err, store.ErrInvalid) {
+		status = http.StatusBadRequest
+	}
+	if errors.Is(err, store.ErrNotImplemented) {
+		status = http.StatusNotImplemented
+	}
+	return nil, true, status, strings.TrimPrefix(err.Error(), store.ErrInvalid.Error()+": ")
 }
 
 func writeAdminOK(w http.ResponseWriter, data any) {

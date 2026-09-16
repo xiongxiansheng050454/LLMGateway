@@ -1,32 +1,11 @@
 package handler
 
 import (
-	"errors"
-	"io"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"LLMGateway/internal/domain"
-	"LLMGateway/internal/store"
 )
-
-func (a *app) catalogData(r *http.Request) (any, bool, int, string) {
-	parts := splitPath(strings.TrimSuffix(r.URL.Path, "/"))
-	if len(parts) < 2 || parts[0] != "admin" {
-		return nil, false, 0, ""
-	}
-	if parts[1] == "channels" {
-		return a.channelData(r, parts)
-	}
-	if parts[1] == "models" && len(parts) == 2 && r.Method == http.MethodGet {
-		return a.result(a.store.ListCatalogModels(r.URL.Query().Get("status") == "1"))
-	}
-	if parts[1] == "pricing" && len(parts) == 2 {
-		return a.pricingData(r)
-	}
-	return nil, false, 0, ""
-}
 
 func (a *app) channelData(r *http.Request, parts []string) (any, bool, int, string) {
 	if len(parts) == 2 {
@@ -140,53 +119,4 @@ func (a *app) updateChannelBalance(r *http.Request, id int) (any, bool, int, str
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
 	return a.result(a.store.UpdateChannelBalance(id, req.Balance, req.Delta))
-}
-
-func (a *app) pricingData(r *http.Request) (any, bool, int, string) {
-	switch r.Method {
-	case http.MethodGet:
-		return a.result(a.store.ListPricing())
-	case http.MethodPost:
-		var req domain.PricingInput
-		if err := readJSON(r, &req); err != nil {
-			return nil, true, http.StatusBadRequest, "invalid json"
-		}
-		return a.result(a.store.UpsertPricing(req))
-	case http.MethodDelete:
-		var req domain.DeletePricingInput
-		if err := readJSON(r, &req); err != nil && err != io.EOF {
-			return nil, true, http.StatusBadRequest, "invalid json"
-		}
-		return a.noBody(a.store.DeletePricing(req))
-	default:
-		return nil, true, http.StatusMethodNotAllowed, "method not allowed"
-	}
-}
-
-func (a *app) result(data any, err error) (any, bool, int, string) {
-	if err != nil {
-		return errorResponse(err)
-	}
-	return data, true, 0, ""
-}
-
-func (a *app) noBody(err error) (any, bool, int, string) {
-	if err != nil {
-		return errorResponse(err)
-	}
-	return map[string]any{"deleted": true}, true, 0, ""
-}
-
-func errorResponse(err error) (any, bool, int, string) {
-	status := http.StatusInternalServerError
-	if errors.Is(err, store.ErrNotFound) {
-		status = http.StatusNotFound
-	}
-	if errors.Is(err, store.ErrInvalid) {
-		status = http.StatusBadRequest
-	}
-	if errors.Is(err, store.ErrNotImplemented) {
-		status = http.StatusNotImplemented
-	}
-	return nil, true, status, strings.TrimPrefix(err.Error(), store.ErrInvalid.Error()+": ")
 }
