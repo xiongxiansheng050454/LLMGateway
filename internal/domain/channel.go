@@ -1,10 +1,5 @@
 package domain
 
-type ListResponse struct {
-	List  []any `json:"list"`
-	Total int   `json:"total"`
-}
-
 type Channel struct {
 	ID      int
 	Name    string

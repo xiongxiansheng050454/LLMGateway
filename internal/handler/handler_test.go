@@ -1,10 +1,12 @@
 package handler
 
 import (
+	"bytes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -153,4 +155,50 @@ func decodeJSON(t *testing.T, res *httptest.ResponseRecorder, v any) {
 	if err := json.Unmarshal(res.Body.Bytes(), v); err != nil {
 		t.Fatalf("decode JSON: %v; body=%s", err, res.Body.String())
 	}
+}
+
+func adminDo(t *testing.T, handler http.Handler, method, path string, body any) map[string]any {
+	t.Helper()
+	res := adminRaw(t, handler, method, path, body)
+	if res.Code != http.StatusOK {
+		t.Fatalf("%s %s status = %d, want 200; body=%s", method, path, res.Code, res.Body.String())
+	}
+	var out map[string]any
+	decodeJSON(t, res, &out)
+	if out["code"].(float64) != 0 {
+		t.Fatalf("%s %s code = %v; body=%s", method, path, out["code"], res.Body.String())
+	}
+	return out
+}
+
+func adminRaw(t *testing.T, handler http.Handler, method, path string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+	var buf bytes.Buffer
+	if body != nil {
+		if err := json.NewEncoder(&buf).Encode(body); err != nil {
+			t.Fatal(err)
+		}
+	}
+	req := httptest.NewRequest(method, path, &buf)
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	res := httptest.NewRecorder()
+	handler.ServeHTTP(res, req)
+	return res
+}
+
+func assertNoSecret(t *testing.T, value any, secret string) {
+	t.Helper()
+	b, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(b), secret) || strings.Contains(string(b), "api_key") {
+		t.Fatalf("response leaked secret or api_key: %s", b)
+	}
+}
+
+func itoa(v int) string {
+	return strconv.Itoa(v)
 }
