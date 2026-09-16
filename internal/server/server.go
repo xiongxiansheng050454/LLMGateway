@@ -7,24 +7,24 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
-type adminResponse struct {
-	Code    int    `json:"code"`
-	Message string `json:"message"`
-	Data    any    `json:"data"`
-}
-
-type listResponse struct {
-	List  []any `json:"list"`
-	Total int   `json:"total"`
+type app struct {
+	store  Store
+	client *http.Client
 }
 
 func NewHandler(dashboardDir string) http.Handler {
+	a := &app{
+		store:  NewMemoryStore(),
+		client: &http.Client{Timeout: 5 * time.Second},
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", healthzHandler)
-	mux.HandleFunc("/admin/", adminHandler)
-	mux.HandleFunc("/admin", adminHandler)
+	mux.HandleFunc("/admin/", a.adminHandler)
+	mux.HandleFunc("/admin", a.adminHandler)
 
 	dashboard := http.FileServer(http.Dir(dashboardDir))
 	mux.HandleFunc("/dashboard/index.html", dashboardIndexHandler(dashboardDir))
@@ -64,23 +64,34 @@ func healthzHandler(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func adminHandler(w http.ResponseWriter, r *http.Request) {
+func (a *app) adminHandler(w http.ResponseWriter, r *http.Request) {
 	writeCORSHeaders(w, r)
 	if r.Method == http.MethodOptions {
 		w.WriteHeader(http.StatusNoContent)
 		return
 	}
-	if r.Method != http.MethodGet {
-		writeAdminError(w, http.StatusMethodNotAllowed, "method not allowed")
+
+	data, ok, errStatus, errMsg := a.adminData(r)
+	if errStatus != 0 {
+		writeAdminError(w, errStatus, errMsg)
 		return
 	}
-
-	data, ok := dashboardStartupData(r)
 	if !ok {
 		writeAdminError(w, http.StatusNotFound, "not found")
 		return
 	}
 	writeAdminOK(w, data)
+}
+
+func (a *app) adminData(r *http.Request) (any, bool, int, string) {
+	if data, ok, status, msg := a.catalogData(r); ok || status != 0 {
+		return data, ok, status, msg
+	}
+	if r.Method != http.MethodGet {
+		return nil, false, http.StatusMethodNotAllowed, "method not allowed"
+	}
+	data, ok := dashboardStartupData(r)
+	return data, ok, 0, ""
 }
 
 func dashboardStartupData(r *http.Request) (any, bool) {
@@ -102,6 +113,18 @@ func dashboardStartupData(r *http.Request) (any, bool) {
 	default:
 		return nil, false
 	}
+}
+
+func splitPath(path string) []string {
+	parts := strings.Split(strings.Trim(path, "/"), "/")
+	if len(parts) == 1 && parts[0] == "" {
+		return nil
+	}
+	return parts
+}
+
+func readJSON(r *http.Request, v any) error {
+	return json.NewDecoder(r.Body).Decode(v)
 }
 
 func ParsePagination(r *http.Request) (int, int) {
@@ -138,7 +161,7 @@ func writeCORSHeaders(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Access-Control-Allow-Origin", origin)
 	w.Header().Set("Vary", "Origin")
-	w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+	w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS")
 	w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type")
 }
 

@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -96,7 +97,7 @@ func TestAdminCORS(t *testing.T) {
 	if res.Code != http.StatusNoContent {
 		t.Fatalf("OPTIONS status = %d, want %d", res.Code, http.StatusNoContent)
 	}
-	if got := res.Header().Get("Access-Control-Allow-Methods"); got != "GET, OPTIONS" {
+	if got := res.Header().Get("Access-Control-Allow-Methods"); !strings.Contains(got, http.MethodGet) || !strings.Contains(got, http.MethodOptions) {
 		t.Fatalf("OPTIONS Access-Control-Allow-Methods = %q", got)
 	}
 }
