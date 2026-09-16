@@ -24,18 +24,117 @@ func (q *Queries) CountRateLimitRules(ctx context.Context, enabled pgtype.Bool) 
 	return column_1, err
 }
 
+const createRateLimitRule = `-- name: CreateRateLimitRule :one
+INSERT INTO rate_limit_rules (rule_name, target_type, target_value, metric, limit_value, window_seconds, action, priority, enabled, extras)
+VALUES (
+    $1,
+    $2,
+    $3,
+    $4,
+    $5,
+    $6,
+    $7,
+    $8,
+    $9,
+    $10
+)
+RETURNING id
+`
+
+type CreateRateLimitRuleParams struct {
+	RuleName      string `json:"rule_name"`
+	TargetType    string `json:"target_type"`
+	TargetValue   string `json:"target_value"`
+	Metric        string `json:"metric"`
+	LimitValue    int64  `json:"limit_value"`
+	WindowSeconds int32  `json:"window_seconds"`
+	Action        string `json:"action"`
+	Priority      int32  `json:"priority"`
+	Enabled       bool   `json:"enabled"`
+	Extras        []byte `json:"extras"`
+}
+
+func (q *Queries) CreateRateLimitRule(ctx context.Context, arg CreateRateLimitRuleParams) (int64, error) {
+	row := q.db.QueryRow(ctx, createRateLimitRule,
+		arg.RuleName,
+		arg.TargetType,
+		arg.TargetValue,
+		arg.Metric,
+		arg.LimitValue,
+		arg.WindowSeconds,
+		arg.Action,
+		arg.Priority,
+		arg.Enabled,
+		arg.Extras,
+	)
+	var id int64
+	err := row.Scan(&id)
+	return id, err
+}
+
+const deleteRateLimitRule = `-- name: DeleteRateLimitRule :execrows
+DELETE FROM rate_limit_rules WHERE id = $1
+`
+
+func (q *Queries) DeleteRateLimitRule(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.Exec(ctx, deleteRateLimitRule, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const getRateLimitRule = `-- name: GetRateLimitRule :one
+SELECT id, rule_name, target_type, target_value, metric, limit_value, window_seconds, action, priority, enabled, extras
+FROM rate_limit_rules
+WHERE id = $1
+`
+
+type GetRateLimitRuleRow struct {
+	ID            int64  `json:"id"`
+	RuleName      string `json:"rule_name"`
+	TargetType    string `json:"target_type"`
+	TargetValue   string `json:"target_value"`
+	Metric        string `json:"metric"`
+	LimitValue    int64  `json:"limit_value"`
+	WindowSeconds int32  `json:"window_seconds"`
+	Action        string `json:"action"`
+	Priority      int32  `json:"priority"`
+	Enabled       bool   `json:"enabled"`
+	Extras        []byte `json:"extras"`
+}
+
+func (q *Queries) GetRateLimitRule(ctx context.Context, id int64) (GetRateLimitRuleRow, error) {
+	row := q.db.QueryRow(ctx, getRateLimitRule, id)
+	var i GetRateLimitRuleRow
+	err := row.Scan(
+		&i.ID,
+		&i.RuleName,
+		&i.TargetType,
+		&i.TargetValue,
+		&i.Metric,
+		&i.LimitValue,
+		&i.WindowSeconds,
+		&i.Action,
+		&i.Priority,
+		&i.Enabled,
+		&i.Extras,
+	)
+	return i, err
+}
+
 const listRateLimitRules = `-- name: ListRateLimitRules :many
 SELECT id, rule_name, target_type, target_value, metric, limit_value, window_seconds, action, priority, enabled, extras
 FROM rate_limit_rules
-WHERE $3::boolean IS NULL OR enabled = $3::boolean
+WHERE $1::boolean IS NULL OR enabled = $1::boolean
 ORDER BY priority, id
-LIMIT $1 OFFSET $2
+LIMIT $3 OFFSET $2
 `
 
 type ListRateLimitRulesParams struct {
-	Limit   int32       `json:"limit"`
-	Offset  int32       `json:"offset"`
-	Enabled pgtype.Bool `json:"enabled"`
+	Enabled    pgtype.Bool `json:"enabled"`
+	PageOffset int32       `json:"page_offset"`
+	PageLimit  int32       `json:"page_limit"`
 }
 
 type ListRateLimitRulesRow struct {
@@ -53,7 +152,7 @@ type ListRateLimitRulesRow struct {
 }
 
 func (q *Queries) ListRateLimitRules(ctx context.Context, arg ListRateLimitRulesParams) ([]ListRateLimitRulesRow, error) {
-	rows, err := q.db.Query(ctx, listRateLimitRules, arg.Limit, arg.Offset, arg.Enabled)
+	rows, err := q.db.Query(ctx, listRateLimitRules, arg.Enabled, arg.PageOffset, arg.PageLimit)
 	if err != nil {
 		return nil, err
 	}
@@ -82,4 +181,73 @@ func (q *Queries) ListRateLimitRules(ctx context.Context, arg ListRateLimitRules
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateRateLimitRule = `-- name: UpdateRateLimitRule :execrows
+UPDATE rate_limit_rules
+SET rule_name = $1,
+    target_type = $2,
+    target_value = $3,
+    metric = $4,
+    limit_value = $5,
+    window_seconds = $6,
+    action = $7,
+    priority = $8,
+    enabled = $9,
+    extras = $10,
+    updated_at = now()
+WHERE id = $11
+`
+
+type UpdateRateLimitRuleParams struct {
+	RuleName      string `json:"rule_name"`
+	TargetType    string `json:"target_type"`
+	TargetValue   string `json:"target_value"`
+	Metric        string `json:"metric"`
+	LimitValue    int64  `json:"limit_value"`
+	WindowSeconds int32  `json:"window_seconds"`
+	Action        string `json:"action"`
+	Priority      int32  `json:"priority"`
+	Enabled       bool   `json:"enabled"`
+	Extras        []byte `json:"extras"`
+	ID            int64  `json:"id"`
+}
+
+func (q *Queries) UpdateRateLimitRule(ctx context.Context, arg UpdateRateLimitRuleParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateRateLimitRule,
+		arg.RuleName,
+		arg.TargetType,
+		arg.TargetValue,
+		arg.Metric,
+		arg.LimitValue,
+		arg.WindowSeconds,
+		arg.Action,
+		arg.Priority,
+		arg.Enabled,
+		arg.Extras,
+		arg.ID,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const updateRateLimitRuleEnabled = `-- name: UpdateRateLimitRuleEnabled :execrows
+UPDATE rate_limit_rules
+SET enabled = $1, updated_at = now()
+WHERE id = $2
+`
+
+type UpdateRateLimitRuleEnabledParams struct {
+	Enabled bool  `json:"enabled"`
+	ID      int64 `json:"id"`
+}
+
+func (q *Queries) UpdateRateLimitRuleEnabled(ctx context.Context, arg UpdateRateLimitRuleEnabledParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateRateLimitRuleEnabled, arg.Enabled, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

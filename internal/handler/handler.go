@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"LLMGateway/internal/domain"
 	"LLMGateway/internal/store"
 )
 
@@ -96,11 +95,13 @@ func (a *app) adminData(r *http.Request) (any, bool, int, string) {
 	if data, ok, status, msg := a.userData(r); ok || status != 0 {
 		return data, ok, status, msg
 	}
-	if r.Method != http.MethodGet {
-		return nil, false, http.StatusMethodNotAllowed, "method not allowed"
+	if data, ok, status, msg := a.rateLimitData(r); ok || status != 0 {
+		return data, ok, status, msg
 	}
-	data, ok := dashboardStartupData(r)
-	return data, ok, 0, ""
+	if data, ok, status, msg := a.usageData(r); ok || status != 0 {
+		return data, ok, status, msg
+	}
+	return nil, false, 0, ""
 }
 
 // catalogData dispatches /admin requests to the channel, model and pricing
@@ -120,27 +121,6 @@ func (a *app) catalogData(r *http.Request) (any, bool, int, string) {
 		return a.pricingData(r)
 	}
 	return nil, false, 0, ""
-}
-
-func dashboardStartupData(r *http.Request) (any, bool) {
-	switch strings.TrimSuffix(r.URL.Path, "/") {
-	case "/admin/stats/overview":
-		return map[string]any{
-			"request_count":     0,
-			"success_count":     0,
-			"error_count":       0,
-			"total_tokens":      0,
-			"total_cost":        "0.000000",
-			"active_user_count": 0,
-		}, true
-	case "/admin/stats/daily", "/admin/channels", "/admin/usage-logs", "/admin/rate-limits", "/admin/models":
-		ParsePagination(r)
-		return domain.ListResponse{List: []any{}, Total: 0}, true
-	case "/admin/stats/channels":
-		return map[string]any{"list": []any{}}, true
-	default:
-		return nil, false
-	}
 }
 
 func splitPath(path string) []string {

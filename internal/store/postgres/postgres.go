@@ -96,6 +96,32 @@ func optionalTimestamp(value pgtype.Timestamptz) *string {
 	return &formatted
 }
 
+func timestampValue(value string) pgtype.Timestamptz {
+	if value == "" {
+		return pgtype.Timestamptz{}
+	}
+	parsed, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return pgtype.Timestamptz{}
+	}
+	return pgtype.Timestamptz{Time: parsed, Valid: true}
+}
+
+func optionalInt(value pgtype.Int8) *int {
+	if !value.Valid {
+		return nil
+	}
+	converted := int(value.Int64)
+	return &converted
+}
+
+func int8Value(value *int) pgtype.Int8 {
+	if value == nil {
+		return pgtype.Int8{}
+	}
+	return pgtype.Int8{Int64: int64(*value), Valid: true}
+}
+
 func channelDTO(id int64, name, baseURL, authType string, status, weight, priority int32, balance string, modelCount int32) map[string]any {
 	return map[string]any{
 		"id":          int(id),
