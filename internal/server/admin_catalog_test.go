@@ -112,6 +112,48 @@ func TestRemoteModelsUsesFakeUpstream(t *testing.T) {
 	}
 }
 
+func TestInvalidBalanceReturnsBadRequest(t *testing.T) {
+	handler := newTestHandler()
+	adminDo(t, handler, http.MethodPost, "/admin/channels", map[string]any{"name": "OpenAI", "base_url": "https://api.openai.test", "api_key": "sk-secret", "auth_type": "bearer", "status": 1})
+
+	res := adminRaw(t, handler, http.MethodPut, "/admin/channels/1/balance", map[string]any{"delta": "abc"})
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want %d; body=%s", res.Code, http.StatusBadRequest, res.Body.String())
+	}
+}
+
+func TestDeleteMissingChannelReturnsNotFound(t *testing.T) {
+	res := adminRaw(t, newTestHandler(), http.MethodDelete, "/admin/channels/404", nil)
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d; body=%s", res.Code, http.StatusNotFound, res.Body.String())
+	}
+}
+
+func TestDeleteMissingModelMappingReturnsNotFound(t *testing.T) {
+	handler := newTestHandler()
+	adminDo(t, handler, http.MethodPost, "/admin/channels", map[string]any{"name": "OpenAI", "base_url": "https://api.openai.test", "api_key": "sk-secret", "auth_type": "bearer", "status": 1})
+
+	res := adminRaw(t, handler, http.MethodDelete, "/admin/channels/1/models/404", nil)
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d; body=%s", res.Code, http.StatusNotFound, res.Body.String())
+	}
+}
+
+func TestPricingRejectsInvalidChannelOrModel(t *testing.T) {
+	handler := newTestHandler()
+
+	res := adminRaw(t, handler, http.MethodPost, "/admin/pricing", map[string]any{"channel_id": 404, "model_name": "missing", "input_price_per_1m": "0.10000000", "output_price_per_1m": "0.20000000", "currency": "USD"})
+	if res.Code != http.StatusNotFound {
+		t.Fatalf("missing channel status = %d, want %d; body=%s", res.Code, http.StatusNotFound, res.Body.String())
+	}
+
+	adminDo(t, handler, http.MethodPost, "/admin/channels", map[string]any{"name": "OpenAI", "base_url": "https://api.openai.test", "api_key": "sk-secret", "auth_type": "bearer", "status": 1})
+	res = adminRaw(t, handler, http.MethodPost, "/admin/pricing", map[string]any{"channel_id": 1, "model_name": "missing", "input_price_per_1m": "0.10000000", "output_price_per_1m": "0.20000000", "currency": "USD"})
+	if res.Code != http.StatusBadRequest {
+		t.Fatalf("missing model status = %d, want %d; body=%s", res.Code, http.StatusBadRequest, res.Body.String())
+	}
+}
+
 func adminDo(t *testing.T, handler http.Handler, method, path string, body any) map[string]any {
 	t.Helper()
 	res := adminRaw(t, handler, method, path, body)
