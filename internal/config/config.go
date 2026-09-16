@@ -2,6 +2,7 @@ package config
 
 import (
 	"os"
+	"strconv"
 
 	"LLMGateway/internal/crypto"
 )
@@ -14,6 +15,9 @@ type Config struct {
 	// ChannelKeyEncryptionKey is the raw AES key used to encrypt upstream
 	// channel api keys. Required when DatabaseURL is set.
 	ChannelKeyEncryptionKey string
+	// UpstreamTimeoutSeconds bounds a downstream proxy call to the upstream
+	// provider. Chat completions need far more than the default admin timeout.
+	UpstreamTimeoutSeconds int
 }
 
 func Load() Config {
@@ -33,6 +37,7 @@ func Load() Config {
 	if cfg.MigrationsDir == "" {
 		cfg.MigrationsDir = "db/migrations"
 	}
+	cfg.UpstreamTimeoutSeconds = parsePositiveInt(os.Getenv("UPSTREAM_TIMEOUT_SECONDS"), 60)
 	return cfg
 }
 
@@ -40,4 +45,15 @@ func Load() Config {
 // default in-memory store.
 func (c Config) UsePostgres() bool {
 	return c.DatabaseURL != ""
+}
+
+func parsePositiveInt(value string, fallback int) int {
+	if value == "" {
+		return fallback
+	}
+	parsed, err := strconv.Atoi(value)
+	if err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
 }

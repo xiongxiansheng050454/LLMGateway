@@ -41,8 +41,9 @@ func run() error {
 	defer closeStore()
 
 	server := &http.Server{
-		Addr:    cfg.Addr,
-		Handler: handler.NewHandlerWithStore(cfg.DashboardDir, st),
+		Addr: cfg.Addr,
+		Handler: handler.NewHandlerWithStore(cfg.DashboardDir, st,
+			handler.WithUpstreamTimeout(time.Duration(cfg.UpstreamTimeoutSeconds)*time.Second)),
 	}
 
 	serveErr := make(chan error, 1)
