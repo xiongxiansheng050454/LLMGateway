@@ -3,6 +3,7 @@ package postgres
 import (
 	"errors"
 	"fmt"
+	"time"
 
 	"LLMGateway/internal/crypto"
 	"LLMGateway/internal/db/sqlc"
@@ -85,6 +86,14 @@ func optionalString(value string) *string {
 		return nil
 	}
 	return &value
+}
+
+func optionalTimestamp(value pgtype.Timestamptz) *string {
+	if !value.Valid {
+		return nil
+	}
+	formatted := value.Time.UTC().Format(time.RFC3339)
+	return &formatted
 }
 
 func channelDTO(id int64, name, baseURL, authType string, status, weight, priority int32, balance string, modelCount int32) map[string]any {

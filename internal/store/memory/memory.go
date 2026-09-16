@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"encoding/json"
 	"fmt"
 	"sync"
 
@@ -19,12 +20,36 @@ type Store struct {
 	channels      map[int]*domain.Channel
 	models        map[int]map[int]*domain.ChannelModel
 	pricing       map[string]*domain.Pricing
+
+	nextUserID   int
+	nextKeyID    int
+	nextTxID     int
+	users        map[int]*domain.User
+	transactions map[int][]domain.BalanceTransaction
+	keys         map[int]*memoryKey
+	orders       map[string]domain.BalanceTransaction
 }
 
 var (
 	_ store.Store        = (*Store)(nil)
 	_ store.ChannelStore = (*Store)(nil)
+	_ store.UserStore    = (*Store)(nil)
 )
+
+// memoryKey is the in-memory gateway key record. Only the hash is retained;
+// the plaintext is returned once at creation/reset and never stored.
+type memoryKey struct {
+	id                 int
+	userID             int
+	keyName            string
+	prefix             string
+	keyHash            string
+	permissions        json.RawMessage
+	rateLimitOverrides json.RawMessage
+	isActive           bool
+	lastUsedAt         *string
+	expiresAt          *string
+}
 
 func New() *Store {
 	return &Store{
@@ -34,6 +59,13 @@ func New() *Store {
 		channels:      map[int]*domain.Channel{},
 		models:        map[int]map[int]*domain.ChannelModel{},
 		pricing:       map[string]*domain.Pricing{},
+		nextUserID:    1,
+		nextKeyID:     1,
+		nextTxID:      1,
+		users:         map[int]*domain.User{},
+		transactions:  map[int][]domain.BalanceTransaction{},
+		keys:          map[int]*memoryKey{},
+		orders:        map[string]domain.BalanceTransaction{},
 	}
 }
 
