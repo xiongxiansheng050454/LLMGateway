@@ -122,6 +122,11 @@ func (s *Store) UpdateChannelBalance(id int, balance string, delta string) (map[
 	defer func() { _ = tx.Rollback(ctx) }()
 	queries := sqlc.New(tx)
 
+	// Lock the row so concurrent read-modify-write balance updates cannot be
+	// lost under READ COMMITTED.
+	if _, err := queries.LockChannel(ctx, int64(id)); err != nil {
+		return nil, mapError(err)
+	}
 	row, err := queries.GetChannel(ctx, int64(id))
 	if err != nil {
 		return nil, mapError(err)

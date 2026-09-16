@@ -34,6 +34,7 @@ type Querier interface {
 	ListUsageLogs(ctx context.Context, arg ListUsageLogsParams) ([]ListUsageLogsRow, error)
 	ListUserKeys(ctx context.Context, arg ListUserKeysParams) ([]ListUserKeysRow, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error)
+	LockChannel(ctx context.Context, id int64) (int64, error)
 	StatsChannels(ctx context.Context, arg StatsChannelsParams) ([]StatsChannelsRow, error)
 	StatsOverview(ctx context.Context, arg StatsOverviewParams) (StatsOverviewRow, error)
 	UpdateChannel(ctx context.Context, arg UpdateChannelParams) (int64, error)

@@ -30,6 +30,9 @@ LEFT JOIN channel_models cm ON cm.channel_id = c.id
 WHERE c.id = $1
 GROUP BY c.id;
 
+-- name: LockChannel :one
+SELECT id FROM channels WHERE id = $1 FOR UPDATE;
+
 -- name: GetChannelSecret :one
 SELECT
     id,

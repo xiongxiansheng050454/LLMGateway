@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"LLMGateway/internal/domain"
+	"LLMGateway/internal/money"
 	"LLMGateway/internal/store"
 )
 
@@ -63,11 +64,33 @@ func (s *Store) hasChannelModelLocked(channelID int, modelName string) bool {
 	return false
 }
 
-func cleanBalance(balance *string) *string {
+// normalizeBalance canonicalizes an optional balance to 6 decimals, matching
+// the PostgreSQL NUMERIC(20,6) column. An empty value means "unlimited" (nil).
+func normalizeBalance(balance *string) (*string, error) {
 	if balance == nil || *balance == "" {
-		return nil
+		return nil, nil
 	}
-	return balance
+	amount, err := money.Parse6(*balance)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
+	}
+	formatted := money.Format6(amount)
+	return &formatted, nil
+}
+
+func normalizePrice8(value string, field string) (string, error) {
+	amount, err := money.Parse8(value)
+	if err != nil {
+		return "", fmt.Errorf("%w: invalid %s", store.ErrInvalid, field)
+	}
+	return money.Format8(amount), nil
+}
+
+func normalizeOptionalPrice8(value string, field string) (string, error) {
+	if value == "" {
+		return "", nil
+	}
+	return normalizePrice8(value, field)
 }
 
 func pricingKey(channelID int, model string) string {

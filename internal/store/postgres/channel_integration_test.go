@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 
 	"LLMGateway/internal/domain"
@@ -241,6 +242,40 @@ func TestPGPricingUpsertValidationAndDelete(t *testing.T) {
 	}
 	if pricing, _ := st.ListPricing(); pricing.Total != 0 {
 		t.Fatalf("pricing not deleted: %d", pricing.Total)
+	}
+}
+
+func TestPGChannelBalanceConcurrentDeltas(t *testing.T) {
+	st := testStore(t)
+
+	if _, err := st.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk-secret", Status: 1, Balance: strPtr("0.000000")}); err != nil {
+		t.Fatalf("CreateChannel: %v", err)
+	}
+
+	const workers = 20
+	var wg sync.WaitGroup
+	errs := make(chan error, workers)
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := st.UpdateChannelBalance(1, "", "1.000000"); err != nil {
+				errs <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent UpdateChannelBalance: %v", err)
+	}
+
+	secret, err := st.GetChannelSecret(1)
+	if err != nil {
+		t.Fatalf("GetChannelSecret: %v", err)
+	}
+	if secret.Balance == nil || *secret.Balance != "20.000000" {
+		t.Fatalf("balance after %d concurrent deltas = %v, want 20.000000", workers, secret.Balance)
 	}
 }
 

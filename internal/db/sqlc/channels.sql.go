@@ -212,6 +212,17 @@ func (q *Queries) ListChannels(ctx context.Context) ([]ListChannelsRow, error) {
 	return items, nil
 }
 
+const lockChannel = `-- name: LockChannel :one
+SELECT id FROM channels WHERE id = $1 FOR UPDATE
+`
+
+func (q *Queries) LockChannel(ctx context.Context, id int64) (int64, error) {
+	row := q.db.QueryRow(ctx, lockChannel, id)
+	var id_2 int64
+	err := row.Scan(&id_2)
+	return id_2, err
+}
+
 const updateChannel = `-- name: UpdateChannel :execrows
 UPDATE channels
 SET name = $1,
