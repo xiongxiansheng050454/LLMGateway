@@ -30,7 +30,11 @@ func (p *Proxy) Authenticate(authorization string) (*domain.AuthContext, error) 
 	}
 	if auth.ExpiresAt != nil {
 		expires, err := time.Parse(time.RFC3339, *auth.ExpiresAt)
-		if err == nil && p.now().After(expires) {
+		if err != nil {
+			// Fail closed: an unparseable expiry must not grant access.
+			return nil, ErrUnauthorized
+		}
+		if p.now().After(expires) {
 			return nil, ErrUnauthorized
 		}
 	}

@@ -136,9 +136,9 @@ func (p *Proxy) ChatCompletions(auth *domain.AuthContext, body []byte, clientIP 
 
 	p.logUsage(requestID, auth, candidate, req.Model, usage, cost, inputPrice, outputPrice, durationMs, clientIP, "success", "")
 
-	if err := p.store.UpdateKeyLastUsed(auth.KeyID); err != nil && !errors.Is(err, store.ErrNotFound) {
-		return 0, nil, err
-	}
+	// Best-effort: the request already succeeded and was charged, so a
+	// last_used_at update failure must not turn it into an error response.
+	_ = p.store.UpdateKeyLastUsed(auth.KeyID)
 
 	return http.StatusOK, rewriteResponseModel(responseBody, req.Model), nil
 }
@@ -147,6 +147,9 @@ func (p *Proxy) priceFor(channelID int, model string, usage *domain.ChatCompleti
 	pricing, err := p.store.GetPricing(channelID, model)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
+			// Known behaviour: a channel+model without pricing is served for
+			// free (cost 0). Documented in docs/backend-structure.md; operators
+			// should configure pricing for every routable model.
 			return "0.000000", "", "", nil
 		}
 		return "", "", "", err

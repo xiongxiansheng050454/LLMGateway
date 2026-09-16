@@ -10,6 +10,11 @@ import (
 // computeCost converts token counts and 8-decimal per-1M unit prices into a
 // 6-decimal cost string. The unit prices are scaled by 1e8 and the cost by 1e6,
 // so price8 * tokens / 1e8 yields the 6-decimal cost. No float64 is used.
+//
+// inputTokens is the prompt token count, which (per the OpenAI usage object)
+// already includes cachedTokens. Cached tokens are therefore billed at the
+// cached price and only the remainder at the input price, so they are not
+// charged twice.
 func computeCost(inputPricePer1M, outputPricePer1M, cachedPricePer1M string, inputTokens, outputTokens, cachedTokens int) (string, error) {
 	inputPrice, err := parsePrice8(inputPricePer1M)
 	if err != nil {
@@ -24,7 +29,12 @@ func computeCost(inputPricePer1M, outputPricePer1M, cachedPricePer1M string, inp
 		return "", err
 	}
 
-	total := priceTokens(inputPrice, inputTokens) + priceTokens(outputPrice, outputTokens) + priceTokens(cachedPrice, cachedTokens)
+	billableInput := inputTokens - cachedTokens
+	if billableInput < 0 {
+		billableInput = 0
+	}
+
+	total := priceTokens(inputPrice, billableInput) + priceTokens(outputPrice, outputTokens) + priceTokens(cachedPrice, cachedTokens)
 	return money.Format6(money.Amount(total)), nil
 }
 

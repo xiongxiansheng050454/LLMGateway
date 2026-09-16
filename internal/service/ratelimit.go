@@ -56,6 +56,11 @@ func (p *Proxy) CheckRateLimit(auth *domain.AuthContext, model string) error {
 	return nil
 }
 
+// matchesTarget decides whether a rule applies to the current request.
+//
+// Known limitation: rpm counting is per user/key, not per model or channel, so
+// a model-scoped rule counts all of that user's requests. channel scoping is not
+// evaluated because the channel is not chosen until after the limit check.
 func matchesTarget(rule map[string]any, auth *domain.AuthContext, model string) bool {
 	targetType := toString(rule["target_type"])
 	targetValue := toString(rule["target_value"])

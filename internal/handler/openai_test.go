@@ -68,7 +68,7 @@ func newProxyFixture(t *testing.T, upstream http.Handler) *proxyFixture {
 	if _, err := st.CreateChannelModel(channelID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.UpsertPricing(domain.PricingInput{ChannelID: channelID, ModelName: "gpt", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
+	if _, err := st.UpsertPricing(domain.PricingInput{ChannelID: channelID, ModelName: "gpt", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", CachedInputPricePer1M: "0.07500000", Currency: "USD"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -187,6 +187,37 @@ func TestChatCompletionsSuccess(t *testing.T) {
 	}
 	if keys.List[0].(map[string]any)["last_used_at"] == nil {
 		t.Fatal("last_used_at not updated")
+	}
+}
+
+func TestChatCompletionsCachedTokensBilling(t *testing.T) {
+	f := newProxyFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"id": "chatcmpl-cached", "object": "chat.completion", "model": "up-gpt", "choices": []any{},
+			"usage": map[string]any{
+				"prompt_tokens": 1000, "completion_tokens": 500, "total_tokens": 1500,
+				"prompt_tokens_details": map[string]any{"cached_tokens": 200},
+			},
+		})
+	}))
+
+	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","messages":[]}`)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", res.Code, res.Body.String())
+	}
+
+	// (1000-200)*0.15/1e6 + 200*0.075/1e6 + 500*0.6/1e6 = 0.000435
+	balance, _ := f.store.GetUserBalance(1)
+	if balance["available_balance"] != "9.999565" {
+		t.Fatalf("balance = %v, want 9.999565", balance["available_balance"])
+	}
+	logs, _ := f.store.ListUsageLogs(domain.UsageLogFilter{Page: 1, PageSize: 20})
+	entry := logs.List[0].(map[string]any)
+	if entry["total_cost"] != "0.000435" {
+		t.Fatalf("cost = %v, want 0.000435 (cached tokens must not be double charged)", entry["total_cost"])
+	}
+	if entry["cached_input_tokens"] != 200 {
+		t.Fatalf("cached_input_tokens = %v, want 200", entry["cached_input_tokens"])
 	}
 }
 
