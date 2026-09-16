@@ -6,9 +6,12 @@ type ListResponse struct {
 }
 
 type Channel struct {
-	ID       int
-	Name     string
-	BaseURL  string
+	ID      int
+	Name    string
+	BaseURL string
+	// APIKey is the upstream secret. It is never serialized into responses.
+	// Persistence layers must store it encrypted (see internal/crypto) and
+	// expose only ciphertext; the in-memory MVP keeps it in-process only.
 	APIKey   string
 	AuthType string
 	Status   int
