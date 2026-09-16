@@ -93,6 +93,9 @@ func (a *app) adminData(r *http.Request) (any, bool, int, string) {
 	if data, ok, status, msg := a.catalogData(r); ok || status != 0 {
 		return data, ok, status, msg
 	}
+	if data, ok, status, msg := a.userData(r); ok || status != 0 {
+		return data, ok, status, msg
+	}
 	if r.Method != http.MethodGet {
 		return nil, false, http.StatusMethodNotAllowed, "method not allowed"
 	}

@@ -16,6 +16,6 @@ var (
 // response DTOs.
 type Store interface {
 	ChannelStore
-	// UserStore is added by issue #4.
+	UserStore
 	// UsageStore and RateLimitStore are added by issue #5.
 }

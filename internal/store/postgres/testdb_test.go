@@ -41,8 +41,11 @@ func testStore(t *testing.T) *Store {
 	if err := migrate.Run(ctx, pool, filepath.Join("..", "..", "..", "db", "migrations")); err != nil {
 		t.Fatalf("run migrations: %v", err)
 	}
-	if _, err := pool.Exec(ctx, "TRUNCATE channels RESTART IDENTITY CASCADE"); err != nil {
-		t.Fatalf("truncate channels: %v", err)
+	// CASCADE clears dependent tables (channel_models, model_pricing,
+	// client_api_keys, user_balances, balance_transactions, usage_logs,
+	// daily_usage_stats) so the fixture is reusable across domains.
+	if _, err := pool.Exec(ctx, "TRUNCATE users, channels, rate_limit_rules RESTART IDENTITY CASCADE"); err != nil {
+		t.Fatalf("truncate business tables: %v", err)
 	}
 
 	cipher, err := crypto.NewCipher([]byte(testEncryptionKey))
