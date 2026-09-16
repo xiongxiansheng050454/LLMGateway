@@ -1,12 +1,22 @@
-package service
+package handler
 
 import (
 	"net/http"
 	"testing"
+	"time"
 
 	"LLMGateway/internal/domain"
 	"LLMGateway/internal/store/memory"
 )
+
+func newRouteTestApp(st *memory.Store, randIntN func(int) int) *app {
+	return &app{
+		store:    st,
+		client:   &http.Client{},
+		randIntN: randIntN,
+		now:      time.Now,
+	}
+}
 
 func seedRoutingStore(t *testing.T) *memory.Store {
 	t.Helper()
@@ -39,10 +49,10 @@ func TestSelectChannelUsesHighestPriorityGroup(t *testing.T) {
 
 	// rand 0 selects the first candidate in the highest priority group, which
 	// is ordered by weight desc (highB weight 200 before highA weight 100).
-	proxy := New(st, &http.Client{}, WithRandSource(func(int) int { return 0 }))
-	candidate, err := proxy.SelectChannel("gpt")
+	a := newRouteTestApp(st, func(int) int { return 0 })
+	candidate, err := a.selectChannel("gpt")
 	if err != nil {
-		t.Fatalf("SelectChannel: %v", err)
+		t.Fatalf("selectChannel: %v", err)
 	}
 	if candidate.ChannelName != "highB" || candidate.Priority != 10 {
 		t.Fatalf("candidate = %+v, want highB priority 10", candidate)
@@ -56,8 +66,8 @@ func TestSelectChannelWeightedFallback(t *testing.T) {
 	st := seedRoutingStore(t)
 
 	// Total weight in the top group is 300; a pick of 299 lands on highA.
-	proxy := New(st, &http.Client{}, WithRandSource(func(int) int { return 299 }))
-	candidate, err := proxy.SelectChannel("gpt")
+	a := newRouteTestApp(st, func(int) int { return 299 })
+	candidate, err := a.selectChannel("gpt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -70,22 +80,19 @@ func TestSelectChannelExcludesNonPositiveBalance(t *testing.T) {
 	st := seedRoutingStore(t)
 
 	// Only the zero-balance channel serves "only-zero".
-	created, err := st.CreateChannelModel(4, domain.ChannelModel{ModelName: "only-zero", UpstreamModel: "up", Enabled: true})
-	if err != nil {
+	if _, err := st.CreateChannelModel(4, domain.ChannelModel{ModelName: "only-zero", UpstreamModel: "up", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	_ = created
 
-	proxy := New(st, &http.Client{}, WithRandSource(func(int) int { return 0 }))
-	if _, err := proxy.SelectChannel("only-zero"); err != ErrNoChannel {
+	a := newRouteTestApp(st, func(int) int { return 0 })
+	if _, err := a.selectChannel("only-zero"); err != ErrNoChannel {
 		t.Fatalf("err = %v, want ErrNoChannel", err)
 	}
 }
 
 func TestSelectChannelNoCandidates(t *testing.T) {
-	st := memory.New()
-	proxy := New(st, &http.Client{})
-	if _, err := proxy.SelectChannel("missing"); err != ErrNoChannel {
+	a := newRouteTestApp(memory.New(), func(int) int { return 0 })
+	if _, err := a.selectChannel("missing"); err != ErrNoChannel {
 		t.Fatalf("err = %v, want ErrNoChannel", err)
 	}
 }

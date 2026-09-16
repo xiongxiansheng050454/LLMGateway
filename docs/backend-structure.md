@@ -5,7 +5,7 @@
 ```text
 cmd/llmgateway/              进程入口，只做装配：config -> store -> handler -> http.Server
 internal/config/             环境变量配置读取，集中管理默认值
-internal/handler/            HTTP 路由、请求解析、响应封装、Dashboard 静态托管
+internal/handler/            HTTP 路由、请求解析、响应封装、Dashboard 静态托管、/v1 代理编排
 internal/domain/             API 与业务共享类型，不依赖 HTTP 或数据库
 internal/money/              定点金额（int64 最小单位）解析与格式化（子 issue #11）
 internal/crypto/             渠道 api_key 加解密、网关 Key 生成与哈希（子 issue #11）
@@ -39,7 +39,7 @@ dashboard/                   静态前端控制台
 - `internal/crypto` 的渠道密钥加密密钥来自环境变量 `CHANNEL_KEY_ENCRYPTION_KEY`（原始字节，长度 16/24/32）；缺失或非法时返回错误，禁止明文回退。
 - 网关 Key 仅保存 `internal/crypto.HashKey` 的哈希，明文 `full_key` 只在创建/重置时返回一次。
 - 阶段说明：本阶段 `internal/store/memory` 仍以进程内明文 `api_key` 支撑 MVP（不落盘），`internal/crypto` 先提供加解密与哈希能力；PostgreSQL store（#12）落库时使用 `api_key_ciphertext`，并复用本包完成加解密。
-- 预留 `internal/service` 用于 #6 的跨 store 业务编排（auth/routing/billing/ratelimit/usage）；是否引入由 #6 决定，本阶段不创建空包。
+- 不引入 service 层：HTTP 编排位于 `internal/handler`，与既有 `admin_*.go` 一致；下游代理按关注点分 `openai*.go`。
 
 ## 文件组织约定
 
@@ -50,7 +50,7 @@ dashboard/                   静态前端控制台
   - `internal/store/`：`store.go`（错误 + 组合接口）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
   - `internal/store/memory/`：`memory.go`（结构体/构造函数/共享辅助）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
   - `internal/store/postgres/`：`postgres.go`（结构体/构造函数）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
-  - `internal/handler/`：`handler.go`（路由/分派/响应/分页/静态托管）、`admin_channel.go`、`admin_pricing.go`、`admin_user.go`、`admin_usage.go`、`channel_upstream.go`、`openai.go`
+  - `internal/handler/`：`handler.go`（路由/分派/响应/分页/静态托管）、`admin_channel.go`、`admin_pricing.go`、`admin_user.go`、`admin_key.go`、`admin_ratelimit.go`、`admin_usage.go`、`channel_upstream.go`、`openai.go`（/v1 分派与错误映射）、`openai_auth.go`、`openai_route.go`、`openai_billing.go`、`openai_ratelimit.go`、`openai_proxy.go`
 - `store.Store` 由领域子接口组合而成，禁止继续往 `store.go` 堆方法：
 
 ```go
@@ -71,7 +71,7 @@ var _ store.ChannelStore = (*memory.Store)(nil)
 
 ## 下游代理（/v1）
 
-- `GET /v1/models` 与 `POST /v1/chat/completions` 由 `internal/handler/openai.go` 暴露，业务编排在 `internal/service`（auth/route/billing/ratelimit/proxy）。
+- `GET /v1/models` 与 `POST /v1/chat/completions` 由 `internal/handler` 暴露，按关注点分文件：`openai.go`（分派/错误映射）、`openai_auth.go`、`openai_route.go`、`openai_billing.go`、`openai_ratelimit.go`、`openai_proxy.go`。
 - 认证使用 `Authorization: Bearer <gateway-key>`；密钥经 `internal/crypto.HashKey` 后查询，明文不落日志/响应。
 - 路由候选按 `priority` 越大越优先，同级内按 `weight` 加权随机；非正余额渠道被排除。
 - 计费：缓存 token 已包含在 `prompt_tokens` 中，仅按 `(prompt_tokens - cached_tokens)` 计输入价，缓存部分计缓存价，避免重复计费。

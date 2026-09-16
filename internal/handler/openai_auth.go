@@ -1,4 +1,4 @@
-package service
+package handler
 
 import (
 	"encoding/json"
@@ -11,14 +11,14 @@ import (
 	"LLMGateway/internal/store"
 )
 
-// Authenticate validates the Bearer gateway key and returns the raw auth state.
-func (p *Proxy) Authenticate(authorization string) (*domain.AuthContext, error) {
+// authenticate validates the Bearer gateway key and returns the raw auth state.
+func (a *app) authenticate(authorization string) (*domain.AuthContext, error) {
 	token, ok := bearerToken(authorization)
 	if !ok {
 		return nil, ErrUnauthorized
 	}
 
-	auth, err := p.store.AuthenticateKey(crypto.HashKey(token))
+	auth, err := a.store.AuthenticateKey(crypto.HashKey(token))
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return nil, ErrUnauthorized
@@ -34,7 +34,7 @@ func (p *Proxy) Authenticate(authorization string) (*domain.AuthContext, error) 
 			// Fail closed: an unparseable expiry must not grant access.
 			return nil, ErrUnauthorized
 		}
-		if p.now().After(expires) {
+		if a.now().After(expires) {
 			return nil, ErrUnauthorized
 		}
 	}

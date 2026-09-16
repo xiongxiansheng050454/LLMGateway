@@ -1,4 +1,4 @@
-package service
+package handler
 
 import (
 	"encoding/json"
@@ -8,15 +8,15 @@ import (
 	"LLMGateway/internal/domain"
 )
 
-// CheckRateLimit enforces enabled rpm rules with the reject action. queue rules
+// checkRateLimit enforces enabled rpm rules with the reject action. queue rules
 // are intentionally not implemented (recorded as a known limitation).
 //
 // A key's rate_limit_overrides.rpm takes precedence over matching rules.
-func (p *Proxy) CheckRateLimit(auth *domain.AuthContext, model string) error {
-	since := p.now().Add(-time.Minute).UTC().Format(time.RFC3339)
+func (a *app) checkRateLimit(auth *domain.AuthContext, model string) error {
+	since := a.now().Add(-time.Minute).UTC().Format(time.RFC3339)
 
 	if override := rpmOverride(auth.RateLimitOverrides); override > 0 {
-		count, err := p.store.CountRequestsSince(auth.UserID, &auth.KeyID, since)
+		count, err := a.store.CountRequestsSince(auth.UserID, &auth.KeyID, since)
 		if err != nil {
 			return err
 		}
@@ -26,7 +26,7 @@ func (p *Proxy) CheckRateLimit(auth *domain.AuthContext, model string) error {
 	}
 
 	enabled := true
-	result, err := p.store.ListRateLimits(&enabled, 1, 1000)
+	result, err := a.store.ListRateLimits(&enabled, 1, 1000)
 	if err != nil {
 		return err
 	}
@@ -45,7 +45,7 @@ func (p *Proxy) CheckRateLimit(auth *domain.AuthContext, model string) error {
 		if limit <= 0 {
 			continue
 		}
-		count, err := p.store.CountRequestsSince(auth.UserID, &auth.KeyID, since)
+		count, err := a.store.CountRequestsSince(auth.UserID, &auth.KeyID, since)
 		if err != nil {
 			return err
 		}

@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -10,18 +11,20 @@ import (
 	"strings"
 	"time"
 
-	"LLMGateway/internal/service"
 	"LLMGateway/internal/store"
 )
 
 type app struct {
-	store  store.Store
-	client *http.Client
-	proxy  *service.Proxy
+	store    store.Store
+	client   *http.Client
+	randIntN func(int) int
+	now      func() time.Time
 }
 
 type options struct {
 	upstreamTimeout time.Duration
+	randIntN        func(int) int
+	now             func() time.Time
 }
 
 // Option customizes handler assembly.
@@ -37,18 +40,42 @@ func WithUpstreamTimeout(timeout time.Duration) Option {
 	}
 }
 
+// WithRandSource injects the random source used for weighted routing so tests
+// can make selection deterministic.
+func WithRandSource(fn func(int) int) Option {
+	return func(o *options) {
+		if fn != nil {
+			o.randIntN = fn
+		}
+	}
+}
+
+// WithClock injects the clock used for key expiry and rate limit windows.
+func WithClock(fn func() time.Time) Option {
+	return func(o *options) {
+		if fn != nil {
+			o.now = fn
+		}
+	}
+}
+
 // NewHandlerWithStore builds the HTTP handler around an injected store.
 // Store assembly belongs to the process composition root (cmd/llmgateway).
 func NewHandlerWithStore(dashboardDir string, st store.Store, opts ...Option) http.Handler {
-	settings := options{upstreamTimeout: 60 * time.Second}
+	settings := options{
+		upstreamTimeout: 60 * time.Second,
+		randIntN:        rand.Intn,
+		now:             time.Now,
+	}
 	for _, opt := range opts {
 		opt(&settings)
 	}
 	client := &http.Client{Timeout: settings.upstreamTimeout}
 	a := &app{
-		store:  st,
-		client: client,
-		proxy:  service.New(st, client),
+		store:    st,
+		client:   client,
+		randIntN: settings.randIntN,
+		now:      settings.now,
 	}
 
 	mux := http.NewServeMux()

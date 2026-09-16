@@ -1,4 +1,4 @@
-package service
+package handler
 
 import (
 	"LLMGateway/internal/money"
@@ -14,12 +14,12 @@ type RouteCandidate struct {
 	Balance       *string
 }
 
-// SelectChannel returns the channel to use for a public model. Candidates come
+// selectChannel returns the channel to use for a public model. Candidates come
 // ordered by priority desc, weight desc, channel id; channels with a non-nil
 // balance of zero or less are excluded. Within the highest priority group the
 // choice is weighted-random using the injected source.
-func (p *Proxy) SelectChannel(model string) (RouteCandidate, error) {
-	result, err := p.store.RouteCandidates(model)
+func (a *app) selectChannel(model string) (RouteCandidate, error) {
+	result, err := a.store.RouteCandidates(model)
 	if err != nil {
 		return RouteCandidate{}, err
 	}
@@ -70,7 +70,7 @@ func (p *Proxy) SelectChannel(model string) (RouteCandidate, error) {
 		return group[0], nil
 	}
 
-	pick := p.randIntN(total)
+	pick := a.randIntN(total)
 	for _, candidate := range group {
 		if candidate.Weight <= 0 {
 			continue

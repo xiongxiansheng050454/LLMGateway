@@ -1,4 +1,4 @@
-package service
+package handler
 
 import (
 	"bytes"
@@ -17,15 +17,15 @@ import (
 	"LLMGateway/internal/store"
 )
 
-// Models returns the OpenAI-style model list visible to the key, filtered by
+// models returns the OpenAI-style model list visible to the key, filtered by
 // its permissions.
-func (p *Proxy) Models(auth *domain.AuthContext) (domain.OpenAIModelList, error) {
-	result, err := p.store.ListCatalogModels(true)
+func (a *app) models(auth *domain.AuthContext) (domain.OpenAIModelList, error) {
+	result, err := a.store.ListCatalogModels(true)
 	if err != nil {
 		return domain.OpenAIModelList{}, err
 	}
 
-	created := p.now().Unix()
+	created := a.now().Unix()
 	seen := map[string]bool{}
 	data := []domain.OpenAIModel{}
 	for _, item := range result.List {
@@ -43,10 +43,10 @@ func (p *Proxy) Models(auth *domain.AuthContext) (domain.OpenAIModelList, error)
 	return domain.OpenAIModelList{Object: "list", Data: data}, nil
 }
 
-// ChatCompletions proxies a non-streaming chat completion request. It returns
+// chatCompletions proxies a non-streaming chat completion request. It returns
 // the HTTP status and body to send downstream. A non-nil error is a
 // pre-flight/transport failure the handler maps to an OpenAI error.
-func (p *Proxy) ChatCompletions(auth *domain.AuthContext, body []byte, clientIP string) (int, []byte, error) {
+func (a *app) chatCompletions(auth *domain.AuthContext, body []byte, clientIP string) (int, []byte, error) {
 	var req domain.ChatCompletionRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		return 0, nil, ErrInvalidRequest
@@ -60,7 +60,7 @@ func (p *Proxy) ChatCompletions(auth *domain.AuthContext, body []byte, clientIP 
 	if !allowModel(auth, req.Model) {
 		return 0, nil, ErrForbidden
 	}
-	if err := p.CheckRateLimit(auth, req.Model); err != nil {
+	if err := a.checkRateLimit(auth, req.Model); err != nil {
 		return 0, nil, err
 	}
 
@@ -72,12 +72,12 @@ func (p *Proxy) ChatCompletions(auth *domain.AuthContext, body []byte, clientIP 
 		return 0, nil, ErrInsufficientBalance
 	}
 
-	candidate, err := p.SelectChannel(req.Model)
+	candidate, err := a.selectChannel(req.Model)
 	if err != nil {
 		return 0, nil, err
 	}
 
-	secret, err := p.store.GetChannelSecret(candidate.ChannelID)
+	secret, err := a.store.GetChannelSecret(candidate.ChannelID)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -88,7 +88,7 @@ func (p *Proxy) ChatCompletions(auth *domain.AuthContext, body []byte, clientIP 
 	}
 
 	requestID := newRequestID()
-	start := p.now()
+	start := a.now()
 
 	httpReq, err := http.NewRequest(http.MethodPost, strings.TrimRight(secret.BaseURL, "/")+"/v1/chat/completions", bytes.NewReader(upstreamBody))
 	if err != nil {
@@ -100,51 +100,51 @@ func (p *Proxy) ChatCompletions(auth *domain.AuthContext, body []byte, clientIP 
 		httpReq.Header.Set("Authorization", "Bearer "+secret.APIKey)
 	}
 
-	resp, err := p.client.Do(httpReq)
+	resp, err := a.client.Do(httpReq)
 	if err != nil {
-		p.logUsage(requestID, auth, candidate, req.Model, nil, "0.000000", "", "", elapsedMs(start, p.now()), clientIP, "error", "upstream_unreachable")
+		a.logUsage(requestID, auth, candidate, req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", "upstream_unreachable")
 		return 0, nil, ErrUpstream
 	}
 	defer resp.Body.Close()
 	responseBody, _ := io.ReadAll(resp.Body)
-	durationMs := elapsedMs(start, p.now())
+	durationMs := elapsedMs(start, a.now())
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		p.logUsage(requestID, auth, candidate, req.Model, nil, "0.000000", "", "", durationMs, clientIP, "error", fmt.Sprintf("upstream_%d", resp.StatusCode))
+		a.logUsage(requestID, auth, candidate, req.Model, nil, "0.000000", "", "", durationMs, clientIP, "error", fmt.Sprintf("upstream_%d", resp.StatusCode))
 		return resp.StatusCode, responseBody, nil
 	}
 
 	usage := parseUsage(responseBody)
-	cost, inputPrice, outputPrice, err := p.priceFor(candidate.ChannelID, req.Model, usage)
+	cost, inputPrice, outputPrice, err := a.priceFor(candidate.ChannelID, req.Model, usage)
 	if err != nil {
 		return 0, nil, err
 	}
 
 	if cost != "0.000000" {
-		if _, err := p.store.DebitUserBalance(auth.UserID, cost, "chat completion "+requestID); err != nil {
+		if _, err := a.store.DebitUserBalance(auth.UserID, cost, "chat completion "+requestID); err != nil {
 			if errors.Is(err, store.ErrInvalid) {
-				p.logUsage(requestID, auth, candidate, req.Model, usage, "0.000000", inputPrice, outputPrice, durationMs, clientIP, "error", "insufficient_balance")
+				a.logUsage(requestID, auth, candidate, req.Model, usage, "0.000000", inputPrice, outputPrice, durationMs, clientIP, "error", "insufficient_balance")
 				return 0, nil, ErrInsufficientBalance
 			}
 			return 0, nil, err
 		}
 		if candidate.Balance != nil {
 			// Channel balance is best-effort; the user has already been charged.
-			_, _ = p.store.UpdateChannelBalance(candidate.ChannelID, "", "-"+cost)
+			_, _ = a.store.UpdateChannelBalance(candidate.ChannelID, "", "-"+cost)
 		}
 	}
 
-	p.logUsage(requestID, auth, candidate, req.Model, usage, cost, inputPrice, outputPrice, durationMs, clientIP, "success", "")
+	a.logUsage(requestID, auth, candidate, req.Model, usage, cost, inputPrice, outputPrice, durationMs, clientIP, "success", "")
 
 	// Best-effort: the request already succeeded and was charged, so a
 	// last_used_at update failure must not turn it into an error response.
-	_ = p.store.UpdateKeyLastUsed(auth.KeyID)
+	_ = a.store.UpdateKeyLastUsed(auth.KeyID)
 
 	return http.StatusOK, rewriteResponseModel(responseBody, req.Model), nil
 }
 
-func (p *Proxy) priceFor(channelID int, model string, usage *domain.ChatCompletionUsage) (string, string, string, error) {
-	pricing, err := p.store.GetPricing(channelID, model)
+func (a *app) priceFor(channelID int, model string, usage *domain.ChatCompletionUsage) (string, string, string, error) {
+	pricing, err := a.store.GetPricing(channelID, model)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			// Known behaviour: a channel+model without pricing is served for
@@ -170,7 +170,7 @@ func (p *Proxy) priceFor(channelID int, model string, usage *domain.ChatCompleti
 	return cost, inputPrice, outputPrice, nil
 }
 
-func (p *Proxy) logUsage(requestID string, auth *domain.AuthContext, candidate RouteCandidate, model string, usage *domain.ChatCompletionUsage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) {
+func (a *app) logUsage(requestID string, auth *domain.AuthContext, candidate RouteCandidate, model string, usage *domain.ChatCompletionUsage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) {
 	userID := auth.UserID
 	keyID := auth.KeyID
 	channelID := candidate.ChannelID
@@ -196,7 +196,7 @@ func (p *Proxy) logUsage(requestID string, auth *domain.AuthContext, candidate R
 		input.CachedInputTokens = cachedTokenCount(usage)
 		input.TotalTokens = usage.TotalTokens
 	}
-	_, _ = p.store.InsertUsageLog(input)
+	_, _ = a.store.InsertUsageLog(input)
 }
 
 func cachedTokenCount(usage *domain.ChatCompletionUsage) int {
