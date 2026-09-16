@@ -11,7 +11,6 @@ import (
 
 	"LLMGateway/internal/domain"
 	"LLMGateway/internal/store"
-	"LLMGateway/internal/store/memory"
 )
 
 type app struct {
@@ -19,10 +18,8 @@ type app struct {
 	client *http.Client
 }
 
-func NewHandler(dashboardDir string) http.Handler {
-	return NewHandlerWithStore(dashboardDir, memory.New())
-}
-
+// NewHandlerWithStore builds the HTTP handler around an injected store.
+// Store assembly belongs to the process composition root (cmd/llmgateway).
 func NewHandlerWithStore(dashboardDir string, st store.Store) http.Handler {
 	a := &app{
 		store:  st,

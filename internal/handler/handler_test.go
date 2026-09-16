@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"LLMGateway/internal/store/memory"
 )
 
 func TestHealthz(t *testing.T) {
@@ -133,7 +135,7 @@ func TestStaticDashboardServed(t *testing.T) {
 }
 
 func newTestHandler() http.Handler {
-	return NewHandler(filepath.Join("..", "..", "dashboard"))
+	return NewHandlerWithStore(filepath.Join("..", "..", "dashboard"), memory.New())
 }
 
 func assertListResponse(t *testing.T, data map[string]any) {
