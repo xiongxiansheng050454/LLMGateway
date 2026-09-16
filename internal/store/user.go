@@ -1,6 +1,28 @@
 package store
 
-import "LLMGateway/internal/domain"
+import (
+	"encoding/json"
+
+	"LLMGateway/internal/domain"
+)
+
+// CanonicalJSON re-encodes JSON into a compact, key-sorted form so the memory
+// store (raw input) and PostgreSQL (JSONB) return byte-identical values.
+// Empty input returns nil.
+func CanonicalJSON(value json.RawMessage) json.RawMessage {
+	if len(value) == 0 {
+		return nil
+	}
+	var decoded any
+	if err := json.Unmarshal(value, &decoded); err != nil {
+		return value
+	}
+	encoded, err := json.Marshal(decoded)
+	if err != nil {
+		return value
+	}
+	return encoded
+}
 
 // UserStore covers downstream users, their balances, balance transactions and
 // gateway API keys.
@@ -23,4 +45,14 @@ type UserStore interface {
 	UpdateKey(userID, keyID int, in domain.KeyUpdateInput) (map[string]any, error)
 	DeleteKey(userID, keyID int) error
 	ResetKey(userID, keyID int) (map[string]any, error)
+
+	// AuthenticateKey looks up a gateway key by its hash and returns the raw
+	// key + user authentication state. Missing keys return ErrNotFound.
+	AuthenticateKey(keyHash string) (*domain.AuthContext, error)
+	// UpdateKeyLastUsed records key usage. Missing keys return ErrNotFound.
+	UpdateKeyLastUsed(keyID int) error
+	// DebitUserBalance deducts amount (6 decimals) from the available balance
+	// inside a transaction and records a consume transaction. Insufficient
+	// balance returns ErrInvalid; a missing user returns ErrNotFound.
+	DebitUserBalance(userID int, amount string, description string) (map[string]any, error)
 }

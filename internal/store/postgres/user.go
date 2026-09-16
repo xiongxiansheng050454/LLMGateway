@@ -356,6 +356,88 @@ func (s *Store) ResetKey(userID, keyID int) (map[string]any, error) {
 	return map[string]any{"full_key": fullKey}, nil
 }
 
+func (s *Store) AuthenticateKey(keyHash string) (*domain.AuthContext, error) {
+	row, err := s.queries.GetAuthContextByKeyHash(context.Background(), keyHash)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	return &domain.AuthContext{
+		KeyID:              int(row.KeyID),
+		UserID:             int(row.UserID),
+		KeyName:            row.KeyName,
+		KeyActive:          row.KeyActive,
+		ExpiresAt:          optionalTimestamp(row.ExpiresAt),
+		Permissions:        store.CanonicalJSON(json.RawMessage(row.Permissions)),
+		RateLimitOverrides: store.CanonicalJSON(json.RawMessage(row.RateLimitOverrides)),
+		UserStatus:         row.UserStatus,
+		AvailableBalance:   textValue(row.AvailableBalance),
+		FrozenBalance:      textValue(row.FrozenBalance),
+	}, nil
+}
+
+func (s *Store) UpdateKeyLastUsed(keyID int) error {
+	affected, err := s.queries.UpdateKeyLastUsed(context.Background(), int64(keyID))
+	if err != nil {
+		return mapError(err)
+	}
+	if affected == 0 {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+func (s *Store) DebitUserBalance(userID int, amount string, description string) (map[string]any, error) {
+	parsed, err := money.Parse6(amount)
+	if err != nil || parsed.Cmp(0) <= 0 {
+		return nil, fmt.Errorf("%w: invalid amount", store.ErrInvalid)
+	}
+
+	ctx := context.Background()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	queries := sqlc.New(tx)
+
+	if _, err := queries.LockUserBalance(ctx, int64(userID)); err != nil {
+		return nil, mapError(err)
+	}
+	balanceRow, err := queries.GetUserBalanceText(ctx, int64(userID))
+	if err != nil {
+		return nil, mapError(err)
+	}
+	current, err := money.Parse6(textValue(balanceRow.AvailableBalance))
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
+	}
+	if current.Cmp(parsed) < 0 {
+		return nil, fmt.Errorf("%w: insufficient balance", store.ErrInvalid)
+	}
+	next := money.Format6(current.Sub(parsed))
+
+	if affected, err := queries.UpdateUserBalance(ctx, sqlc.UpdateUserBalanceParams{AvailableBalance: next, UserID: int64(userID)}); err != nil {
+		return nil, mapError(err)
+	} else if affected == 0 {
+		return nil, store.ErrNotFound
+	}
+
+	if _, err := queries.CreateBalanceTransaction(ctx, sqlc.CreateBalanceTransactionParams{
+		UserID:       int64(userID),
+		TxType:       "consume",
+		Amount:       money.Format6(parsed),
+		BalanceAfter: next,
+		Description:  description,
+	}); err != nil {
+		return nil, mapError(err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, mapError(err)
+	}
+	return map[string]any{"balance_after": next}, nil
+}
+
 func (s *Store) getUserDTO(id int64) (map[string]any, error) {
 	ctx := context.Background()
 	user, err := s.queries.GetUser(ctx, id)

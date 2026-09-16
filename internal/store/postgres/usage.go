@@ -86,6 +86,21 @@ func (s *Store) InsertUsageLog(in domain.UsageLogInput) (int, error) {
 	return int(id), nil
 }
 
+func (s *Store) CountRequestsSince(userID int, apiKeyID *int, since string) (int, error) {
+	if err := store.ValidateTimeRange(since, ""); err != nil {
+		return 0, err
+	}
+	count, err := s.queries.CountRequestsSince(context.Background(), sqlc.CountRequestsSinceParams{
+		UserID:   int8Value(&userID),
+		Since:    timestampValue(since),
+		ApiKeyID: int8Value(apiKeyID),
+	})
+	if err != nil {
+		return 0, mapError(err)
+	}
+	return int(count), nil
+}
+
 func (s *Store) StatsOverview(startTime, endTime string) (map[string]any, error) {
 	if err := store.ValidateTimeRange(startTime, endTime); err != nil {
 		return nil, err

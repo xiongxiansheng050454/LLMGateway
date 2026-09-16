@@ -23,6 +23,19 @@ RETURNING id, model_name, upstream_model, enabled;
 -- name: DeleteChannelModel :execrows
 DELETE FROM channel_models WHERE channel_id = $1 AND id = $2;
 
+-- name: ListRouteCandidates :many
+SELECT
+    c.id AS channel_id,
+    c.name AS channel_name,
+    cm.upstream_model,
+    c.priority,
+    c.weight,
+    COALESCE(c.balance::text, '') AS balance
+FROM channel_models cm
+JOIN channels c ON c.id = cm.channel_id
+WHERE cm.model_name = $1 AND cm.enabled = true AND c.status = 1
+ORDER BY c.priority DESC, c.weight DESC, c.id;
+
 -- name: ListCatalogModels :many
 SELECT
     cm.model_name,

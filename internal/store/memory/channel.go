@@ -2,6 +2,7 @@ package memory
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 
 	"LLMGateway/internal/domain"
@@ -276,6 +277,58 @@ func (s *Store) DeletePricing(in domain.DeletePricingInput) error {
 	defer s.mu.Unlock()
 	delete(s.pricing, pricingKey(in.ChannelID, in.ModelName))
 	return nil
+}
+
+func (s *Store) GetPricing(channelID int, modelName string) (map[string]any, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	pricing, ok := s.pricing[pricingKey(channelID, modelName)]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+	return s.pricingDTO(pricing), nil
+}
+
+func (s *Store) RouteCandidates(modelName string) (domain.ListResponse, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	candidates := []map[string]any{}
+	for channelID, models := range s.models {
+		channel := s.channels[channelID]
+		if channel == nil || channel.Status != 1 {
+			continue
+		}
+		for _, model := range models {
+			if model.ModelName != modelName || !model.Enabled {
+				continue
+			}
+			candidates = append(candidates, map[string]any{
+				"channel_id":     channelID,
+				"channel_name":   channel.Name,
+				"upstream_model": model.UpstreamModel,
+				"priority":       channel.Priority,
+				"weight":         channel.Weight,
+				"balance":        channel.Balance,
+			})
+		}
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i]["priority"].(int) != candidates[j]["priority"].(int) {
+			return candidates[i]["priority"].(int) > candidates[j]["priority"].(int)
+		}
+		if candidates[i]["weight"].(int) != candidates[j]["weight"].(int) {
+			return candidates[i]["weight"].(int) > candidates[j]["weight"].(int)
+		}
+		return candidates[i]["channel_id"].(int) < candidates[j]["channel_id"].(int)
+	})
+
+	list := []any{}
+	for _, candidate := range candidates {
+		list = append(list, candidate)
+	}
+	return domain.ListResponse{List: list, Total: len(list)}, nil
 }
 
 func (s *Store) TestChannel(channelID int) (map[string]any, error) {

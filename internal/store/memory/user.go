@@ -230,8 +230,8 @@ func (s *Store) CreateKey(userID int, in domain.KeyInput) (map[string]any, error
 		keyName:            keyName,
 		prefix:             prefix,
 		keyHash:            crypto.HashKey(fullKey),
-		permissions:        normalizeJSON(in.Permissions, defaultPermissions),
-		rateLimitOverrides: normalizeJSON(in.RateLimitOverrides, ""),
+		permissions:        store.CanonicalJSON(normalizeJSON(in.Permissions, defaultPermissions)),
+		rateLimitOverrides: store.CanonicalJSON(normalizeJSON(in.RateLimitOverrides, "")),
 		isActive:           isActive,
 		expiresAt:          normalizeTimestampPtr(in.ExpiresAt),
 	}
@@ -280,6 +280,81 @@ func (s *Store) ResetKey(userID, keyID int) (map[string]any, error) {
 	}
 	key.keyHash = crypto.HashKey(fullKey)
 	return map[string]any{"full_key": fullKey}, nil
+}
+
+func (s *Store) AuthenticateKey(keyHash string) (*domain.AuthContext, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for _, key := range s.keys {
+		if key.keyHash != keyHash {
+			continue
+		}
+		user, ok := s.users[key.userID]
+		if !ok {
+			return nil, store.ErrNotFound
+		}
+		return &domain.AuthContext{
+			KeyID:              key.id,
+			UserID:             key.userID,
+			KeyName:            key.keyName,
+			KeyActive:          key.isActive,
+			ExpiresAt:          key.expiresAt,
+			Permissions:        key.permissions,
+			RateLimitOverrides: key.rateLimitOverrides,
+			UserStatus:         user.Status,
+			AvailableBalance:   user.AvailableBalance,
+			FrozenBalance:      user.FrozenBalance,
+		}, nil
+	}
+	return nil, store.ErrNotFound
+}
+
+func (s *Store) UpdateKeyLastUsed(keyID int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key, ok := s.keys[keyID]
+	if !ok {
+		return store.ErrNotFound
+	}
+	now := nowRFC3339()
+	key.lastUsedAt = &now
+	return nil
+}
+
+func (s *Store) DebitUserBalance(userID int, amount string, description string) (map[string]any, error) {
+	parsed, err := money.Parse6(amount)
+	if err != nil || parsed.Cmp(0) <= 0 {
+		return nil, fmt.Errorf("%w: invalid amount", store.ErrInvalid)
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	user, ok := s.users[userID]
+	if !ok {
+		return nil, store.ErrNotFound
+	}
+
+	current, err := money.Parse6(user.AvailableBalance)
+	if err != nil {
+		return nil, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
+	}
+	if current.Cmp(parsed) < 0 {
+		return nil, fmt.Errorf("%w: insufficient balance", store.ErrInvalid)
+	}
+	next := current.Sub(parsed)
+	user.AvailableBalance = money.Format6(next)
+
+	tx := domain.BalanceTransaction{
+		ID:           s.nextTxID,
+		TxType:       "consume",
+		Amount:       money.Format6(parsed),
+		BalanceAfter: user.AvailableBalance,
+		CreatedAt:    nowRFC3339(),
+	}
+	s.nextTxID++
+	s.transactions[userID] = append(s.transactions[userID], tx)
+	return map[string]any{"balance_after": user.AvailableBalance}, nil
 }
 
 func (s *Store) userDTO(user *domain.User) map[string]any {

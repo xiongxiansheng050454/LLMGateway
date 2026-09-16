@@ -11,6 +11,27 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countRequestsSince = `-- name: CountRequestsSince :one
+SELECT count(*)::int
+FROM usage_logs
+WHERE user_id = $1
+  AND created_at >= $2::timestamptz
+  AND ($3::bigint IS NULL OR api_key_id = $3::bigint)
+`
+
+type CountRequestsSinceParams struct {
+	UserID   pgtype.Int8        `json:"user_id"`
+	Since    pgtype.Timestamptz `json:"since"`
+	ApiKeyID pgtype.Int8        `json:"api_key_id"`
+}
+
+func (q *Queries) CountRequestsSince(ctx context.Context, arg CountRequestsSinceParams) (int32, error) {
+	row := q.db.QueryRow(ctx, countRequestsSince, arg.UserID, arg.Since, arg.ApiKeyID)
+	var column_1 int32
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const countStatsDaily = `-- name: CountStatsDaily :one
 SELECT count(*)::int FROM (
     SELECT (l.created_at AT TIME ZONE 'UTC')::date AS stat_date

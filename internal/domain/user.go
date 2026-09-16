@@ -60,3 +60,19 @@ type KeyInput struct {
 type KeyUpdateInput struct {
 	IsActive *bool `json:"is_active"`
 }
+
+// AuthContext is the raw authentication state for a downstream gateway key.
+// It intentionally excludes the key hash and any plaintext secret; #6 decides
+// the HTTP semantics (401/403/402) from these fields.
+type AuthContext struct {
+	KeyID              int
+	UserID             int
+	KeyName            string
+	KeyActive          bool
+	ExpiresAt          *string
+	Permissions        json.RawMessage
+	RateLimitOverrides json.RawMessage
+	UserStatus         string
+	AvailableBalance   string
+	FrozenBalance      string
+}
