@@ -10,6 +10,7 @@ type UsageStore interface {
 	ListUsageLogs(domain.UsageLogFilter) (domain.ListResponse[domain.UsageLogDTO], error)
 	GetUsageLog(int) (domain.UsageLogDTO, error)
 	InsertUsageLog(domain.UsageLogInput) (int, error)
+	SettleChatCompletion(domain.ChatSettlementInput) (int, error)
 	StatsOverview(startTime, endTime string) (domain.StatsOverviewDTO, error)
 	StatsDaily(dateFrom, dateTo string, page, pageSize int) (domain.ListResponse[domain.StatsDailyDTO], error)
 	StatsChannels(startTime, endTime string) (domain.ListResponse[domain.StatsChannelDTO], error)

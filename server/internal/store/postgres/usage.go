@@ -2,10 +2,13 @@ package postgres
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	"LLMGateway/server/internal/db/sqlc"
 	"LLMGateway/server/internal/domain"
+	"LLMGateway/server/internal/money"
+	"LLMGateway/server/internal/store"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -59,7 +62,92 @@ func (s *Store) GetUsageLog(id int) (domain.UsageLogDTO, error) {
 }
 
 func (s *Store) InsertUsageLog(in domain.UsageLogInput) (int, error) {
-	id, err := s.queries.InsertUsageLog(context.Background(), sqlc.InsertUsageLogParams{
+	id, err := insertUsageLog(context.Background(), s.queries, in)
+	if err != nil {
+		return 0, mapError(err)
+	}
+	return id, nil
+}
+
+func (s *Store) SettleChatCompletion(in domain.ChatSettlementInput) (int, error) {
+	parsedCost, err := money.Parse6(in.Cost)
+	if err != nil || parsedCost.Cmp(0) < 0 {
+		return 0, fmt.Errorf("%w: invalid cost", store.ErrInvalid)
+	}
+
+	ctx := context.Background()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return 0, mapError(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	queries := sqlc.New(tx)
+
+	if _, err := queries.LockUserBalance(ctx, int64(in.UserID)); err != nil {
+		return 0, mapError(err)
+	}
+	balanceRow, err := queries.GetUserBalanceText(ctx, int64(in.UserID))
+	if err != nil {
+		return 0, mapError(err)
+	}
+	current, err := money.Parse6(textValue(balanceRow.AvailableBalance))
+	if err != nil {
+		return 0, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
+	}
+	if parsedCost.Cmp(0) > 0 && current.Cmp(parsedCost) < 0 {
+		return 0, fmt.Errorf("%w: insufficient balance", store.ErrInvalid)
+	}
+
+	if parsedCost.Cmp(0) > 0 {
+		next := money.Format6(current.Sub(parsedCost))
+		if affected, err := queries.UpdateUserBalance(ctx, sqlc.UpdateUserBalanceParams{AvailableBalance: next, UserID: int64(in.UserID)}); err != nil {
+			return 0, mapError(err)
+		} else if affected == 0 {
+			return 0, store.ErrNotFound
+		}
+		if _, err := queries.CreateBalanceTransaction(ctx, sqlc.CreateBalanceTransactionParams{UserID: int64(in.UserID), TxType: "consume", Amount: money.Format6(parsedCost), BalanceAfter: next, Description: in.Description}); err != nil {
+			return 0, mapError(err)
+		}
+	}
+
+	if in.DebitChannel && parsedCost.Cmp(0) > 0 {
+		if in.ChannelID == nil {
+			return 0, fmt.Errorf("%w: channel_id is required", store.ErrInvalid)
+		}
+		if _, err := queries.LockChannel(ctx, int64(*in.ChannelID)); err != nil {
+			return 0, mapError(err)
+		}
+		row, err := queries.GetChannel(ctx, int64(*in.ChannelID))
+		if err != nil {
+			return 0, mapError(err)
+		}
+		base := money.Amount(0)
+		if current := textValue(row.Balance); current != "" {
+			parsed, err := money.Parse6(current)
+			if err != nil {
+				return 0, fmt.Errorf("%w: invalid channel balance", store.ErrInvalid)
+			}
+			base = parsed
+		}
+		if affected, err := queries.UpdateChannelBalance(ctx, sqlc.UpdateChannelBalanceParams{Balance: money.Format6(base.Sub(parsedCost)), ID: int64(*in.ChannelID)}); err != nil {
+			return 0, mapError(err)
+		} else if affected == 0 {
+			return 0, store.ErrNotFound
+		}
+	}
+
+	usageID, err := insertUsageLog(ctx, queries, in.UsageLog)
+	if err != nil {
+		return 0, mapError(err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return 0, mapError(err)
+	}
+	return usageID, nil
+}
+
+func insertUsageLog(ctx context.Context, queries *sqlc.Queries, in domain.UsageLogInput) (int, error) {
+	id, err := queries.InsertUsageLog(ctx, sqlc.InsertUsageLogParams{
 		RequestID:            in.RequestID,
 		UserID:               int8Value(in.UserID),
 		ApiKeyID:             int8Value(in.APIKeyID),
@@ -80,7 +168,7 @@ func (s *Store) InsertUsageLog(in domain.UsageLogInput) (int, error) {
 		ClientIp:             in.ClientIP,
 	})
 	if err != nil {
-		return 0, mapError(err)
+		return 0, err
 	}
 	return int(id), nil
 }

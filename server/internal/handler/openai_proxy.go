@@ -128,21 +128,22 @@ func (a *Server) chatCompletions(auth *domain.AuthContext, body []byte, clientIP
 		return 0, nil, err
 	}
 
-	if cost != "0.000000" {
-		if _, err := a.store.DebitUserBalance(auth.UserID, cost, "chat completion "+requestID); err != nil {
-			if errors.Is(err, store.ErrInvalid) {
-				a.logUsage(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, usage, "0.000000", inputPrice, outputPrice, durationMs, clientIP, "error", "insufficient_balance")
-				return 0, nil, ErrInsufficientBalance
-			}
-			return 0, nil, err
+	usageLog := a.usageLogInput(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, usage, cost, inputPrice, outputPrice, durationMs, clientIP, "success", "")
+	_, err = a.store.SettleChatCompletion(domain.ChatSettlementInput{
+		UserID:       auth.UserID,
+		ChannelID:    &candidate.ChannelID,
+		Cost:         cost,
+		DebitChannel: candidate.Balance != nil,
+		Description:  "chat completion " + requestID,
+		UsageLog:     usageLog,
+	})
+	if err != nil {
+		if errors.Is(err, store.ErrInvalid) {
+			a.logUsage(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, usage, "0.000000", inputPrice, outputPrice, durationMs, clientIP, "error", "insufficient_balance")
+			return 0, nil, ErrInsufficientBalance
 		}
-		if candidate.Balance != nil {
-			// Channel balance is best-effort; the user has already been charged.
-			_, _ = a.store.UpdateChannelBalance(candidate.ChannelID, "", "-"+cost)
-		}
+		return 0, nil, err
 	}
-
-	a.logUsage(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, usage, cost, inputPrice, outputPrice, durationMs, clientIP, "success", "")
 
 	// Best-effort: the request already succeeded and was charged, so a
 	// last_used_at update failure must not turn it into an error response.
@@ -213,6 +214,10 @@ func (a *Server) priceFor(channelID int, model string, usage *ChatCompletionUsag
 }
 
 func (a *Server) logUsage(requestID string, auth *domain.AuthContext, channelID *int, upstreamModel, model string, usage *ChatCompletionUsage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) {
+	_, _ = a.store.InsertUsageLog(a.usageLogInput(requestID, auth, channelID, upstreamModel, model, usage, cost, inputPrice, outputPrice, durationMs, clientIP, status, errorCode))
+}
+
+func (a *Server) usageLogInput(requestID string, auth *domain.AuthContext, channelID *int, upstreamModel, model string, usage *ChatCompletionUsage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) domain.UsageLogInput {
 	userID := auth.UserID
 	keyID := auth.KeyID
 
@@ -237,7 +242,7 @@ func (a *Server) logUsage(requestID string, auth *domain.AuthContext, channelID 
 		input.CachedInputTokens = cachedTokenCount(usage)
 		input.TotalTokens = usage.TotalTokens
 	}
-	_, _ = a.store.InsertUsageLog(input)
+	return input
 }
 
 func cachedTokenCount(usage *ChatCompletionUsage) int {
