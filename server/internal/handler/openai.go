@@ -19,7 +19,7 @@ var (
 	ErrStreamingUnsupported = errors.New("streaming is not supported")
 	ErrRateLimited          = errors.New("rate limit exceeded")
 	ErrInsufficientBalance  = errors.New("insufficient balance")
-	ErrNoChannel            = errors.New("no available channel")
+	ErrNoHealthyChannel     = errors.New("no healthy channel available")
 	ErrUpstream             = errors.New("upstream error")
 )
 
@@ -95,8 +95,8 @@ func writeProxyError(w http.ResponseWriter, err error) {
 		writeOpenAIError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "rate limit exceeded")
 	case errors.Is(err, ErrInsufficientBalance):
 		writeOpenAIError(w, http.StatusPaymentRequired, "insufficient_quota", "insufficient balance")
-	case errors.Is(err, ErrNoChannel):
-		writeOpenAIError(w, http.StatusServiceUnavailable, "no_available_channel", "no available channel for the requested model")
+	case errors.Is(err, ErrNoHealthyChannel):
+		writeOpenAIError(w, http.StatusServiceUnavailable, "no_healthy_channel", "no healthy channel available for the requested model")
 	case errors.Is(err, ErrUpstream):
 		writeOpenAIError(w, http.StatusBadGateway, "upstream_error", "upstream request failed")
 	default:

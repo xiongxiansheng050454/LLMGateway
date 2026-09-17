@@ -85,14 +85,14 @@ func TestSelectChannelExcludesNonPositiveBalance(t *testing.T) {
 	}
 
 	a := newRouteTestApp(st, func(int) int { return 0 })
-	if _, err := a.selectChannel("only-zero"); err != ErrNoChannel {
-		t.Fatalf("err = %v, want ErrNoChannel", err)
+	if _, err := a.selectChannel("only-zero"); err != ErrNoHealthyChannel {
+		t.Fatalf("err = %v, want ErrNoHealthyChannel", err)
 	}
 }
 
 func TestSelectChannelNoCandidates(t *testing.T) {
 	a := newRouteTestApp(memory.New(), func(int) int { return 0 })
-	if _, err := a.selectChannel("missing"); err != ErrNoChannel {
-		t.Fatalf("err = %v, want ErrNoChannel", err)
+	if _, err := a.selectChannel("missing"); err != ErrNoHealthyChannel {
+		t.Fatalf("err = %v, want ErrNoHealthyChannel", err)
 	}
 }

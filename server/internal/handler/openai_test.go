@@ -3,13 +3,17 @@ package handler
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"LLMGateway/server/internal/domain"
+	"LLMGateway/server/internal/store"
 	"LLMGateway/server/internal/store/memory"
 )
 
@@ -36,18 +40,22 @@ func upstreamSuccess() http.Handler {
 
 type proxyFixture struct {
 	server   *Server
-	store    *memory.Store
+	store    store.Store
 	fullKey  string
 	upstream *httptest.Server
 }
 
-func newProxyFixture(t *testing.T, upstream http.Handler) *proxyFixture {
+func newProxyFixture(t *testing.T, upstream http.Handler, opts ...Option) *proxyFixture {
+	t.Helper()
+	return newProxyFixtureWithStore(t, upstream, memory.New(), opts...)
+}
+
+func newProxyFixtureWithStore(t *testing.T, upstream http.Handler, st store.Store, opts ...Option) *proxyFixture {
 	t.Helper()
 
 	server := httptest.NewServer(upstream)
 	t.Cleanup(server.Close)
 
-	st := memory.New()
 	if _, err := st.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
@@ -73,7 +81,7 @@ func newProxyFixture(t *testing.T, upstream http.Handler) *proxyFixture {
 	}
 
 	return &proxyFixture{
-		server:   NewServer(filepath.Join("..", "..", "..", "dashboard"), st),
+		server:   NewServer(filepath.Join("..", "..", "..", "dashboard"), st, opts...),
 		store:    st,
 		fullKey:  created["full_key"].(string),
 		upstream: server,
@@ -336,6 +344,175 @@ func TestChatCompletionsRateLimited(t *testing.T) {
 	second := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, body)
 	if second.Code != http.StatusTooManyRequests {
 		t.Fatalf("second status = %d, want 429; body=%s", second.Code, second.Body.String())
+	}
+}
+
+func TestChatCompletionsTripsBreakerAndSkipsChannel(t *testing.T) {
+	var calls int32
+	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": map[string]string{"message": "boom"}})
+	})
+	f := newProxyFixture(t, upstream)
+	body := `{"model":"gpt","messages":[]}`
+
+	for i := 0; i < 5; i++ {
+		res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, body)
+		if res.Code != http.StatusInternalServerError {
+			t.Fatalf("attempt %d status = %d, want 500", i, res.Code)
+		}
+	}
+
+	health, err := f.store.GetChannelHealth(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.State != domain.HealthOpen {
+		t.Fatalf("state = %s, want open after 5 failures", health.State)
+	}
+
+	// The tripped channel is skipped: degraded 503 without another upstream call.
+	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, body)
+	if res.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503; body=%s", res.Code, res.Body.String())
+	}
+	if !strings.Contains(res.Body.String(), "no_healthy_channel") {
+		t.Fatalf("degraded body = %s, want no_healthy_channel", res.Body.String())
+	}
+	if got := atomic.LoadInt32(&calls); got != 5 {
+		t.Fatalf("upstream calls = %d, want 5 (tripped channel must be skipped)", got)
+	}
+
+	// The degraded request is recorded as a failure usage log.
+	logs, _ := f.store.ListUsageLogs(domain.UsageLogFilter{Page: 1, PageSize: 50})
+	found := false
+	for _, item := range logs.List {
+		entry := item.(map[string]any)
+		if entry["error_code"] == "no_healthy_channel" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("degraded request did not write a no_healthy_channel usage log")
+	}
+}
+
+func TestChatCompletionsHalfOpenRecovers(t *testing.T) {
+	var failing atomic.Bool
+	failing.Store(true)
+	var calls int32
+	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		if failing.Load() {
+			writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "boom"})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"id": "chatcmpl-1", "object": "chat.completion", "model": "up-gpt", "choices": []any{},
+			"usage": map[string]any{"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+		})
+	})
+
+	current := time.Now().UTC()
+	st := memory.NewWithClock(func() time.Time { return current })
+	f := newProxyFixtureWithStore(t, upstream, st)
+	body := `{"model":"gpt","messages":[]}`
+
+	for i := 0; i < 5; i++ {
+		proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, body)
+	}
+	health, _ := st.GetChannelHealth(1)
+	if health.State != domain.HealthOpen {
+		t.Fatalf("state = %s, want open", health.State)
+	}
+
+	// After the cooldown a half-open probe succeeds and closes the breaker.
+	current = current.Add(31 * time.Second)
+	failing.Store(false)
+	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, body)
+	if res.Code != http.StatusOK {
+		t.Fatalf("probe status = %d, want 200; body=%s", res.Code, res.Body.String())
+	}
+	health, _ = st.GetChannelHealth(1)
+	if health.State != domain.HealthClosed {
+		t.Fatalf("state = %s, want closed after successful probe", health.State)
+	}
+}
+
+func TestChatCompletionsHealthRecordFailureDoesNotBreakSuccess(t *testing.T) {
+	f := newProxyFixtureWithStore(t, upstreamSuccess(), failingHealthStore{Store: memory.New()})
+	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","messages":[]}`)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 even when health recording fails; body=%s", res.Code, res.Body.String())
+	}
+}
+
+// failingHealthStore makes health recording fail so tests can prove it is
+// best-effort and cannot turn a successful request into an error.
+type failingHealthStore struct {
+	store.Store
+}
+
+func (f failingHealthStore) RecordChannelSuccess(int) (domain.ChannelHealth, error) {
+	return domain.ChannelHealth{}, errors.New("health store unavailable")
+}
+
+func (f failingHealthStore) RecordChannelFailure(int, string) (domain.ChannelHealth, error) {
+	return domain.ChannelHealth{}, errors.New("health store unavailable")
+}
+
+func TestClassifyUpstreamResult(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  int
+		err     error
+		failure bool
+		reason  string
+	}{
+		{"transport error", 0, errors.New("dial tcp: refused"), true, "upstream_unreachable"},
+		{"429", http.StatusTooManyRequests, nil, true, "upstream_429"},
+		{"401", http.StatusUnauthorized, nil, true, "upstream_401"},
+		{"403", http.StatusForbidden, nil, true, "upstream_403"},
+		{"402", http.StatusPaymentRequired, nil, true, "upstream_402"},
+		{"500", http.StatusInternalServerError, nil, true, "upstream_500"},
+		{"503", http.StatusServiceUnavailable, nil, true, "upstream_503"},
+		{"400", http.StatusBadRequest, nil, false, ""},
+		{"404", http.StatusNotFound, nil, false, ""},
+		{"422", http.StatusUnprocessableEntity, nil, false, ""},
+		{"200", http.StatusOK, nil, false, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			failure, reason := classifyUpstreamResult(tt.status, tt.err)
+			if failure != tt.failure || reason != tt.reason {
+				t.Fatalf("classifyUpstreamResult(%d, %v) = (%v, %q), want (%v, %q)", tt.status, tt.err, failure, reason, tt.failure, tt.reason)
+			}
+		})
+	}
+}
+
+func TestChatCompletionsClientErrorDoesNotTripBreaker(t *testing.T) {
+	var calls int32
+	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "bad request"})
+	})
+	f := newProxyFixture(t, upstream)
+	body := `{"model":"gpt","messages":[]}`
+
+	for i := 0; i < 6; i++ {
+		res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, body)
+		if res.Code != http.StatusBadRequest {
+			t.Fatalf("attempt %d status = %d, want 400 passthrough", i, res.Code)
+		}
+	}
+
+	health, _ := f.store.GetChannelHealth(1)
+	if health.State != domain.HealthClosed {
+		t.Fatalf("state = %s, want closed (client errors must not trip the breaker)", health.State)
+	}
+	if got := atomic.LoadInt32(&calls); got != 6 {
+		t.Fatalf("upstream calls = %d, want 6 (channel must stay routable)", got)
 	}
 }
 
