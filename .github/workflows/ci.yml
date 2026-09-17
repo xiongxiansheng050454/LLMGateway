@@ -1,0 +1,83 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+defaults:
+  run:
+    working-directory: server
+
+jobs:
+  backend:
+    name: build / vet / gofmt / test / sqlc
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: gofmt
+        run: |
+          unformatted="$(gofmt -l cmd internal)"
+          if [ -n "$unformatted" ]; then
+            echo "gofmt found unformatted files:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: go build
+        run: go build ./...
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test (no database; PostgreSQL tests skip)
+        run: go test ./...
+
+      - name: Set up sqlc
+        uses: sqlc-dev/setup-sqlc@v4
+        with:
+          sqlc-version: '1.31.1'
+
+      - name: sqlc generate is reproducible
+        run: |
+          sqlc generate
+          git diff --exit-code -- internal/db/sqlc db/queries db/migrations
+
+  postgres:
+    name: postgres integration tests
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: llmgateway
+          POSTGRES_USER: llmgateway
+          POSTGRES_PASSWORD: llmgateway_dev
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U llmgateway"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: server/go.mod
+          cache-dependency-path: server/go.sum
+
+      - name: go test with TEST_DATABASE_URL
+        env:
+          TEST_DATABASE_URL: postgres://llmgateway:llmgateway_dev@localhost:5432/llmgateway?sslmode=disable
+        run: go test ./...
