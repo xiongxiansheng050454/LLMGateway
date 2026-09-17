@@ -76,6 +76,22 @@ func TestUsageLogsFilterAndPaging(t *testing.T) {
 	}
 }
 
+func TestCountRequestsSinceFiltersByModelAndChannel(t *testing.T) {
+	st := New()
+	seedLog(st, intp(1), intp(1), "gpt", "success", "0.001000", 100, "2026-09-16T10:00:00Z")
+	seedLog(st, intp(1), intp(2), "gpt", "error", "0.001000", 100, "2026-09-16T10:00:10Z")
+	seedLog(st, intp(1), intp(1), "other", "success", "0.001000", 100, "2026-09-16T10:00:20Z")
+	seedLog(st, intp(2), intp(1), "gpt", "success", "0.001000", 100, "2026-09-16T10:00:30Z")
+
+	count, err := st.CountRequestsSince(domain.UsageCountFilter{UserID: 1, Since: "2026-09-16T09:59:00Z", Model: "gpt", ChannelID: intp(1)})
+	if err != nil {
+		t.Fatalf("CountRequestsSince: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("count = %d, want 1", count)
+	}
+}
+
 func TestUsageInvalidTimeParams(t *testing.T) {
 	st := New()
 

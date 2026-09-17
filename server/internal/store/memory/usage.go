@@ -153,22 +153,30 @@ func (s *Store) GetUsageLog(id int) (domain.UsageLogDTO, error) {
 	return domain.UsageLogDTO{}, store.ErrNotFound
 }
 
-func (s *Store) CountRequestsSince(userID int, apiKeyID *int, since string) (int, error) {
-	if err := domain.ValidateSince(since); err != nil {
+func (s *Store) CountRequestsSince(filter domain.UsageCountFilter) (int, error) {
+	if err := domain.ValidateSince(filter.Since); err != nil {
 		return 0, err
 	}
-	sinceTime, _ := time.Parse(time.RFC3339, since)
+	sinceTime, _ := time.Parse(time.RFC3339, filter.Since)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	count := 0
 	for _, log := range s.usageLogs {
-		if log.UserID == nil || *log.UserID != userID {
+		if log.UserID == nil || *log.UserID != filter.UserID {
 			continue
 		}
-		if apiKeyID != nil {
-			if log.APIKeyID == nil || *log.APIKeyID != *apiKeyID {
+		if filter.APIKeyID != nil {
+			if log.APIKeyID == nil || *log.APIKeyID != *filter.APIKeyID {
+				continue
+			}
+		}
+		if filter.Model != "" && log.Model != filter.Model {
+			continue
+		}
+		if filter.ChannelID != nil {
+			if log.ChannelID == nil || *log.ChannelID != *filter.ChannelID {
 				continue
 			}
 		}

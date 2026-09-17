@@ -56,10 +56,6 @@ func (a *Server) chatCompletions(auth *domain.AuthContext, body []byte, clientIP
 	if !allowModel(auth, req.Model) {
 		return 0, nil, ErrForbidden
 	}
-	if err := a.checkRateLimit(auth, req.Model); err != nil {
-		return 0, nil, err
-	}
-
 	balance, err := money.Parse6(auth.AvailableBalance)
 	if err != nil {
 		return 0, nil, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
@@ -70,12 +66,24 @@ func (a *Server) chatCompletions(auth *domain.AuthContext, body []byte, clientIP
 
 	requestID := newRequestID()
 	start := a.now()
+	if err := a.checkRateLimit(auth, req.Model); err != nil {
+		if errors.Is(err, ErrRateLimited) {
+			a.logUsage(requestID, auth, nil, "", req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", "rate_limited")
+		}
+		return 0, nil, err
+	}
 
 	candidate, err := a.selectChannel(req.Model)
 	if err != nil {
 		if errors.Is(err, ErrNoHealthyChannel) {
 			// Degraded: every candidate is tripped open or there is no mapping.
 			a.logUsage(requestID, auth, nil, "", req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", "no_healthy_channel")
+		}
+		return 0, nil, err
+	}
+	if err := a.checkChannelRateLimit(auth, req.Model, candidate.ChannelID); err != nil {
+		if errors.Is(err, ErrRateLimited) {
+			a.logUsage(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", "rate_limited")
 		}
 		return 0, nil, err
 	}

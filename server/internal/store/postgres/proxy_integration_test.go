@@ -125,24 +125,24 @@ func TestPGProxyStoreCapabilities(t *testing.T) {
 	if _, err := st.InsertUsageLog(domain.UsageLogInput{RequestID: "req-2", UserID: intp(1), APIKeyID: intp(keyID), ChannelID: intp(channelA), Model: "gpt", Status: "error"}); err != nil {
 		t.Fatal(err)
 	}
-	count, err := st.CountRequestsSince(1, nil, "1970-01-01T00:00:00Z")
+	count, err := st.CountRequestsSince(domain.UsageCountFilter{UserID: 1, Since: "1970-01-01T00:00:00Z"})
 	if err != nil {
 		t.Fatalf("CountRequestsSince: %v", err)
 	}
 	if count != 2 {
 		t.Fatalf("count = %d, want 2", count)
 	}
-	scoped, err := st.CountRequestsSince(1, intp(keyID), "1970-01-01T00:00:00Z")
+	scoped, err := st.CountRequestsSince(domain.UsageCountFilter{UserID: 1, APIKeyID: intp(keyID), Since: "1970-01-01T00:00:00Z"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if scoped != 2 {
 		t.Fatalf("key-scoped count = %d, want 2", scoped)
 	}
-	if _, err := st.CountRequestsSince(1, nil, "abc"); !errors.Is(err, store.ErrInvalid) {
+	if _, err := st.CountRequestsSince(domain.UsageCountFilter{UserID: 1, Since: "abc"}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid since err = %v, want ErrInvalid", err)
 	}
-	if _, err := st.CountRequestsSince(1, nil, ""); !errors.Is(err, store.ErrInvalid) {
+	if _, err := st.CountRequestsSince(domain.UsageCountFilter{UserID: 1}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("empty since err = %v, want ErrInvalid", err)
 	}
 }
@@ -271,7 +271,7 @@ func runProxyScenario(t *testing.T, st store.Store) proxySnapshot {
 	if _, err := st.InsertUsageLog(domain.UsageLogInput{RequestID: "req-1", UserID: intp(1), Model: "gpt", Status: "success"}); err != nil {
 		t.Fatal(err)
 	}
-	countAll, err := st.CountRequestsSince(1, nil, "1970-01-01T00:00:00Z")
+	countAll, err := st.CountRequestsSince(domain.UsageCountFilter{UserID: 1, Since: "1970-01-01T00:00:00Z"})
 	if err != nil {
 		t.Fatal(err)
 	}

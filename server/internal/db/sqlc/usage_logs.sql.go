@@ -17,16 +17,26 @@ FROM usage_logs
 WHERE user_id = $1
   AND created_at >= $2::timestamptz
   AND ($3::bigint IS NULL OR api_key_id = $3::bigint)
+  AND ($4::text IS NULL OR model = $4::text)
+  AND ($5::bigint IS NULL OR channel_id = $5::bigint)
 `
 
 type CountRequestsSinceParams struct {
-	UserID   pgtype.Int8        `json:"user_id"`
-	Since    pgtype.Timestamptz `json:"since"`
-	ApiKeyID pgtype.Int8        `json:"api_key_id"`
+	UserID    pgtype.Int8        `json:"user_id"`
+	Since     pgtype.Timestamptz `json:"since"`
+	ApiKeyID  pgtype.Int8        `json:"api_key_id"`
+	Model     pgtype.Text        `json:"model"`
+	ChannelID pgtype.Int8        `json:"channel_id"`
 }
 
 func (q *Queries) CountRequestsSince(ctx context.Context, arg CountRequestsSinceParams) (int32, error) {
-	row := q.db.QueryRow(ctx, countRequestsSince, arg.UserID, arg.Since, arg.ApiKeyID)
+	row := q.db.QueryRow(ctx, countRequestsSince,
+		arg.UserID,
+		arg.Since,
+		arg.ApiKeyID,
+		arg.Model,
+		arg.ChannelID,
+	)
 	var column_1 int32
 	err := row.Scan(&column_1)
 	return column_1, err

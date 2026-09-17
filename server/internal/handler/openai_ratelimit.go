@@ -16,7 +16,7 @@ func (a *Server) checkRateLimit(auth *domain.AuthContext, model string) error {
 	since := a.now().Add(-time.Minute).UTC().Format(time.RFC3339)
 
 	if override := rpmOverride(auth.RateLimitOverrides); override > 0 {
-		count, err := a.store.CountRequestsSince(auth.UserID, &auth.KeyID, since)
+		count, err := a.store.CountRequestsSince(domain.UsageCountFilter{UserID: auth.UserID, APIKeyID: &auth.KeyID, Since: since})
 		if err != nil {
 			return err
 		}
@@ -34,6 +34,9 @@ func (a *Server) checkRateLimit(auth *domain.AuthContext, model string) error {
 		if item.Metric != "rpm" || item.Action != "reject" {
 			continue
 		}
+		if item.TargetType == "channel" {
+			continue
+		}
 		if !matchesTarget(item, auth, model) {
 			continue
 		}
@@ -41,7 +44,11 @@ func (a *Server) checkRateLimit(auth *domain.AuthContext, model string) error {
 		if limit <= 0 {
 			continue
 		}
-		count, err := a.store.CountRequestsSince(auth.UserID, &auth.KeyID, since)
+		filter := domain.UsageCountFilter{UserID: auth.UserID, APIKeyID: &auth.KeyID, Since: since}
+		if item.TargetType == "model" {
+			filter.Model = model
+		}
+		count, err := a.store.CountRequestsSince(filter)
 		if err != nil {
 			return err
 		}
@@ -52,11 +59,35 @@ func (a *Server) checkRateLimit(auth *domain.AuthContext, model string) error {
 	return nil
 }
 
+func (a *Server) checkChannelRateLimit(auth *domain.AuthContext, model string, channelID int) error {
+	since := a.now().Add(-time.Minute).UTC().Format(time.RFC3339)
+	enabled := true
+	result, err := a.store.ListRateLimits(&enabled, 1, 1000)
+	if err != nil {
+		return err
+	}
+	for _, item := range result.List {
+		if item.Metric != "rpm" || item.Action != "reject" || item.TargetType != "channel" {
+			continue
+		}
+		if item.TargetValue != "*" && item.TargetValue != strconv.Itoa(channelID) {
+			continue
+		}
+		if item.LimitValue <= 0 {
+			continue
+		}
+		count, err := a.store.CountRequestsSince(domain.UsageCountFilter{UserID: auth.UserID, APIKeyID: &auth.KeyID, Since: since, ChannelID: &channelID})
+		if err != nil {
+			return err
+		}
+		if int64(count) >= item.LimitValue {
+			return ErrRateLimited
+		}
+	}
+	return nil
+}
+
 // matchesTarget decides whether a rule applies to the current request.
-//
-// Known limitation: rpm counting is per user/key, not per model or channel, so
-// a model-scoped rule counts all of that user's requests. channel scoping is not
-// evaluated because the channel is not chosen until after the limit check.
 func matchesTarget(rule domain.RateLimitRuleDTO, auth *domain.AuthContext, model string) bool {
 	switch rule.TargetType {
 	case "global":

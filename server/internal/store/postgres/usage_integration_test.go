@@ -116,6 +116,42 @@ func TestPGUsageLogsAndStats(t *testing.T) {
 	}
 }
 
+func TestPGCountRequestsSinceFiltersByModelAndChannel(t *testing.T) {
+	st := testStore(t)
+	if _, err := st.CreateChannel(domain.ChannelInput{Name: "A", BaseURL: "https://a.test", APIKey: "sk", Status: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateChannel(domain.ChannelInput{Name: "B", BaseURL: "https://b.test", APIKey: "sk", Status: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateUser(domain.UserInput{Nickname: "A"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateUser(domain.UserInput{Nickname: "B"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.InsertUsageLog(domain.UsageLogInput{RequestID: "count-1", UserID: intp(1), ChannelID: intp(1), Model: "gpt", Status: "success"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.InsertUsageLog(domain.UsageLogInput{RequestID: "count-2", UserID: intp(1), ChannelID: intp(2), Model: "gpt", Status: "error"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.InsertUsageLog(domain.UsageLogInput{RequestID: "count-3", UserID: intp(1), ChannelID: intp(1), Model: "other", Status: "success"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.InsertUsageLog(domain.UsageLogInput{RequestID: "count-4", UserID: intp(2), ChannelID: intp(1), Model: "gpt", Status: "success"}); err != nil {
+		t.Fatal(err)
+	}
+
+	count, err := st.CountRequestsSince(domain.UsageCountFilter{UserID: 1, Since: "1970-01-01T00:00:00Z", Model: "gpt", ChannelID: intp(1)})
+	if err != nil {
+		t.Fatalf("CountRequestsSince: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("count = %d, want 1", count)
+	}
+}
+
 func TestPGUsageInvalidTimeParams(t *testing.T) {
 	st := testStore(t)
 

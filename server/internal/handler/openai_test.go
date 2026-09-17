@@ -346,6 +346,57 @@ func TestChatCompletionsRateLimited(t *testing.T) {
 	}
 }
 
+func TestChatCompletionsModelRateLimitCountsOnlySameModel(t *testing.T) {
+	current := time.Now().UTC()
+	st := memory.NewWithClock(func() time.Time { return current })
+	f := newProxyFixtureWithStore(t, upstreamSuccess(), st, WithClock(func() time.Time { return current }))
+	if _, err := f.store.CreateChannelModel(1, domain.ChannelModel{ModelName: "gpt-other", UpstreamModel: "up-other", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.store.UpsertPricing(domain.PricingInput{ChannelID: 1, ModelName: "gpt-other", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.store.InsertUsageLog(domain.UsageLogInput{RequestID: "prior-other", UserID: intPointer(1), APIKeyID: intPointer(1), ChannelID: intPointer(1), Model: "gpt-other", Status: "success"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.store.CreateRateLimit(domain.RateLimitInput{RuleName: stringPointer("gpt rpm"), TargetType: stringPointer("model"), TargetValue: stringPointer("gpt"), Metric: stringPointer("rpm"), LimitValue: int64Pointer(1), WindowSeconds: intPointer(60), Action: stringPointer("reject")}); err != nil {
+		t.Fatal(err)
+	}
+
+	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","messages":[]}`)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", res.Code, res.Body.String())
+	}
+}
+
+func TestChatCompletionsChannelRateLimitAfterRouting(t *testing.T) {
+	current := time.Now().UTC()
+	st := memory.NewWithClock(func() time.Time { return current })
+	var calls int32
+	f := newProxyFixtureWithStore(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		upstreamSuccess().ServeHTTP(w, r)
+	}), st, WithClock(func() time.Time { return current }))
+	if _, err := f.store.InsertUsageLog(domain.UsageLogInput{RequestID: "prior-channel", UserID: intPointer(1), APIKeyID: intPointer(1), ChannelID: intPointer(1), Model: "gpt", Status: "success"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.store.CreateRateLimit(domain.RateLimitInput{RuleName: stringPointer("channel rpm"), TargetType: stringPointer("channel"), TargetValue: stringPointer("1"), Metric: stringPointer("rpm"), LimitValue: int64Pointer(1), WindowSeconds: intPointer(60), Action: stringPointer("reject")}); err != nil {
+		t.Fatal(err)
+	}
+
+	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","messages":[]}`)
+	if res.Code != http.StatusTooManyRequests {
+		t.Fatalf("status = %d, want 429; body=%s", res.Code, res.Body.String())
+	}
+	if got := atomic.LoadInt32(&calls); got != 0 {
+		t.Fatalf("upstream calls = %d, want 0", got)
+	}
+	logs, _ := f.store.ListUsageLogs(domain.UsageLogFilter{Status: "error", Page: 1, PageSize: 20})
+	if logs.Total != 1 || logs.List[0].ErrorCode != "rate_limited" || logs.List[0].ChannelID == nil || *logs.List[0].ChannelID != 1 {
+		t.Fatalf("rate-limited usage log missing channel/error_code: %+v", logs)
+	}
+}
+
 func TestChatCompletionsTripsBreakerAndSkipsChannel(t *testing.T) {
 	var calls int32
 	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
