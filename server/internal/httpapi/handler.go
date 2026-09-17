@@ -2,17 +2,20 @@ package httpapi
 
 import (
 	"encoding/json"
-	"errors"
 	"math/rand"
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
+	"LLMGateway/server/internal/accounts"
+	"LLMGateway/server/internal/catalog"
+	"LLMGateway/server/internal/httpcommon"
 	"LLMGateway/server/internal/proxy"
+	"LLMGateway/server/internal/ratelimit"
 	"LLMGateway/server/internal/store"
+	"LLMGateway/server/internal/usage"
 )
 
 // Server holds the HTTP entry points for the gateway. The concrete route table
@@ -27,9 +30,11 @@ type adminResponse struct {
 type Server struct {
 	store        store.Store
 	client       *http.Client
-	randIntN     func(int) int
-	now          func() time.Time
 	proxy        *proxy.Service
+	catalog      *catalog.Server
+	accounts     *accounts.Server
+	usage        *usage.Server
+	ratelimit    *ratelimit.Server
 	dashboardDir string
 	dashboard    http.Handler
 }
@@ -87,9 +92,11 @@ func NewServer(dashboardDir string, st store.Store, opts ...Option) *Server {
 	return &Server{
 		store:        st,
 		client:       client,
-		randIntN:     settings.randIntN,
-		now:          settings.now,
 		proxy:        proxy.NewService(st, client, settings.randIntN, settings.now),
+		catalog:      catalog.New(st, client),
+		accounts:     accounts.New(st),
+		usage:        usage.New(st),
+		ratelimit:    ratelimit.New(st),
 		dashboardDir: dashboardDir,
 		dashboard:    http.FileServer(http.Dir(dashboardDir)),
 	}
@@ -152,93 +159,20 @@ func (a *Server) Admin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Server) adminData(r *http.Request) (any, bool, int, string) {
-	if data, ok, status, msg := a.catalogData(r); ok || status != 0 {
+	parts := httpcommon.SplitPath(strings.TrimSuffix(r.URL.Path, "/"))
+	if data, ok, status, msg := a.catalog.Data(r, parts); ok || status != 0 {
 		return data, ok, status, msg
 	}
-	if data, ok, status, msg := a.userData(r); ok || status != 0 {
+	if data, ok, status, msg := a.accounts.Data(r); ok || status != 0 {
 		return data, ok, status, msg
 	}
-	if data, ok, status, msg := a.rateLimitData(r); ok || status != 0 {
+	if data, ok, status, msg := a.ratelimit.Data(r); ok || status != 0 {
 		return data, ok, status, msg
 	}
-	if data, ok, status, msg := a.usageData(r); ok || status != 0 {
+	if data, ok, status, msg := a.usage.Data(r); ok || status != 0 {
 		return data, ok, status, msg
 	}
 	return nil, false, 0, ""
-}
-
-// catalogData dispatches /admin requests to the channel, model and pricing
-// domain handlers.
-func (a *Server) catalogData(r *http.Request) (any, bool, int, string) {
-	parts := splitPath(strings.TrimSuffix(r.URL.Path, "/"))
-	if len(parts) < 2 || parts[0] != "admin" {
-		return nil, false, 0, ""
-	}
-	if parts[1] == "channels" {
-		return a.channelData(r, parts)
-	}
-	if parts[1] == "models" && len(parts) == 2 && r.Method == http.MethodGet {
-		return a.result(a.store.ListCatalogModels(r.URL.Query().Get("status") == "1"))
-	}
-	if parts[1] == "pricing" && len(parts) == 2 {
-		return a.pricingData(r)
-	}
-	return nil, false, 0, ""
-}
-
-func splitPath(path string) []string {
-	parts := strings.Split(strings.Trim(path, "/"), "/")
-	if len(parts) == 1 && parts[0] == "" {
-		return nil
-	}
-	return parts
-}
-
-func readJSON(r *http.Request, v any) error {
-	return json.NewDecoder(r.Body).Decode(v)
-}
-
-func ParsePagination(r *http.Request) (int, int) {
-	q := r.URL.Query()
-	page := parsePositiveInt(q.Get("page"), 1)
-	pageSize := parsePositiveInt(q.Get("page_size"), 20)
-	return page, pageSize
-}
-
-func parsePositiveInt(value string, fallback int) int {
-	n, err := strconv.Atoi(value)
-	if err != nil || n <= 0 {
-		return fallback
-	}
-	return n
-}
-
-func (a *Server) result(data any, err error) (any, bool, int, string) {
-	if err != nil {
-		return errorResponse(err)
-	}
-	return data, true, 0, ""
-}
-
-func (a *Server) noBody(err error) (any, bool, int, string) {
-	if err != nil {
-		return errorResponse(err)
-	}
-	return map[string]any{"deleted": true}, true, 0, ""
-}
-
-func errorResponse(err error) (any, bool, int, string) {
-	status := http.StatusInternalServerError
-	if errors.Is(err, store.ErrNotFound) {
-		status = http.StatusNotFound
-	}
-	if errors.Is(err, store.ErrInvalid) {
-		status = http.StatusBadRequest
-	}
-	if errors.Is(err, store.ErrNotImplemented) {
-		status = http.StatusNotImplemented
-	}
-	return nil, true, status, strings.TrimPrefix(err.Error(), store.ErrInvalid.Error()+": ")
 }
 
 func writeAdminOK(w http.ResponseWriter, data any) {

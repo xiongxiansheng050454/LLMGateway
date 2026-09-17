@@ -1,4 +1,4 @@
-package httpapi
+package ratelimit
 
 import (
 	"net/http"
@@ -6,10 +6,11 @@ import (
 	"strings"
 
 	"LLMGateway/server/internal/domain"
+	"LLMGateway/server/internal/httpcommon"
 )
 
-func (a *Server) rateLimitData(r *http.Request) (any, bool, int, string) {
-	parts := splitPath(strings.TrimSuffix(r.URL.Path, "/"))
+func (a *Server) Data(r *http.Request) (any, bool, int, string) {
+	parts := httpcommon.SplitPath(strings.TrimSuffix(r.URL.Path, "/"))
 	if len(parts) < 2 || parts[0] != "admin" || parts[1] != "rate-limits" {
 		return nil, false, 0, ""
 	}
@@ -33,7 +34,7 @@ func (a *Server) rateLimitData(r *http.Request) (any, bool, int, string) {
 		case http.MethodPut:
 			return a.updateRateLimit(r, id)
 		case http.MethodDelete:
-			return a.noBody(a.store.DeleteRateLimit(id))
+			return httpcommon.NoBody(a.store.DeleteRateLimit(id))
 		}
 		return nil, true, http.StatusMethodNotAllowed, "method not allowed"
 	}
@@ -41,7 +42,7 @@ func (a *Server) rateLimitData(r *http.Request) (any, bool, int, string) {
 }
 
 func (a *Server) listRateLimits(r *http.Request) (any, bool, int, string) {
-	page, pageSize := ParsePagination(r)
+	page, pageSize := httpcommon.ParsePagination(r)
 
 	var enabled *bool
 	switch r.URL.Query().Get("enabled") {
@@ -52,21 +53,21 @@ func (a *Server) listRateLimits(r *http.Request) (any, bool, int, string) {
 		value := false
 		enabled = &value
 	}
-	return a.result(a.store.ListRateLimits(enabled, page, pageSize))
+	return httpcommon.Result(a.store.ListRateLimits(enabled, page, pageSize))
 }
 
 func (a *Server) createRateLimit(r *http.Request) (any, bool, int, string) {
 	var req domain.RateLimitInput
-	if err := readJSON(r, &req); err != nil {
+	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
-	return a.result(a.store.CreateRateLimit(req))
+	return httpcommon.Result(a.store.CreateRateLimit(req))
 }
 
 func (a *Server) updateRateLimit(r *http.Request, id int) (any, bool, int, string) {
 	var req domain.RateLimitInput
-	if err := readJSON(r, &req); err != nil {
+	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
-	return a.result(a.store.UpdateRateLimit(id, req))
+	return httpcommon.Result(a.store.UpdateRateLimit(id, req))
 }

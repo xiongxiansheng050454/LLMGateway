@@ -1,17 +1,18 @@
-package httpapi
+package catalog
 
 import (
 	"net/http"
 	"strconv"
 
 	"LLMGateway/server/internal/domain"
+	"LLMGateway/server/internal/httpcommon"
 )
 
 func (a *Server) channelData(r *http.Request, parts []string) (any, bool, int, string) {
 	if len(parts) == 2 {
 		switch r.Method {
 		case http.MethodGet:
-			return a.result(a.store.ListChannels())
+			return httpcommon.Result(a.store.ListChannels())
 		case http.MethodPost:
 			return a.createChannel(r)
 		}
@@ -28,7 +29,7 @@ func (a *Server) channelData(r *http.Request, parts []string) (any, bool, int, s
 		case http.MethodPut:
 			return a.updateChannel(r, channelID)
 		case http.MethodDelete:
-			return a.noBody(a.store.DeleteChannel(channelID))
+			return httpcommon.NoBody(a.store.DeleteChannel(channelID))
 		}
 	}
 	if len(parts) == 4 && parts[3] == "status" && r.Method == http.MethodPut {
@@ -38,7 +39,7 @@ func (a *Server) channelData(r *http.Request, parts []string) (any, bool, int, s
 		return a.updateChannelBalance(r, channelID)
 	}
 	if len(parts) == 4 && parts[3] == "test" && r.Method == http.MethodPost {
-		return a.result(a.store.TestChannel(channelID))
+		return httpcommon.Result(a.store.TestChannel(channelID))
 	}
 	if len(parts) == 4 && parts[3] == "remote-models" && r.Method == http.MethodPost {
 		return a.remoteModels(channelID)
@@ -53,13 +54,13 @@ func (a *Server) channelModelData(r *http.Request, parts []string, channelID int
 	if len(parts) == 4 {
 		switch r.Method {
 		case http.MethodGet:
-			return a.result(a.store.ListChannelModels(channelID))
+			return httpcommon.Result(a.store.ListChannelModels(channelID))
 		case http.MethodPost:
 			var req domain.ChannelModel
-			if err := readJSON(r, &req); err != nil {
+			if err := httpcommon.ReadJSON(r, &req); err != nil {
 				return nil, true, http.StatusBadRequest, "invalid json"
 			}
-			return a.result(a.store.CreateChannelModel(channelID, req))
+			return httpcommon.Result(a.store.CreateChannelModel(channelID, req))
 		}
 	}
 	if len(parts) == 5 {
@@ -73,12 +74,12 @@ func (a *Server) channelModelData(r *http.Request, parts []string, channelID int
 				UpstreamModel string `json:"upstream_model"`
 				Enabled       bool   `json:"enabled"`
 			}
-			if err := readJSON(r, &req); err != nil {
+			if err := httpcommon.ReadJSON(r, &req); err != nil {
 				return nil, true, http.StatusBadRequest, "invalid json"
 			}
-			return a.result(a.store.UpdateChannelModel(channelID, modelID, req.UpstreamModel, req.Enabled))
+			return httpcommon.Result(a.store.UpdateChannelModel(channelID, modelID, req.UpstreamModel, req.Enabled))
 		case http.MethodDelete:
-			return a.noBody(a.store.DeleteChannelModel(channelID, modelID))
+			return httpcommon.NoBody(a.store.DeleteChannelModel(channelID, modelID))
 		}
 	}
 	return nil, true, http.StatusMethodNotAllowed, "method not allowed"
@@ -86,28 +87,28 @@ func (a *Server) channelModelData(r *http.Request, parts []string, channelID int
 
 func (a *Server) createChannel(r *http.Request) (any, bool, int, string) {
 	var req domain.ChannelInput
-	if err := readJSON(r, &req); err != nil {
+	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
-	return a.result(a.store.CreateChannel(req))
+	return httpcommon.Result(a.store.CreateChannel(req))
 }
 
 func (a *Server) updateChannel(r *http.Request, id int) (any, bool, int, string) {
 	var req domain.ChannelInput
-	if err := readJSON(r, &req); err != nil {
+	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
-	return a.result(a.store.UpdateChannel(id, req))
+	return httpcommon.Result(a.store.UpdateChannel(id, req))
 }
 
 func (a *Server) updateChannelStatus(r *http.Request, id int) (any, bool, int, string) {
 	var req struct {
 		Status int `json:"status"`
 	}
-	if err := readJSON(r, &req); err != nil {
+	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
-	return a.result(a.store.UpdateChannelStatus(id, req.Status))
+	return httpcommon.Result(a.store.UpdateChannelStatus(id, req.Status))
 }
 
 func (a *Server) updateChannelBalance(r *http.Request, id int) (any, bool, int, string) {
@@ -115,8 +116,8 @@ func (a *Server) updateChannelBalance(r *http.Request, id int) (any, bool, int, 
 		Balance string `json:"balance"`
 		Delta   string `json:"delta"`
 	}
-	if err := readJSON(r, &req); err != nil {
+	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
-	return a.result(a.store.UpdateChannelBalance(id, req.Balance, req.Delta))
+	return httpcommon.Result(a.store.UpdateChannelBalance(id, req.Balance, req.Delta))
 }

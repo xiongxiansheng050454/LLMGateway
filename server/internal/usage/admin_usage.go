@@ -1,4 +1,4 @@
-package httpapi
+package usage
 
 import (
 	"net/http"
@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"LLMGateway/server/internal/domain"
+	"LLMGateway/server/internal/httpcommon"
 )
 
 const (
@@ -15,8 +16,8 @@ const (
 	defaultDateTo    = "9999-12-31"
 )
 
-func (a *Server) usageData(r *http.Request) (any, bool, int, string) {
-	parts := splitPath(strings.TrimSuffix(r.URL.Path, "/"))
+func (a *Server) Data(r *http.Request) (any, bool, int, string) {
+	parts := httpcommon.SplitPath(strings.TrimSuffix(r.URL.Path, "/"))
 	if len(parts) < 2 || parts[0] != "admin" {
 		return nil, false, 0, ""
 	}
@@ -30,7 +31,7 @@ func (a *Server) usageData(r *http.Request) (any, bool, int, string) {
 			if err != nil {
 				return nil, true, http.StatusBadRequest, "invalid log id"
 			}
-			return a.result(a.store.GetUsageLog(id))
+			return httpcommon.Result(a.store.GetUsageLog(id))
 		}
 		return nil, true, http.StatusMethodNotAllowed, "method not allowed"
 	}
@@ -50,7 +51,7 @@ func (a *Server) usageData(r *http.Request) (any, bool, int, string) {
 
 func (a *Server) listUsageLogs(r *http.Request) (any, bool, int, string) {
 	query := r.URL.Query()
-	page, pageSize := ParsePagination(r)
+	page, pageSize := httpcommon.ParsePagination(r)
 
 	filter := domain.UsageLogFilter{
 		Model:     query.Get("model"),
@@ -74,23 +75,23 @@ func (a *Server) listUsageLogs(r *http.Request) (any, bool, int, string) {
 		}
 		filter.ChannelID = &id
 	}
-	return a.result(a.store.ListUsageLogs(filter))
+	return httpcommon.Result(a.store.ListUsageLogs(filter))
 }
 
 func (a *Server) statsOverview(r *http.Request) (any, bool, int, string) {
 	query := r.URL.Query()
-	return a.result(a.store.StatsOverview(orDefault(query.Get("start_time"), defaultStartTime), orDefault(query.Get("end_time"), defaultEndTime)))
+	return httpcommon.Result(a.store.StatsOverview(orDefault(query.Get("start_time"), defaultStartTime), orDefault(query.Get("end_time"), defaultEndTime)))
 }
 
 func (a *Server) statsDaily(r *http.Request) (any, bool, int, string) {
 	query := r.URL.Query()
-	page, pageSize := ParsePagination(r)
-	return a.result(a.store.StatsDaily(orDefault(query.Get("date_from"), defaultDateFrom), orDefault(query.Get("date_to"), defaultDateTo), page, pageSize))
+	page, pageSize := httpcommon.ParsePagination(r)
+	return httpcommon.Result(a.store.StatsDaily(orDefault(query.Get("date_from"), defaultDateFrom), orDefault(query.Get("date_to"), defaultDateTo), page, pageSize))
 }
 
 func (a *Server) statsChannels(r *http.Request) (any, bool, int, string) {
 	query := r.URL.Query()
-	return a.result(a.store.StatsChannels(orDefault(query.Get("start_time"), defaultStartTime), orDefault(query.Get("end_time"), defaultEndTime)))
+	return httpcommon.Result(a.store.StatsChannels(orDefault(query.Get("start_time"), defaultStartTime), orDefault(query.Get("end_time"), defaultEndTime)))
 }
 
 func orDefault(value, fallback string) string {

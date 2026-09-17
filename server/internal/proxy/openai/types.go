@@ -1,7 +1,7 @@
 package openai
 
-// OpenAI protocol types live outside domain/store so core packages do not
-// depend on an external API contract.
+// Package openai contains the OpenAI wire adapter types owned by the proxy
+// business module.
 
 // OpenAIModel is a single entry in GET /v1/models.
 type OpenAIModel struct {
