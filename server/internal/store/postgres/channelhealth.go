@@ -16,22 +16,22 @@ func (s *Store) GetChannelHealth(channelID int) (domain.ChannelHealth, error) {
 	row, err := s.queries.GetChannelHealth(context.Background(), int64(channelID))
 	if err != nil {
 		if errors.Is(mapError(err), store.ErrNotFound) {
-			return store.NewChannelHealth(channelID), nil
+			return domain.NewChannelHealth(channelID), nil
 		}
 		return domain.ChannelHealth{}, mapError(err)
 	}
-	return store.EvaluateChannelHealth(channelHealthFromRow(row), s.now(), s.breaker), nil
+	return domain.EvaluateChannelHealth(channelHealthFromRow(row), s.now(), s.breaker), nil
 }
 
 func (s *Store) RecordChannelSuccess(channelID int) (domain.ChannelHealth, error) {
 	return s.recordChannelHealth(channelID, func(current domain.ChannelHealth) domain.ChannelHealth {
-		return store.ApplyChannelSuccess(current, s.now())
+		return domain.ApplyChannelSuccess(current, s.now())
 	})
 }
 
-func (s *Store) RecordChannelFailure(channelID int, reason string) (domain.ChannelHealth, error) {
+func (s *Store) RecordChannelFailure(channelID int, reason domain.FailureReason) (domain.ChannelHealth, error) {
 	return s.recordChannelHealth(channelID, func(current domain.ChannelHealth) domain.ChannelHealth {
-		return store.ApplyChannelFailure(current, reason, s.now(), s.breaker)
+		return domain.ApplyChannelFailure(current, reason, s.now(), s.breaker)
 	})
 }
 
@@ -54,7 +54,7 @@ func (s *Store) recordChannelHealth(channelID int, apply func(domain.ChannelHeal
 		return domain.ChannelHealth{}, mapError(err)
 	}
 
-	current := store.EvaluateChannelHealth(channelHealthFromRow(row), s.now(), s.breaker)
+	current := domain.EvaluateChannelHealth(channelHealthFromRow(row), s.now(), s.breaker)
 	next := apply(current)
 
 	var openedAt pgtype.Timestamptz
@@ -97,7 +97,7 @@ func (s *Store) ListChannelHealth() (domain.ListResponse, error) {
 	}
 	list := []any{}
 	for _, row := range rows {
-		health := store.EvaluateChannelHealth(channelHealthFromRow(row), s.now(), s.breaker)
+		health := domain.EvaluateChannelHealth(channelHealthFromRow(row), s.now(), s.breaker)
 		list = append(list, channelHealthDTO(&health))
 	}
 	return domain.ListResponse{List: list, Total: len(list)}, nil

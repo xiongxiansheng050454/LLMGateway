@@ -34,7 +34,7 @@ func (s *Store) ListRateLimits(enabled *bool, page, pageSize int) (domain.ListRe
 }
 
 func (s *Store) CreateRateLimit(in domain.RateLimitInput) (map[string]any, error) {
-	rule, err := store.NormalizeRateLimit(in, nil)
+	rule, err := domain.NormalizeRateLimit(in, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -56,7 +56,7 @@ func (s *Store) UpdateRateLimit(id int, in domain.RateLimitInput) (map[string]an
 		return nil, store.ErrNotFound
 	}
 
-	rule, err := store.NormalizeRateLimit(in, existing)
+	rule, err := domain.NormalizeRateLimit(in, existing)
 	if err != nil {
 		return nil, err
 	}

@@ -36,7 +36,7 @@ type Store struct {
 	usageLogs       []domain.UsageLog
 
 	channelHealth map[int]*domain.ChannelHealth
-	breaker       store.ChannelBreakerConfig
+	breaker       domain.ChannelBreakerConfig
 	now           func() time.Time
 }
 
@@ -93,7 +93,7 @@ func New() *Store {
 		rateLimits:      map[int]*domain.RateLimitRule{},
 		nextUsageLogID:  1,
 		channelHealth:   map[int]*domain.ChannelHealth{},
-		breaker:         store.DefaultChannelBreakerConfig(),
+		breaker:         domain.DefaultChannelBreakerConfig(),
 		now:             time.Now,
 	}
 }

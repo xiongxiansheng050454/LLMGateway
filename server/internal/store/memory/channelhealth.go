@@ -4,7 +4,6 @@ import (
 	"sort"
 
 	"LLMGateway/server/internal/domain"
-	"LLMGateway/server/internal/store"
 )
 
 func (s *Store) GetChannelHealth(channelID int) (domain.ChannelHealth, error) {
@@ -16,15 +15,15 @@ func (s *Store) GetChannelHealth(channelID int) (domain.ChannelHealth, error) {
 func (s *Store) RecordChannelSuccess(channelID int) (domain.ChannelHealth, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	next := store.ApplyChannelSuccess(s.channelHealthLocked(channelID), s.now())
+	next := domain.ApplyChannelSuccess(s.channelHealthLocked(channelID), s.now())
 	s.channelHealth[channelID] = &next
 	return next, nil
 }
 
-func (s *Store) RecordChannelFailure(channelID int, reason string) (domain.ChannelHealth, error) {
+func (s *Store) RecordChannelFailure(channelID int, reason domain.FailureReason) (domain.ChannelHealth, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	next := store.ApplyChannelFailure(s.channelHealthLocked(channelID), reason, s.now(), s.breaker)
+	next := domain.ApplyChannelFailure(s.channelHealthLocked(channelID), reason, s.now(), s.breaker)
 	s.channelHealth[channelID] = &next
 	return next, nil
 }
@@ -59,9 +58,9 @@ func (s *Store) ListChannelHealth() (domain.ListResponse, error) {
 func (s *Store) channelHealthLocked(channelID int) domain.ChannelHealth {
 	current, ok := s.channelHealth[channelID]
 	if !ok {
-		return store.NewChannelHealth(channelID)
+		return domain.NewChannelHealth(channelID)
 	}
-	return store.EvaluateChannelHealth(*current, s.now(), s.breaker)
+	return domain.EvaluateChannelHealth(*current, s.now(), s.breaker)
 }
 
 func channelHealthDTO(health *domain.ChannelHealth) map[string]any {

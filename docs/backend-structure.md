@@ -50,8 +50,8 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
 目录保持现有深度与扁平度：包内按领域拆文件，不再新增子包。这样既避免单文件膨胀，也避免 import 环和过度分层。
 
 - 每个包内按领域命名文件，禁止把多个领域堆进同一个文件：
-  - `server/internal/domain/`：`common.go`、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
-  - `server/internal/store/`：`store.go`（错误 + 组合接口）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
+  - `server/internal/domain/`：`common.go`、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`、`channelhealth.go`、`failurereason.go`；纯规则（熔断状态机、限流规范化 `NormalizeRateLimit`、时间校验 `Validate*`、`FailureReason`）归位此处
+  - `server/internal/store/`：`store.go`（错误别名 + 组合接口）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`、`channelhealth.go`（仅端口接口）；`CanonicalJSON` 为序列化一致性辅助，非业务规则
   - `server/internal/store/memory/`：`memory.go`（结构体/构造函数/共享辅助）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
   - `server/internal/store/postgres/`：`postgres.go`（结构体/构造函数）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
   - `server/cmd/llmgateway/`：`main.go`（装配与优雅关闭）、`router.go`（唯一 HTTP 路由表）

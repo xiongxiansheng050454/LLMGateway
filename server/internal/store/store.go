@@ -1,11 +1,13 @@
 package store
 
-import "errors"
+import "LLMGateway/server/internal/domain"
 
+// The port re-exports the shared domain errors so existing callers keep using
+// store.ErrNotFound / store.ErrInvalid / store.ErrNotImplemented.
 var (
-	ErrNotFound       = errors.New("not found")
-	ErrInvalid        = errors.New("invalid")
-	ErrNotImplemented = errors.New("not implemented")
+	ErrNotFound       = domain.ErrNotFound
+	ErrInvalid        = domain.ErrInvalid
+	ErrNotImplemented = domain.ErrNotImplemented
 )
 
 // Store is the persistence port used by the HTTP handler layer.

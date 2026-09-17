@@ -41,7 +41,7 @@ func TestPGChannelHealthLifecycle(t *testing.T) {
 	}
 
 	for i := 0; i < 5; i++ {
-		health, err = st.RecordChannelFailure(channelID, "upstream_500")
+		health, err = st.RecordChannelFailure(channelID, domain.FailureUpstream5xx)
 		if err != nil {
 			t.Fatalf("RecordChannelFailure: %v", err)
 		}
@@ -93,7 +93,7 @@ func TestPGChannelHealthHalfOpen(t *testing.T) {
 	channelID := createHealthTestChannel(t, st)
 
 	for i := 0; i < 5; i++ {
-		if _, err := st.RecordChannelFailure(channelID, "upstream_500"); err != nil {
+		if _, err := st.RecordChannelFailure(channelID, domain.FailureUpstream5xx); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -109,7 +109,7 @@ func TestPGChannelHealthHalfOpen(t *testing.T) {
 		t.Fatalf("state = %s, want half-open after cooldown", health.State)
 	}
 
-	reopened, err := st.RecordChannelFailure(channelID, "upstream_500")
+	reopened, err := st.RecordChannelFailure(channelID, domain.FailureUpstream5xx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,7 +129,7 @@ func TestPGChannelHealthConcurrentFailures(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := st.RecordChannelFailure(channelID, "upstream_500"); err != nil {
+			if _, err := st.RecordChannelFailure(channelID, domain.FailureUpstream5xx); err != nil {
 				errs <- err
 			}
 		}()
@@ -176,7 +176,7 @@ func runHealthScenario(t *testing.T, st store.Store, clock *time.Time) healthSna
 
 	var health domain.ChannelHealth
 	for i := 0; i < 5; i++ {
-		health, err = st.RecordChannelFailure(channelID, "upstream_500")
+		health, err = st.RecordChannelFailure(channelID, domain.FailureUpstream5xx)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -202,7 +202,7 @@ func runHealthScenario(t *testing.T, st store.Store, clock *time.Time) healthSna
 	if err != nil {
 		t.Fatal(err)
 	}
-	det, err := st.RecordChannelFailure(second["id"].(int), "upstream_401")
+	det, err := st.RecordChannelFailure(second["id"].(int), domain.FailureUpstream401)
 	if err != nil {
 		t.Fatal(err)
 	}
