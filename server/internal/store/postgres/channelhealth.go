@@ -24,25 +24,61 @@ func (s *Store) GetChannelHealth(channelID int) (domain.ChannelHealth, error) {
 }
 
 func (s *Store) RecordChannelSuccess(channelID int) (domain.ChannelHealth, error) {
-	current, err := s.GetChannelHealth(channelID)
-	if err != nil {
-		return domain.ChannelHealth{}, err
-	}
-	next := store.ApplyChannelSuccess(current, s.now())
-	if err := s.upsertChannelHealth(next); err != nil {
-		return domain.ChannelHealth{}, err
-	}
-	return next, nil
+	return s.recordChannelHealth(channelID, func(current domain.ChannelHealth) domain.ChannelHealth {
+		return store.ApplyChannelSuccess(current, s.now())
+	})
 }
 
 func (s *Store) RecordChannelFailure(channelID int, reason string) (domain.ChannelHealth, error) {
-	current, err := s.GetChannelHealth(channelID)
+	return s.recordChannelHealth(channelID, func(current domain.ChannelHealth) domain.ChannelHealth {
+		return store.ApplyChannelFailure(current, reason, s.now(), s.breaker)
+	})
+}
+
+// recordChannelHealth applies a state transition inside a transaction, holding
+// a row lock so concurrent recordings cannot lose updates.
+func (s *Store) recordChannelHealth(channelID int, apply func(domain.ChannelHealth) domain.ChannelHealth) (domain.ChannelHealth, error) {
+	ctx := context.Background()
+	tx, err := s.pool.Begin(ctx)
 	if err != nil {
-		return domain.ChannelHealth{}, err
+		return domain.ChannelHealth{}, mapError(err)
 	}
-	next := store.ApplyChannelFailure(current, reason, s.now(), s.breaker)
-	if err := s.upsertChannelHealth(next); err != nil {
-		return domain.ChannelHealth{}, err
+	defer func() { _ = tx.Rollback(ctx) }()
+	queries := sqlc.New(tx)
+
+	if err := queries.EnsureChannelHealth(ctx, int64(channelID)); err != nil {
+		return domain.ChannelHealth{}, mapError(err)
+	}
+	row, err := queries.GetChannelHealthForUpdate(ctx, int64(channelID))
+	if err != nil {
+		return domain.ChannelHealth{}, mapError(err)
+	}
+
+	current := store.EvaluateChannelHealth(channelHealthFromRow(row), s.now(), s.breaker)
+	next := apply(current)
+
+	var openedAt pgtype.Timestamptz
+	if next.OpenedAt != nil {
+		if parsed, err := time.Parse(time.RFC3339, *next.OpenedAt); err == nil {
+			openedAt = pgtype.Timestamptz{Time: parsed, Valid: true}
+		}
+	}
+	affected, err := queries.UpdateChannelHealth(ctx, sqlc.UpdateChannelHealthParams{
+		State:               string(next.State),
+		ConsecutiveFailures: int32(next.ConsecutiveFailures),
+		SuccessCount:        next.SuccessCount,
+		FailureCount:        next.FailureCount,
+		OpenedAt:            openedAt,
+		ChannelID:           int64(channelID),
+	})
+	if err != nil {
+		return domain.ChannelHealth{}, mapError(err)
+	}
+	if affected == 0 {
+		return domain.ChannelHealth{}, store.ErrNotFound
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return domain.ChannelHealth{}, mapError(err)
 	}
 	return next, nil
 }
@@ -65,23 +101,6 @@ func (s *Store) ListChannelHealth() (domain.ListResponse, error) {
 		list = append(list, channelHealthDTO(&health))
 	}
 	return domain.ListResponse{List: list, Total: len(list)}, nil
-}
-
-func (s *Store) upsertChannelHealth(health domain.ChannelHealth) error {
-	var openedAt pgtype.Timestamptz
-	if health.OpenedAt != nil {
-		if parsed, err := time.Parse(time.RFC3339, *health.OpenedAt); err == nil {
-			openedAt = pgtype.Timestamptz{Time: parsed, Valid: true}
-		}
-	}
-	return mapError(s.queries.UpsertChannelHealth(context.Background(), sqlc.UpsertChannelHealthParams{
-		ChannelID:           int64(health.ChannelID),
-		State:               string(health.State),
-		ConsecutiveFailures: int32(health.ConsecutiveFailures),
-		SuccessCount:        health.SuccessCount,
-		FailureCount:        health.FailureCount,
-		OpenedAt:            openedAt,
-	}))
 }
 
 func channelHealthFromRow(row sqlc.ChannelHealth) domain.ChannelHealth {

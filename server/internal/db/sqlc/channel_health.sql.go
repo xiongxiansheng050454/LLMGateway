@@ -23,6 +23,17 @@ func (q *Queries) DeleteChannelHealth(ctx context.Context, channelID int64) (int
 	return result.RowsAffected(), nil
 }
 
+const ensureChannelHealth = `-- name: EnsureChannelHealth :exec
+INSERT INTO channel_health (channel_id)
+VALUES ($1)
+ON CONFLICT (channel_id) DO NOTHING
+`
+
+func (q *Queries) EnsureChannelHealth(ctx context.Context, channelID int64) error {
+	_, err := q.db.Exec(ctx, ensureChannelHealth, channelID)
+	return err
+}
+
 const getChannelHealth = `-- name: GetChannelHealth :one
 SELECT channel_id, state, consecutive_failures, success_count, failure_count, opened_at, updated_at
 FROM channel_health
@@ -31,6 +42,28 @@ WHERE channel_id = $1
 
 func (q *Queries) GetChannelHealth(ctx context.Context, channelID int64) (ChannelHealth, error) {
 	row := q.db.QueryRow(ctx, getChannelHealth, channelID)
+	var i ChannelHealth
+	err := row.Scan(
+		&i.ChannelID,
+		&i.State,
+		&i.ConsecutiveFailures,
+		&i.SuccessCount,
+		&i.FailureCount,
+		&i.OpenedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const getChannelHealthForUpdate = `-- name: GetChannelHealthForUpdate :one
+SELECT channel_id, state, consecutive_failures, success_count, failure_count, opened_at, updated_at
+FROM channel_health
+WHERE channel_id = $1
+FOR UPDATE
+`
+
+func (q *Queries) GetChannelHealthForUpdate(ctx context.Context, channelID int64) (ChannelHealth, error) {
+	row := q.db.QueryRow(ctx, getChannelHealthForUpdate, channelID)
 	var i ChannelHealth
 	err := row.Scan(
 		&i.ChannelID,
@@ -78,43 +111,37 @@ func (q *Queries) ListChannelHealth(ctx context.Context) ([]ChannelHealth, error
 	return items, nil
 }
 
-const upsertChannelHealth = `-- name: UpsertChannelHealth :exec
-INSERT INTO channel_health (channel_id, state, consecutive_failures, success_count, failure_count, opened_at, updated_at)
-VALUES (
-    $1,
-    $2,
-    $3,
-    $4,
-    $5,
-    $6,
-    now()
-)
-ON CONFLICT (channel_id) DO UPDATE SET
-    state = EXCLUDED.state,
-    consecutive_failures = EXCLUDED.consecutive_failures,
-    success_count = EXCLUDED.success_count,
-    failure_count = EXCLUDED.failure_count,
-    opened_at = EXCLUDED.opened_at,
+const updateChannelHealth = `-- name: UpdateChannelHealth :execrows
+UPDATE channel_health
+SET state = $1,
+    consecutive_failures = $2,
+    success_count = $3,
+    failure_count = $4,
+    opened_at = $5,
     updated_at = now()
+WHERE channel_id = $6
 `
 
-type UpsertChannelHealthParams struct {
-	ChannelID           int64              `json:"channel_id"`
+type UpdateChannelHealthParams struct {
 	State               string             `json:"state"`
 	ConsecutiveFailures int32              `json:"consecutive_failures"`
 	SuccessCount        int64              `json:"success_count"`
 	FailureCount        int64              `json:"failure_count"`
 	OpenedAt            pgtype.Timestamptz `json:"opened_at"`
+	ChannelID           int64              `json:"channel_id"`
 }
 
-func (q *Queries) UpsertChannelHealth(ctx context.Context, arg UpsertChannelHealthParams) error {
-	_, err := q.db.Exec(ctx, upsertChannelHealth,
-		arg.ChannelID,
+func (q *Queries) UpdateChannelHealth(ctx context.Context, arg UpdateChannelHealthParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateChannelHealth,
 		arg.State,
 		arg.ConsecutiveFailures,
 		arg.SuccessCount,
 		arg.FailureCount,
 		arg.OpenedAt,
+		arg.ChannelID,
 	)
-	return err
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
