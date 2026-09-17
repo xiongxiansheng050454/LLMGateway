@@ -15,13 +15,20 @@ server/internal/store/memory/       默认内存实现，用于 MVP、测试和�
 server/internal/store/postgres/     PostgreSQL Store 实现
 server/internal/db/migrate/         最小迁移 runner，按文件名顺序应用 server/db/migrations/*.sql
 server/internal/db/sqlc/            sqlc 生成代码输出目录，不手写业务逻辑
-server/db/migrations/               PostgreSQL schema 迁移 SQL
-server/db/queries/                  sqlc 查询 SQL
+server/db/migrations/               PostgreSQL schema 迁移 SQL（SQL 资产）
+server/db/queries/                  sqlc 查询 SQL（SQL 资产）
 deployments/                        本地开发部署配置，如 PostgreSQL docker compose
 dashboard/                          静态前端控制台（仓库根，由 server 通过 ../dashboard 托管）
 ```
 
 Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执行（或在仓库根使用 `go -C server ...`）。
+
+两个 `db` 目录职责不同，不要混淆：
+
+- `server/db/`：SQL 资产（`migrations/` 迁移、`queries/` sqlc 查询），由 `sqlc.yaml` 读取。
+- `server/internal/db/`：Go 包（`migrate/` 迁移 runner、`sqlc/` 生成代码），由 Go 代码导入。
+
+`CHANNEL_KEY_ENCRYPTION_KEY` 环境变量名常量位于 `server/internal/config`（env 解析职责）；`server/internal/crypto` 只负责密钥长度/算法校验，不再定义 env 常量。
 
 ## 约定
 
@@ -50,8 +57,8 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
 目录保持现有深度与扁平度：包内按领域拆文件，不再新增子包。这样既避免单文件膨胀，也避免 import 环和过度分层。
 
 - 每个包内按领域命名文件，禁止把多个领域堆进同一个文件：
-  - `server/internal/domain/`：`common.go`、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
-  - `server/internal/store/`：`store.go`（错误 + 组合接口）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
+  - `server/internal/domain/`：`common.go`、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`、`channelhealth.go`、`failurereason.go`；纯规则（熔断状态机、限流规范化 `NormalizeRateLimit`、时间校验 `Validate*`、`FailureReason`）归位此处
+  - `server/internal/store/`：`store.go`（错误别名 + 组合接口）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`、`channelhealth.go`（仅端口接口）；`CanonicalJSON` 为序列化一致性辅助，非业务规则
   - `server/internal/store/memory/`：`memory.go`（结构体/构造函数/共享辅助）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
   - `server/internal/store/postgres/`：`postgres.go`（结构体/构造函数）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
   - `server/cmd/llmgateway/`：`main.go`（装配与优雅关闭）、`router.go`（唯一 HTTP 路由表）

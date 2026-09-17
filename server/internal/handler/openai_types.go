@@ -1,6 +1,7 @@
-package domain
+package handler
 
-import "encoding/json"
+// OpenAI protocol types. They live in the HTTP/protocol layer (handler) rather
+// than domain, so the core package does not depend on an external API contract.
 
 // OpenAIModel is a single entry in GET /v1/models.
 type OpenAIModel struct {
@@ -48,6 +49,3 @@ type ChatCompletionResponse struct {
 	Model string               `json:"model"`
 	Usage *ChatCompletionUsage `json:"usage"`
 }
-
-// RawMessage is re-exported for convenience in service/handler signatures.
-type RawMessage = json.RawMessage

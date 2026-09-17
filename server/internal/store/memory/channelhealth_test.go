@@ -28,7 +28,7 @@ func TestChannelHealthLifecycle(t *testing.T) {
 
 	// Five consecutive failures trip the breaker.
 	for i := 0; i < 5; i++ {
-		health, err = st.RecordChannelFailure(1, "upstream_500")
+		health, err = st.RecordChannelFailure(1, domain.FailureUpstream5xx)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -64,13 +64,13 @@ func TestChannelHealthLifecycle(t *testing.T) {
 func TestChannelHealthHalfOpenFailureReopens(t *testing.T) {
 	st, clock := newHealthTestStore()
 	for i := 0; i < 5; i++ {
-		if _, err := st.RecordChannelFailure(1, "upstream_500"); err != nil {
+		if _, err := st.RecordChannelFailure(1, domain.FailureUpstream5xx); err != nil {
 			t.Fatal(err)
 		}
 	}
 	*clock = clock.Add(30 * time.Second)
 
-	reopened, err := st.RecordChannelFailure(1, "upstream_500")
+	reopened, err := st.RecordChannelFailure(1, domain.FailureUpstream5xx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -81,7 +81,7 @@ func TestChannelHealthHalfOpenFailureReopens(t *testing.T) {
 
 func TestResetChannelHealth(t *testing.T) {
 	st, _ := newHealthTestStore()
-	if _, err := st.RecordChannelFailure(1, "upstream_401"); err != nil {
+	if _, err := st.RecordChannelFailure(1, domain.FailureUpstream401); err != nil {
 		t.Fatal(err)
 	}
 	if err := st.ResetChannelHealth(1); err != nil {
@@ -95,7 +95,7 @@ func TestResetChannelHealth(t *testing.T) {
 
 func TestListChannelHealth(t *testing.T) {
 	st, _ := newHealthTestStore()
-	if _, err := st.RecordChannelFailure(1, "upstream_500"); err != nil {
+	if _, err := st.RecordChannelFailure(1, domain.FailureUpstream5xx); err != nil {
 		t.Fatal(err)
 	}
 	list, err := st.ListChannelHealth()
@@ -121,7 +121,7 @@ func TestChannelHealthConcurrentFailures(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := st.RecordChannelFailure(1, "upstream_500"); err != nil {
+			if _, err := st.RecordChannelFailure(1, domain.FailureUpstream5xx); err != nil {
 				errs <- err
 			}
 		}()
@@ -161,7 +161,7 @@ func TestRouteCandidatesExcludeOpenChannel(t *testing.T) {
 	}
 
 	for i := 0; i < 5; i++ {
-		if _, err := st.RecordChannelFailure(channelID, "upstream_500"); err != nil {
+		if _, err := st.RecordChannelFailure(channelID, domain.FailureUpstream5xx); err != nil {
 			t.Fatal(err)
 		}
 	}

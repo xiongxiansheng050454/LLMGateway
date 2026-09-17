@@ -42,7 +42,7 @@ func (s *Store) InsertUsageLog(in domain.UsageLogInput) (int, error) {
 }
 
 func (s *Store) ListUsageLogs(filter domain.UsageLogFilter) (domain.ListResponse, error) {
-	if err := store.ValidateTimeRange(filter.StartTime, filter.EndTime); err != nil {
+	if err := domain.ValidateTimeRange(filter.StartTime, filter.EndTime); err != nil {
 		return domain.ListResponse{}, err
 	}
 
@@ -80,7 +80,7 @@ func (s *Store) GetUsageLog(id int) (map[string]any, error) {
 }
 
 func (s *Store) CountRequestsSince(userID int, apiKeyID *int, since string) (int, error) {
-	if err := store.ValidateSince(since); err != nil {
+	if err := domain.ValidateSince(since); err != nil {
 		return 0, err
 	}
 	sinceTime, _ := time.Parse(time.RFC3339, since)
@@ -157,7 +157,7 @@ func (s *Store) StatsOverview(startTime, endTime string) (map[string]any, error)
 }
 
 func (s *Store) StatsDaily(dateFrom, dateTo string, page, pageSize int) (domain.ListResponse, error) {
-	if err := store.ValidateDateRange(dateFrom, dateTo); err != nil {
+	if err := domain.ValidateDateRange(dateFrom, dateTo); err != nil {
 		return domain.ListResponse{}, err
 	}
 

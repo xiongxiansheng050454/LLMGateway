@@ -3,9 +3,12 @@ package config
 import (
 	"os"
 	"strconv"
-
-	"LLMGateway/server/internal/crypto"
 )
+
+// EnvChannelKey is the environment variable holding the channel api_key
+// encryption key (raw bytes; 16, 24 or 32 bytes for AES-128/192/256). The
+// configuration layer owns env parsing; crypto validates the key material.
+const EnvChannelKey = "CHANNEL_KEY_ENCRYPTION_KEY"
 
 type Config struct {
 	Addr          string
@@ -26,7 +29,7 @@ func Load() Config {
 		DashboardDir:            os.Getenv("DASHBOARD_DIR"),
 		DatabaseURL:             os.Getenv("DATABASE_URL"),
 		MigrationsDir:           os.Getenv("MIGRATIONS_DIR"),
-		ChannelKeyEncryptionKey: os.Getenv(crypto.EnvChannelKey),
+		ChannelKeyEncryptionKey: os.Getenv(EnvChannelKey),
 	}
 	if cfg.Addr == "" {
 		cfg.Addr = ":8080"

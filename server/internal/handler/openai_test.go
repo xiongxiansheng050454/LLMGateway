@@ -115,7 +115,7 @@ func TestOpenAIModels(t *testing.T) {
 	if ok.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", ok.Code, ok.Body.String())
 	}
-	var list domain.OpenAIModelList
+	var list OpenAIModelList
 	if err := json.Unmarshal(ok.Body.Bytes(), &list); err != nil {
 		t.Fatal(err)
 	}
@@ -457,7 +457,7 @@ func (f failingHealthStore) RecordChannelSuccess(int) (domain.ChannelHealth, err
 	return domain.ChannelHealth{}, errors.New("health store unavailable")
 }
 
-func (f failingHealthStore) RecordChannelFailure(int, string) (domain.ChannelHealth, error) {
+func (f failingHealthStore) RecordChannelFailure(int, domain.FailureReason) (domain.ChannelHealth, error) {
 	return domain.ChannelHealth{}, errors.New("health store unavailable")
 }
 
@@ -467,15 +467,15 @@ func TestClassifyUpstreamResult(t *testing.T) {
 		status  int
 		err     error
 		failure bool
-		reason  string
+		reason  domain.FailureReason
 	}{
-		{"transport error", 0, errors.New("dial tcp: refused"), true, "upstream_unreachable"},
-		{"429", http.StatusTooManyRequests, nil, true, "upstream_429"},
-		{"401", http.StatusUnauthorized, nil, true, "upstream_401"},
-		{"403", http.StatusForbidden, nil, true, "upstream_403"},
-		{"402", http.StatusPaymentRequired, nil, true, "upstream_402"},
-		{"500", http.StatusInternalServerError, nil, true, "upstream_500"},
-		{"503", http.StatusServiceUnavailable, nil, true, "upstream_503"},
+		{"transport error", 0, errors.New("dial tcp: refused"), true, domain.FailureUpstreamUnreachable},
+		{"429", http.StatusTooManyRequests, nil, true, domain.FailureUpstream429},
+		{"401", http.StatusUnauthorized, nil, true, domain.FailureUpstream401},
+		{"403", http.StatusForbidden, nil, true, domain.FailureUpstream403},
+		{"402", http.StatusPaymentRequired, nil, true, domain.FailureUpstream402},
+		{"500", http.StatusInternalServerError, nil, true, domain.FailureUpstream5xx},
+		{"503", http.StatusServiceUnavailable, nil, true, domain.FailureUpstream5xx},
 		{"400", http.StatusBadRequest, nil, false, ""},
 		{"404", http.StatusNotFound, nil, false, ""},
 		{"422", http.StatusUnprocessableEntity, nil, false, ""},
@@ -483,9 +483,9 @@ func TestClassifyUpstreamResult(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			failure, reason := classifyUpstreamResult(tt.status, tt.err)
+			reason, failure := classifyUpstreamResult(tt.status, tt.err)
 			if failure != tt.failure || reason != tt.reason {
-				t.Fatalf("classifyUpstreamResult(%d, %v) = (%v, %q), want (%v, %q)", tt.status, tt.err, failure, reason, tt.failure, tt.reason)
+				t.Fatalf("classifyUpstreamResult(%d, %v) = (%q, %v), want (%q, %v)", tt.status, tt.err, reason, failure, tt.reason, tt.failure)
 			}
 		})
 	}

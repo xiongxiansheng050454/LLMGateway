@@ -7,6 +7,7 @@ import (
 
 	"LLMGateway/server/internal/crypto"
 	"LLMGateway/server/internal/db/sqlc"
+	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/store"
 
 	"github.com/jackc/pgx/v5"
@@ -24,7 +25,7 @@ type Store struct {
 	pool    *pgxpool.Pool
 	queries *sqlc.Queries
 	cipher  *crypto.Cipher
-	breaker store.ChannelBreakerConfig
+	breaker domain.ChannelBreakerConfig
 	now     func() time.Time
 }
 
@@ -39,7 +40,7 @@ func New(pool *pgxpool.Pool, cipher *crypto.Cipher) *Store {
 		pool:    pool,
 		queries: sqlc.New(pool),
 		cipher:  cipher,
-		breaker: store.DefaultChannelBreakerConfig(),
+		breaker: domain.DefaultChannelBreakerConfig(),
 		now:     time.Now,
 	}
 }

@@ -6,13 +6,12 @@ import (
 
 	"LLMGateway/server/internal/db/sqlc"
 	"LLMGateway/server/internal/domain"
-	"LLMGateway/server/internal/store"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 func (s *Store) ListUsageLogs(filter domain.UsageLogFilter) (domain.ListResponse, error) {
-	if err := store.ValidateTimeRange(filter.StartTime, filter.EndTime); err != nil {
+	if err := domain.ValidateTimeRange(filter.StartTime, filter.EndTime); err != nil {
 		return domain.ListResponse{}, err
 	}
 	ctx := context.Background()
@@ -87,7 +86,7 @@ func (s *Store) InsertUsageLog(in domain.UsageLogInput) (int, error) {
 }
 
 func (s *Store) CountRequestsSince(userID int, apiKeyID *int, since string) (int, error) {
-	if err := store.ValidateSince(since); err != nil {
+	if err := domain.ValidateSince(since); err != nil {
 		return 0, err
 	}
 	count, err := s.queries.CountRequestsSince(context.Background(), sqlc.CountRequestsSinceParams{
@@ -102,7 +101,7 @@ func (s *Store) CountRequestsSince(userID int, apiKeyID *int, since string) (int
 }
 
 func (s *Store) StatsOverview(startTime, endTime string) (map[string]any, error) {
-	if err := store.ValidateTimeRange(startTime, endTime); err != nil {
+	if err := domain.ValidateTimeRange(startTime, endTime); err != nil {
 		return nil, err
 	}
 	row, err := s.queries.StatsOverview(context.Background(), sqlc.StatsOverviewParams{
@@ -123,7 +122,7 @@ func (s *Store) StatsOverview(startTime, endTime string) (map[string]any, error)
 }
 
 func (s *Store) StatsDaily(dateFrom, dateTo string, page, pageSize int) (domain.ListResponse, error) {
-	if err := store.ValidateDateRange(dateFrom, dateTo); err != nil {
+	if err := domain.ValidateDateRange(dateFrom, dateTo); err != nil {
 		return domain.ListResponse{}, err
 	}
 	ctx := context.Background()
@@ -153,7 +152,7 @@ func (s *Store) StatsDaily(dateFrom, dateTo string, page, pageSize int) (domain.
 }
 
 func (s *Store) StatsChannels(startTime, endTime string) (domain.ListResponse, error) {
-	if err := store.ValidateTimeRange(startTime, endTime); err != nil {
+	if err := domain.ValidateTimeRange(startTime, endTime); err != nil {
 		return domain.ListResponse{}, err
 	}
 	rows, err := s.queries.StatsChannels(context.Background(), sqlc.StatsChannelsParams{

@@ -19,15 +19,15 @@ import (
 
 // models returns the OpenAI-style model list visible to the key, filtered by
 // its permissions.
-func (a *Server) models(auth *domain.AuthContext) (domain.OpenAIModelList, error) {
+func (a *Server) models(auth *domain.AuthContext) (OpenAIModelList, error) {
 	result, err := a.store.ListCatalogModels(true)
 	if err != nil {
-		return domain.OpenAIModelList{}, err
+		return OpenAIModelList{}, err
 	}
 
 	created := a.now().Unix()
 	seen := map[string]bool{}
-	data := []domain.OpenAIModel{}
+	data := []OpenAIModel{}
 	for _, item := range result.List {
 		entry, ok := item.(map[string]any)
 		if !ok {
@@ -38,16 +38,16 @@ func (a *Server) models(auth *domain.AuthContext) (domain.OpenAIModelList, error
 			continue
 		}
 		seen[name] = true
-		data = append(data, domain.OpenAIModel{ID: name, Object: "model", Created: created, OwnedBy: "llmgateway"})
+		data = append(data, OpenAIModel{ID: name, Object: "model", Created: created, OwnedBy: "llmgateway"})
 	}
-	return domain.OpenAIModelList{Object: "list", Data: data}, nil
+	return OpenAIModelList{Object: "list", Data: data}, nil
 }
 
 // chatCompletions proxies a non-streaming chat completion request. It returns
 // the HTTP status and body to send downstream. A non-nil error is a
 // pre-flight/transport failure the handler maps to an OpenAI error.
 func (a *Server) chatCompletions(auth *domain.AuthContext, body []byte, clientIP string) (int, []byte, error) {
-	var req domain.ChatCompletionRequest
+	var req ChatCompletionRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		return 0, nil, ErrInvalidRequest
 	}
@@ -106,7 +106,7 @@ func (a *Server) chatCompletions(auth *domain.AuthContext, body []byte, clientIP
 
 	resp, err := a.client.Do(httpReq)
 	if err != nil {
-		if failure, reason := classifyUpstreamResult(0, err); failure {
+		if reason, failure := classifyUpstreamResult(0, err); failure {
 			a.recordChannelHealth(candidate.ChannelID, false, reason)
 		}
 		a.logUsage(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", "upstream_unreachable")
@@ -117,7 +117,7 @@ func (a *Server) chatCompletions(auth *domain.AuthContext, body []byte, clientIP
 	durationMs := elapsedMs(start, a.now())
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		if failure, reason := classifyUpstreamResult(resp.StatusCode, nil); failure {
+		if reason, failure := classifyUpstreamResult(resp.StatusCode, nil); failure {
 			a.recordChannelHealth(candidate.ChannelID, false, reason)
 		}
 		a.logUsage(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", durationMs, clientIP, "error", fmt.Sprintf("upstream_%d", resp.StatusCode))
@@ -159,25 +159,29 @@ func (a *Server) chatCompletions(auth *domain.AuthContext, body []byte, clientIP
 // channel failure. Only transport errors, upstream 429/401/403/402 and 5xx are
 // penalised; other client errors (400/404/...) are passed through without
 // tripping the breaker, so a bad caller cannot open a healthy channel.
-func classifyUpstreamResult(statusCode int, err error) (bool, string) {
+func classifyUpstreamResult(statusCode int, err error) (domain.FailureReason, bool) {
 	if err != nil {
-		return true, "upstream_unreachable"
+		return domain.FailureUpstreamUnreachable, true
 	}
-	switch {
-	case statusCode == http.StatusTooManyRequests:
-		return true, fmt.Sprintf("upstream_%d", statusCode)
-	case statusCode == http.StatusUnauthorized, statusCode == http.StatusForbidden, statusCode == http.StatusPaymentRequired:
-		return true, fmt.Sprintf("upstream_%d", statusCode)
-	case statusCode >= 500 && statusCode <= 599:
-		return true, fmt.Sprintf("upstream_%d", statusCode)
-	default:
-		return false, ""
+	switch statusCode {
+	case http.StatusTooManyRequests:
+		return domain.FailureUpstream429, true
+	case http.StatusUnauthorized:
+		return domain.FailureUpstream401, true
+	case http.StatusForbidden:
+		return domain.FailureUpstream403, true
+	case http.StatusPaymentRequired:
+		return domain.FailureUpstream402, true
 	}
+	if statusCode >= 500 && statusCode <= 599 {
+		return domain.FailureUpstream5xx, true
+	}
+	return "", false
 }
 
 // recordChannelHealth drives the circuit breaker state machine. It is
 // best-effort: a recording failure must never change the response.
-func (a *Server) recordChannelHealth(channelID int, success bool, reason string) {
+func (a *Server) recordChannelHealth(channelID int, success bool, reason domain.FailureReason) {
 	if success {
 		_, _ = a.store.RecordChannelSuccess(channelID)
 		return
@@ -185,7 +189,7 @@ func (a *Server) recordChannelHealth(channelID int, success bool, reason string)
 	_, _ = a.store.RecordChannelFailure(channelID, reason)
 }
 
-func (a *Server) priceFor(channelID int, model string, usage *domain.ChatCompletionUsage) (string, string, string, error) {
+func (a *Server) priceFor(channelID int, model string, usage *ChatCompletionUsage) (string, string, string, error) {
 	pricing, err := a.store.GetPricing(channelID, model)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -212,7 +216,7 @@ func (a *Server) priceFor(channelID int, model string, usage *domain.ChatComplet
 	return cost, inputPrice, outputPrice, nil
 }
 
-func (a *Server) logUsage(requestID string, auth *domain.AuthContext, channelID *int, upstreamModel, model string, usage *domain.ChatCompletionUsage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) {
+func (a *Server) logUsage(requestID string, auth *domain.AuthContext, channelID *int, upstreamModel, model string, usage *ChatCompletionUsage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) {
 	userID := auth.UserID
 	keyID := auth.KeyID
 
@@ -240,15 +244,15 @@ func (a *Server) logUsage(requestID string, auth *domain.AuthContext, channelID 
 	_, _ = a.store.InsertUsageLog(input)
 }
 
-func cachedTokenCount(usage *domain.ChatCompletionUsage) int {
+func cachedTokenCount(usage *ChatCompletionUsage) int {
 	if usage == nil || usage.PromptTokensDetails == nil {
 		return 0
 	}
 	return usage.PromptTokensDetails.CachedTokens
 }
 
-func parseUsage(body []byte) *domain.ChatCompletionUsage {
-	var parsed domain.ChatCompletionResponse
+func parseUsage(body []byte) *ChatCompletionUsage {
+	var parsed ChatCompletionResponse
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return nil
 	}
