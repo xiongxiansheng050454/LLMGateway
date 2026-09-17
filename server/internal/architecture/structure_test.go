@@ -142,3 +142,24 @@ func TestOpenAIWireTypesStayInProtocolPackage(t *testing.T) {
 		}
 	}
 }
+
+func TestProxyBusinessDoesNotImportOpenAIWirePackage(t *testing.T) {
+	root := filepath.Join("..", "..", "internal", "proxy")
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || filepath.Dir(path) != root || !strings.HasSuffix(path, ".go") {
+			return err
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return err
+		}
+		text := string(content)
+		if strings.Contains(text, "internal/proxy/openai") || strings.Contains(text, "http.ResponseWriter") || strings.Contains(text, "OpenAIError") {
+			t.Fatalf("proxy business file %s leaks protocol or HTTP response concerns", path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+}

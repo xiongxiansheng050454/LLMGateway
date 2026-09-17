@@ -24,8 +24,13 @@ type Service struct {
 	client   *http.Client
 	randIntN func(int) int
 	now      func() time.Time
+	adapter  ProtocolAdapter
 }
 
-func NewService(st store.Store, client *http.Client, randIntN func(int) int, now func() time.Time) *Service {
-	return &Service{store: st, client: client, randIntN: randIntN, now: now}
+func NewService(st store.Store, client *http.Client, randIntN func(int) int, now func() time.Time, adapters ...ProtocolAdapter) *Service {
+	adapter := ProtocolAdapter{}
+	if len(adapters) > 0 {
+		adapter = adapters[0]
+	}
+	return &Service{store: st, client: client, randIntN: randIntN, now: now, adapter: adapter}
 }

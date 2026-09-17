@@ -42,7 +42,7 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
 - 业务模块按能力纵向组织：`catalog`、`accounts`、`usage`、`ratelimit`、`proxy` 各自聚合规则、端口使用和 HTTP 入口契约；这不是按 HTTP/store/protocol 的横向分层。
 - `server/internal/httpapi` 只负责顶层 HTTP 装配、通用响应和委托，不作为跨业务 admin 文件集中地。
 - 业务模块只依赖 `server/internal/store.Store` 接口，不直接访问 PostgreSQL 或 sqlc。
-- 代理编排位于 `server/internal/proxy`，依赖 `store.Store` 端口、`domain`、`money`、`crypto` 和 OpenAI adapter DTO，不直接访问 PostgreSQL 或 sqlc。
+- 代理编排位于 `server/internal/proxy`，依赖 `store.Store` 端口、`domain`、`money`、`crypto` 和协议中立的代理 contract，不直接访问 PostgreSQL 或 sqlc；OpenAI wire 转换只在 `server/internal/proxy/openai` 完成。
 - 业务/API 共享结构放在 `server/internal/domain`，避免 httpapi、proxy、memory store、postgres store 互相引用具体实现。
 - OpenAI 兼容 JSON wire type 放在 `server/internal/proxy/openai`；`catalog`、`accounts`、`usage`、`ratelimit`、`domain` 与 `store` 不依赖 OpenAI 协议 DTO。
 - 默认使用 `server/internal/store/memory`；设置 `DATABASE_URL` 时使用 `server/internal/store/postgres`，两者实现同一个 `store.Store` 接口且行为一致。
@@ -79,8 +79,8 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
   - `server/internal/ratelimit/`：限流规则和运行时限流业务模块（HTTP 入口由顶层装配）
   - `server/internal/httpapi/`：`handler.go`（顶层入口/分派/响应/静态托管）、`openai.go`（/v1 分派与错误映射）
   - `server/internal/httpcommon/`：共享 HTTP 请求解析、路径解析、分页、存储错误映射和删除响应 helper；这些通用行为只在此处实现
-  - `server/internal/proxy/`：`proxy.go`（编排依赖装配与代理错误）、`openai_auth.go`、`openai_route.go`、`openai_billing.go`、`openai_ratelimit.go`、`openai_proxy.go`
-    - `server/internal/proxy/openai/`：`types.go`（OpenAI 兼容请求、响应和错误 DTO；proxy 业务模块的协议适配边界）
+- `server/internal/proxy/`：`proxy.go`（编排依赖装配与代理错误）、`contracts.go`（协议中立请求/响应/usage contract）、`openai_auth.go`、`openai_route.go`、`openai_billing.go`、`openai_ratelimit.go`、`openai_proxy.go`
+    - `server/internal/proxy/openai/`：`types.go`、`adapter.go`（OpenAI 兼容 wire DTO、请求解析和响应适配；proxy 业务模块的协议边界）
 - `store.Store` 由领域子接口组合而成，禁止继续往 `store.go` 堆方法：
 
 ```go
