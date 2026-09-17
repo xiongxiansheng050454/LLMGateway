@@ -5,11 +5,12 @@ import (
 	"net/http"
 
 	"LLMGateway/server/internal/domain"
+	"LLMGateway/server/internal/httpcommon"
 )
 
 func (a *Server) Data(r *http.Request, parts []string) (any, bool, int, string) {
 	if len(parts) == 2 && parts[1] == "models" && r.Method == http.MethodGet {
-		return a.result(a.store.ListCatalogModels(r.URL.Query().Get("status") == "1"))
+		return httpcommon.Result(a.store.ListCatalogModels(r.URL.Query().Get("status") == "1"))
 	}
 	if len(parts) >= 2 && parts[1] == "channels" {
 		return a.channelData(r, parts)
@@ -23,19 +24,19 @@ func (a *Server) Data(r *http.Request, parts []string) (any, bool, int, string) 
 func (a *Server) pricingData(r *http.Request) (any, bool, int, string) {
 	switch r.Method {
 	case http.MethodGet:
-		return a.result(a.store.ListPricing())
+		return httpcommon.Result(a.store.ListPricing())
 	case http.MethodPost:
 		var req domain.PricingInput
-		if err := readJSON(r, &req); err != nil {
+		if err := httpcommon.ReadJSON(r, &req); err != nil {
 			return nil, true, http.StatusBadRequest, "invalid json"
 		}
-		return a.result(a.store.UpsertPricing(req))
+		return httpcommon.Result(a.store.UpsertPricing(req))
 	case http.MethodDelete:
 		var req domain.DeletePricingInput
-		if err := readJSON(r, &req); err != nil && err != io.EOF {
+		if err := httpcommon.ReadJSON(r, &req); err != nil && err != io.EOF {
 			return nil, true, http.StatusBadRequest, "invalid json"
 		}
-		return a.noBody(a.store.DeletePricing(req))
+		return httpcommon.NoBody(a.store.DeletePricing(req))
 	default:
 		return nil, true, http.StatusMethodNotAllowed, "method not allowed"
 	}

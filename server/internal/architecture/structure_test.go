@@ -15,6 +15,7 @@ func TestVisibleBackendModuleDirectories(t *testing.T) {
 		"internal/usage",
 		"internal/ratelimit",
 		"internal/httpapi",
+		"internal/httpcommon",
 		"internal/proxy",
 		"internal/proxy/openai",
 		"internal/domain",
@@ -54,6 +55,19 @@ func TestProxyOrchestrationStaysOutOfHTTPAPI(t *testing.T) {
 		}
 		if _, err := os.Stat(filepath.Join(root, "internal", "httpapi", name)); !os.IsNotExist(err) {
 			t.Fatalf("proxy orchestration file %s should not live in internal/httpapi", name)
+		}
+	}
+}
+
+func TestHTTPAPIDoesNotOwnBusinessHelpers(t *testing.T) {
+	root := filepath.Join("..", "..")
+	content, err := os.ReadFile(filepath.Join(root, "internal", "httpapi", "handler.go"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"func splitPath", "func readJSON", "func ParsePagination", "func (a *Server) result", "func (a *Server) noBody", "func errorResponse"} {
+		if strings.Contains(string(content), name) {
+			t.Fatalf("httpapi still owns obsolete helper %q", name)
 		}
 	}
 }

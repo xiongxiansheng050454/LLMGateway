@@ -10,6 +10,7 @@ import (
 	"strings"
 	"testing"
 
+	"LLMGateway/server/internal/httpcommon"
 	"LLMGateway/server/internal/store/memory"
 )
 
@@ -107,12 +108,12 @@ func TestAdminCORS(t *testing.T) {
 }
 
 func TestPaginationParsing(t *testing.T) {
-	page, pageSize := ParsePagination(httptest.NewRequest(http.MethodGet, "/?page=2&page_size=50", nil))
+	page, pageSize := httpcommon.ParsePagination(httptest.NewRequest(http.MethodGet, "/?page=2&page_size=50", nil))
 	if page != 2 || pageSize != 50 {
 		t.Fatalf("ParsePagination valid = %d,%d; want 2,50", page, pageSize)
 	}
 
-	page, pageSize = ParsePagination(httptest.NewRequest(http.MethodGet, "/?page=-1&page_size=abc", nil))
+	page, pageSize = httpcommon.ParsePagination(httptest.NewRequest(http.MethodGet, "/?page=-1&page_size=abc", nil))
 	if page != 1 || pageSize != 20 {
 		t.Fatalf("ParsePagination fallback = %d,%d; want 1,20", page, pageSize)
 	}

@@ -5,12 +5,14 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+
+	"LLMGateway/server/internal/httpcommon"
 )
 
 func (a *Server) remoteModels(channelID int) (any, bool, int, string) {
 	ch, err := a.store.GetChannelSecret(channelID)
 	if err != nil {
-		return a.result(nil, err)
+		return httpcommon.Result(nil, err)
 	}
 	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(ch.BaseURL, "/")+"/v1/models", nil)
 	if err != nil {
