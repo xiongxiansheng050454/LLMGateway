@@ -6,7 +6,7 @@ import (
 )
 
 func TestRateLimitCRUDAndFilter(t *testing.T) {
-	handler := newTestHandler()
+	handler := newTestServer()
 
 	created := adminDo(t, handler, http.MethodPost, "/admin/rate-limits", map[string]any{
 		"rule_name": "default user rpm", "target_type": "user", "metric": "rpm", "limit_value": 600, "window_seconds": 60, "action": "reject",

@@ -6,7 +6,7 @@ import (
 )
 
 func TestPricingRejectsInvalidChannelOrModel(t *testing.T) {
-	handler := newTestHandler()
+	handler := newTestServer()
 
 	res := adminRaw(t, handler, http.MethodPost, "/admin/pricing", map[string]any{"channel_id": 404, "model_name": "missing", "input_price_per_1m": "0.10000000", "output_price_per_1m": "0.20000000", "currency": "USD"})
 	if res.Code != http.StatusNotFound {

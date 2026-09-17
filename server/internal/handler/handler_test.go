@@ -10,14 +10,13 @@ import (
 	"strings"
 	"testing"
 
-	"LLMGateway/server/internal/store"
 	"LLMGateway/server/internal/store/memory"
 )
 
 func TestHealthz(t *testing.T) {
 	res := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
-	newTestHandler().ServeHTTP(res, req)
+	newTestServer().Healthz(res, req)
 
 	if res.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", res.Code, http.StatusOK)
@@ -46,12 +45,12 @@ func TestDashboardStartupEndpoints(t *testing.T) {
 		{"/admin/models?status=1", nil, true},
 	}
 
-	handler := newTestHandler()
+	server := newTestServer()
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {
 			res := httptest.NewRecorder()
 			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
-			handler.ServeHTTP(res, req)
+			server.Admin(res, req)
 
 			if res.Code != http.StatusOK {
 				t.Fatalf("status = %d, want %d; body=%s", res.Code, http.StatusOK, res.Body.String())
@@ -81,12 +80,12 @@ func TestDashboardStartupEndpoints(t *testing.T) {
 }
 
 func TestAdminCORS(t *testing.T) {
-	handler := newTestHandler()
+	server := newTestServer()
 
 	res := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/admin/stats/overview", nil)
 	req.Header.Set("Origin", "http://example.test")
-	handler.ServeHTTP(res, req)
+	server.Admin(res, req)
 	if res.Code != http.StatusOK {
 		t.Fatalf("GET status = %d, want %d", res.Code, http.StatusOK)
 	}
@@ -98,7 +97,7 @@ func TestAdminCORS(t *testing.T) {
 	req = httptest.NewRequest(http.MethodOptions, "/admin/stats/overview", nil)
 	req.Header.Set("Origin", "http://example.test")
 	req.Header.Set("Access-Control-Request-Method", http.MethodGet)
-	handler.ServeHTTP(res, req)
+	server.Admin(res, req)
 	if res.Code != http.StatusNoContent {
 		t.Fatalf("OPTIONS status = %d, want %d", res.Code, http.StatusNoContent)
 	}
@@ -120,12 +119,21 @@ func TestPaginationParsing(t *testing.T) {
 }
 
 func TestStaticDashboardServed(t *testing.T) {
-	tests := []string{"/", "/dashboard/index.html", "/dashboard/js/data.js"}
-	for _, path := range tests {
-		t.Run(path, func(t *testing.T) {
+	server := newTestServer()
+	tests := []struct {
+		name string
+		path string
+		call http.HandlerFunc
+	}{
+		{"root", "/", server.Dashboard},
+		{"index", "/", server.DashboardIndex},
+		{"asset", "/js/data.js", server.Dashboard},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			res := httptest.NewRecorder()
-			req := httptest.NewRequest(http.MethodGet, path, nil)
-			newTestHandler().ServeHTTP(res, req)
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			tt.call(res, req)
 
 			if res.Code != http.StatusOK {
 				t.Fatalf("status = %d, want %d", res.Code, http.StatusOK)
@@ -137,24 +145,8 @@ func TestStaticDashboardServed(t *testing.T) {
 	}
 }
 
-func newTestHandler() http.Handler {
-	return newTestRouter(filepath.Join("..", "..", "..", "dashboard"), memory.New())
-}
-
-// newTestRouter mirrors the production route table in cmd/llmgateway/router.go.
-func newTestRouter(dashboardDir string, st store.Store, opts ...Option) http.Handler {
-	server := NewServer(dashboardDir, st, opts...)
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", server.Healthz)
-	mux.HandleFunc("/admin/", server.Admin)
-	mux.HandleFunc("/admin", server.Admin)
-	mux.HandleFunc("/v1/", server.OpenAI)
-	mux.HandleFunc("/v1", server.OpenAI)
-	mux.HandleFunc("/dashboard/index.html", server.DashboardIndex)
-	mux.Handle("/dashboard/", http.StripPrefix("/dashboard", http.HandlerFunc(server.Dashboard)))
-	mux.Handle("/", http.HandlerFunc(server.Dashboard))
-	return mux
+func newTestServer() *Server {
+	return NewServer(filepath.Join("..", "..", "..", "dashboard"), memory.New())
 }
 
 func assertListResponse(t *testing.T, data map[string]any) {
@@ -174,9 +166,9 @@ func decodeJSON(t *testing.T, res *httptest.ResponseRecorder, v any) {
 	}
 }
 
-func adminDo(t *testing.T, handler http.Handler, method, path string, body any) map[string]any {
+func adminDo(t *testing.T, server *Server, method, path string, body any) map[string]any {
 	t.Helper()
-	res := adminRaw(t, handler, method, path, body)
+	res := adminRaw(t, server, method, path, body)
 	if res.Code != http.StatusOK {
 		t.Fatalf("%s %s status = %d, want 200; body=%s", method, path, res.Code, res.Body.String())
 	}
@@ -188,7 +180,7 @@ func adminDo(t *testing.T, handler http.Handler, method, path string, body any) 
 	return out
 }
 
-func adminRaw(t *testing.T, handler http.Handler, method, path string, body any) *httptest.ResponseRecorder {
+func adminRaw(t *testing.T, server *Server, method, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 	var buf bytes.Buffer
 	if body != nil {
@@ -201,7 +193,7 @@ func adminRaw(t *testing.T, handler http.Handler, method, path string, body any)
 		req.Header.Set("Content-Type", "application/json")
 	}
 	res := httptest.NewRecorder()
-	handler.ServeHTTP(res, req)
+	server.Admin(res, req)
 	return res
 }
 
