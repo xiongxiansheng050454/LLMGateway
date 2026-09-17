@@ -1,4 +1,4 @@
-package handler
+package proxy
 
 import (
 	"net/http"
@@ -9,8 +9,8 @@ import (
 	"LLMGateway/server/internal/store/memory"
 )
 
-func newRouteTestApp(st *memory.Store, randIntN func(int) int) *Server {
-	return &Server{
+func newRouteTestApp(st *memory.Store, randIntN func(int) int) *Service {
+	return &Service{
 		store:    st,
 		client:   &http.Client{},
 		randIntN: randIntN,

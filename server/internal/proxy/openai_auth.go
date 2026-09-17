@@ -1,4 +1,4 @@
-package handler
+package proxy
 
 import (
 	"encoding/json"
@@ -12,7 +12,7 @@ import (
 )
 
 // authenticate validates the Bearer gateway key and returns the raw auth state.
-func (a *Server) authenticate(authorization string) (*domain.AuthContext, error) {
+func (a *Service) Authenticate(authorization string) (*domain.AuthContext, error) {
 	token, ok := bearerToken(authorization)
 	if !ok {
 		return nil, ErrUnauthorized

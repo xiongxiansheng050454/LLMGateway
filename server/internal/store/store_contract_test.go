@@ -24,8 +24,8 @@ func TestStoreInterfacesDoNotReturnMapDTOs(t *testing.T) {
 	}
 }
 
-func TestHandlerDoesNotOwnRouteCandidate(t *testing.T) {
-	path := filepath.Join("..", "handler", "openai_route.go")
+func TestProxyDoesNotOwnRouteCandidate(t *testing.T) {
+	path := filepath.Join("..", "proxy", "openai_route.go")
 	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
 	if err != nil {
 		t.Fatal(err)
@@ -38,7 +38,7 @@ func TestHandlerDoesNotOwnRouteCandidate(t *testing.T) {
 		for _, spec := range gen.Specs {
 			typeSpec := spec.(*ast.TypeSpec)
 			if typeSpec.Name.Name == "RouteCandidate" {
-				t.Fatalf("RouteCandidate must be defined in domain, not handler")
+				t.Fatalf("RouteCandidate must be defined in domain, not proxy")
 			}
 		}
 	}

@@ -1,4 +1,4 @@
-package handler
+package proxy
 
 import (
 	"encoding/json"
@@ -12,7 +12,7 @@ import (
 // are intentionally not implemented (recorded as a known limitation).
 //
 // A key's rate_limit_overrides.rpm takes precedence over matching rules.
-func (a *Server) checkRateLimit(auth *domain.AuthContext, model string) error {
+func (a *Service) checkRateLimit(auth *domain.AuthContext, model string) error {
 	since := a.now().Add(-time.Minute).UTC().Format(time.RFC3339)
 
 	if override := rpmOverride(auth.RateLimitOverrides); override > 0 {
@@ -59,7 +59,7 @@ func (a *Server) checkRateLimit(auth *domain.AuthContext, model string) error {
 	return nil
 }
 
-func (a *Server) checkChannelRateLimit(auth *domain.AuthContext, model string, channelID int) error {
+func (a *Service) checkChannelRateLimit(auth *domain.AuthContext, model string, channelID int) error {
 	since := a.now().Add(-time.Minute).UTC().Format(time.RFC3339)
 	enabled := true
 	result, err := a.store.ListRateLimits(&enabled, 1, 1000)
