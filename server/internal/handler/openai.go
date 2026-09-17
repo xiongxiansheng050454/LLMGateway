@@ -6,8 +6,6 @@ import (
 	"net"
 	"net/http"
 	"strings"
-
-	"LLMGateway/server/internal/domain"
 )
 
 // Proxy errors. They are mapped to status codes and OpenAI-compatible error
@@ -105,7 +103,7 @@ func writeProxyError(w http.ResponseWriter, err error) {
 }
 
 func writeOpenAIError(w http.ResponseWriter, status int, code, message string) {
-	writeJSON(w, status, domain.OpenAIError{Error: domain.OpenAIErrorBody{Message: message, Type: code, Code: code}})
+	writeJSON(w, status, OpenAIError{Error: OpenAIErrorBody{Message: message, Type: code, Code: code}})
 }
 
 func clientIP(r *http.Request) string {

@@ -115,7 +115,7 @@ func TestOpenAIModels(t *testing.T) {
 	if ok.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", ok.Code, ok.Body.String())
 	}
-	var list domain.OpenAIModelList
+	var list OpenAIModelList
 	if err := json.Unmarshal(ok.Body.Bytes(), &list); err != nil {
 		t.Fatal(err)
 	}

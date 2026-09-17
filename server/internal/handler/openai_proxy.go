@@ -19,15 +19,15 @@ import (
 
 // models returns the OpenAI-style model list visible to the key, filtered by
 // its permissions.
-func (a *Server) models(auth *domain.AuthContext) (domain.OpenAIModelList, error) {
+func (a *Server) models(auth *domain.AuthContext) (OpenAIModelList, error) {
 	result, err := a.store.ListCatalogModels(true)
 	if err != nil {
-		return domain.OpenAIModelList{}, err
+		return OpenAIModelList{}, err
 	}
 
 	created := a.now().Unix()
 	seen := map[string]bool{}
-	data := []domain.OpenAIModel{}
+	data := []OpenAIModel{}
 	for _, item := range result.List {
 		entry, ok := item.(map[string]any)
 		if !ok {
@@ -38,16 +38,16 @@ func (a *Server) models(auth *domain.AuthContext) (domain.OpenAIModelList, error
 			continue
 		}
 		seen[name] = true
-		data = append(data, domain.OpenAIModel{ID: name, Object: "model", Created: created, OwnedBy: "llmgateway"})
+		data = append(data, OpenAIModel{ID: name, Object: "model", Created: created, OwnedBy: "llmgateway"})
 	}
-	return domain.OpenAIModelList{Object: "list", Data: data}, nil
+	return OpenAIModelList{Object: "list", Data: data}, nil
 }
 
 // chatCompletions proxies a non-streaming chat completion request. It returns
 // the HTTP status and body to send downstream. A non-nil error is a
 // pre-flight/transport failure the handler maps to an OpenAI error.
 func (a *Server) chatCompletions(auth *domain.AuthContext, body []byte, clientIP string) (int, []byte, error) {
-	var req domain.ChatCompletionRequest
+	var req ChatCompletionRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		return 0, nil, ErrInvalidRequest
 	}
@@ -185,7 +185,7 @@ func (a *Server) recordChannelHealth(channelID int, success bool, reason string)
 	_, _ = a.store.RecordChannelFailure(channelID, reason)
 }
 
-func (a *Server) priceFor(channelID int, model string, usage *domain.ChatCompletionUsage) (string, string, string, error) {
+func (a *Server) priceFor(channelID int, model string, usage *ChatCompletionUsage) (string, string, string, error) {
 	pricing, err := a.store.GetPricing(channelID, model)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -212,7 +212,7 @@ func (a *Server) priceFor(channelID int, model string, usage *domain.ChatComplet
 	return cost, inputPrice, outputPrice, nil
 }
 
-func (a *Server) logUsage(requestID string, auth *domain.AuthContext, channelID *int, upstreamModel, model string, usage *domain.ChatCompletionUsage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) {
+func (a *Server) logUsage(requestID string, auth *domain.AuthContext, channelID *int, upstreamModel, model string, usage *ChatCompletionUsage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) {
 	userID := auth.UserID
 	keyID := auth.KeyID
 
@@ -240,15 +240,15 @@ func (a *Server) logUsage(requestID string, auth *domain.AuthContext, channelID 
 	_, _ = a.store.InsertUsageLog(input)
 }
 
-func cachedTokenCount(usage *domain.ChatCompletionUsage) int {
+func cachedTokenCount(usage *ChatCompletionUsage) int {
 	if usage == nil || usage.PromptTokensDetails == nil {
 		return 0
 	}
 	return usage.PromptTokensDetails.CachedTokens
 }
 
-func parseUsage(body []byte) *domain.ChatCompletionUsage {
-	var parsed domain.ChatCompletionResponse
+func parseUsage(body []byte) *ChatCompletionUsage {
+	var parsed ChatCompletionResponse
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return nil
 	}
