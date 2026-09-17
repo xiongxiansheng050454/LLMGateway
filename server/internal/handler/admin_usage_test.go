@@ -11,14 +11,14 @@ import (
 
 func intPtr(value int) *int { return &value }
 
-func newUsageTestHandler(t *testing.T) (http.Handler, *memory.Store) {
+func newUsageTestHandler(t *testing.T) (*Server, *memory.Store) {
 	t.Helper()
 	st := memory.New()
-	return newTestRouter(filepath.Join("..", "..", "..", "dashboard"), st), st
+	return NewServer(filepath.Join("..", "..", "..", "dashboard"), st), st
 }
 
 func TestUsageInvalidTimeParamsReturnBadRequest(t *testing.T) {
-	handler := newTestHandler()
+	handler := newTestServer()
 
 	for _, path := range []string{
 		"/admin/stats/overview?start_time=abc",

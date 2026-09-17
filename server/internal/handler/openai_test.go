@@ -35,7 +35,7 @@ func upstreamSuccess() http.Handler {
 }
 
 type proxyFixture struct {
-	handler  http.Handler
+	server   *Server
 	store    *memory.Store
 	fullKey  string
 	upstream *httptest.Server
@@ -73,7 +73,7 @@ func newProxyFixture(t *testing.T, upstream http.Handler) *proxyFixture {
 	}
 
 	return &proxyFixture{
-		handler:  newTestRouter(filepath.Join("..", "..", "..", "dashboard"), st),
+		server:   NewServer(filepath.Join("..", "..", "..", "dashboard"), st),
 		store:    st,
 		fullKey:  created["full_key"].(string),
 		upstream: server,
@@ -96,7 +96,7 @@ func proxyDo(t *testing.T, f *proxyFixture, method, path, key, body string) *htt
 		req.Header.Set("Authorization", "Bearer "+key)
 	}
 	res := httptest.NewRecorder()
-	f.handler.ServeHTTP(res, req)
+	f.server.OpenAI(res, req)
 	return res
 }
 

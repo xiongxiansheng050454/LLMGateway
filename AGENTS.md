@@ -4,7 +4,7 @@
 
 ## 项目背景
 
-本项目是一个 LLM API Gateway，当前已有前端控制台，后续需要围绕前端需求开发 Go 后端。
+本项目是一个 LLM API Gateway，已有静态前端控制台与 Go 后端（标准库 net/http + PostgreSQL/sqlc）。后端位于 `server/`，提供 `/admin` 管理端接口与 `/v1` OpenAI 兼容下游接口。
 
 前端控制台位于 `dashboard/`，是一个无需打包的静态 HTML/CSS/JS 项目。它默认请求同源 `/admin` 管理端接口，也支持通过 URL 参数覆盖接口地址：
 
@@ -21,15 +21,42 @@ docs/api-requirements.md
 ## 目录说明
 
 ```text
-dashboard/                 静态前端控制台
+server/                    Go 模块根（module LLMGateway/server，go.mod / go.sum / sqlc.yaml）
+server/cmd/llmgateway/     进程入口与 HTTP 路由表（router.go）
+server/internal/           后端实现（config/crypto/money/domain/store/handler/db）
+server/db/                 迁移与 sqlc 查询（migrations/、queries/）
+dashboard/                 静态前端控制台（仓库根）
 dashboard/index.html       前端入口
 dashboard/js/data.js       前端数据接入层，定义 /admin 接口调用
 dashboard/js/core.js       前端导航、路由和启动逻辑
 dashboard/js/views/        各控制台页面
 docs/api-requirements.md   后端 API 要求
-go.mod                     Go 模块定义
+docs/backend-structure.md  后端目录与分层约定
+deployments/               本地 PostgreSQL docker compose
 communication/             本地协作通信文件，不提交
 ```
+
+## 运行与验证
+
+所有 Go 命令都在 `server/` 目录下执行（或在仓库根使用 `go -C server ...`）：
+
+```powershell
+cd server
+go build ./...
+go vet ./...
+go test ./...
+gofmt -l cmd internal
+sqlc generate
+go run ./cmd/llmgateway
+```
+
+运行默认使用内存存储，托管仓库根的 `dashboard/`：
+
+```text
+DASHBOARD_DIR=../dashboard
+```
+
+PostgreSQL 集成测试需要 `TEST_DATABASE_URL`，未设置时自动跳过。
 
 ## Git 约定
 

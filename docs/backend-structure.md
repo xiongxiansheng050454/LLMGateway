@@ -27,15 +27,15 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
 
 - HTTP handler 只依赖 `server/internal/store.Store` 接口，不直接访问 PostgreSQL 或 sqlc。
 - 业务/API 共享结构放在 `server/internal/domain`，避免 handler、memory store、postgres store 互相引用具体实现。
-- 当前默认仍使用 `server/internal/store/memory`，后续接入 PG 时在 `server/internal/store/postgres` 实现同一个 `store.Store` 接口。
+- 默认使用 `server/internal/store/memory`；设置 `DATABASE_URL` 时使用 `server/internal/store/postgres`，两者实现同一个 `store.Store` 接口且行为一致。
 - sqlc 查询写在 `server/db/queries/*.sql`，schema 写在 `server/db/migrations/*.sql`，生成代码输出到 `server/internal/db/sqlc`。
 - 不要手改 `server/internal/db/sqlc` 生成文件；修改 SQL 后运行 `sqlc generate`。
 - 初始 schema 覆盖渠道、模型映射、定价、用户、余额、Key、限流和用量日志，后续 issue 应优先扩展现有表而不是新建重复概念。
 - 统计接口（overview/daily/channels）在 `usage_logs` 上实时聚合，按 UTC 自然日分组；`daily_usage_stats` 因未被使用且复合主键无法表达全局日汇总，已在迁移 `000004_drop_daily_usage_stats.sql` 中删除。
 - 进程启动时按 `DATABASE_URL` 选择实现：未设置使用 memory，设置则建立 pgxpool 连接并选用 PostgreSQL store。
-- PostgreSQL store 当前对未接线方法返回 `store.ErrNotImplemented`（HTTP 501），具体查询由 PostgreSQL store 子 issue 实现，避免静默返回空数据。
+- PostgreSQL store 已实现渠道/模型/定价、用户/余额/Key、限流规则与用量日志的读写；memory 与 postgres 两个实现的字段、错误码、排序与金额格式必须保持一致。
 - `server/cmd/llmgateway` 使用 `http.Server` 并在收到 `SIGINT`/`SIGTERM` 后优雅关闭。
-- 金额能力集中在 `server/internal/money`，密钥能力集中在 `server/internal/crypto`；`server/internal/store/memory` 中现有的 `parseMoney6`/`formatMoney6` 需在 #11 迁移过去，禁止各 store 各自实现金额解析。
+- 金额能力集中在 `server/internal/money`，密钥能力集中在 `server/internal/crypto`；memory 与 postgres 均调用 `internal/money`，禁止各 store 各自实现金额解析。
 - 禁止用 `float64` 参与计费；金额在 DB 用 `NUMERIC`，在 Go 用定点整数，对外输出字符串。
 - 渠道 `api_key` 落库为密文，网关 Key 只存哈希；任何响应、日志、错误都不得出现明文密钥。
 - `server/internal/money` 与 `server/internal/crypto` 为叶子包，不得依赖 `server/internal/store` 或 `server/internal/handler`。
