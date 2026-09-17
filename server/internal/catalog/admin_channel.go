@@ -1,4 +1,4 @@
-package httpapi
+package catalog
 
 import (
 	"net/http"

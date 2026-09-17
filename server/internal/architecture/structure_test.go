@@ -10,9 +10,13 @@ import (
 func TestVisibleBackendModuleDirectories(t *testing.T) {
 	root := filepath.Join("..", "..")
 	for _, dir := range []string{
+		"internal/catalog",
+		"internal/accounts",
+		"internal/usage",
+		"internal/ratelimit",
 		"internal/httpapi",
 		"internal/proxy",
-		"internal/protocol/openai",
+		"internal/proxy/openai",
 		"internal/domain",
 		"internal/store",
 		"internal/store/memory",
@@ -28,6 +32,20 @@ func TestVisibleBackendModuleDirectories(t *testing.T) {
 	}
 }
 
+func TestBusinessModuleDocumentationExists(t *testing.T) {
+	root := filepath.Join("..", "..")
+	for _, module := range []string{"catalog", "accounts", "usage", "ratelimit"} {
+		path := filepath.Join(root, "internal", module, "doc.go")
+		content, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("business module %s is missing doc.go: %v", module, err)
+		}
+		if !strings.Contains(string(content), "Package "+module) {
+			t.Fatalf("business module %s lacks package ownership documentation", module)
+		}
+	}
+}
+
 func TestProxyOrchestrationStaysOutOfHTTPAPI(t *testing.T) {
 	root := filepath.Join("..", "..")
 	for _, name := range []string{"openai_proxy.go", "openai_route.go", "openai_ratelimit.go", "openai_billing.go", "openai_auth.go"} {
@@ -37,6 +55,36 @@ func TestProxyOrchestrationStaysOutOfHTTPAPI(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(root, "internal", "httpapi", name)); !os.IsNotExist(err) {
 			t.Fatalf("proxy orchestration file %s should not live in internal/httpapi", name)
 		}
+	}
+}
+
+func TestAdminEntrypointsStayInBusinessModules(t *testing.T) {
+	root := filepath.Join("..", "..")
+	for _, name := range []string{"admin_channel.go", "admin_pricing.go", "channel_upstream.go"} {
+		assertFileExists(t, filepath.Join(root, "internal", "catalog", name))
+		assertFileMissing(t, filepath.Join(root, "internal", "httpapi", name))
+	}
+	for _, name := range []string{"admin_user.go", "admin_key.go"} {
+		assertFileExists(t, filepath.Join(root, "internal", "accounts", name))
+		assertFileMissing(t, filepath.Join(root, "internal", "httpapi", name))
+	}
+	assertFileExists(t, filepath.Join(root, "internal", "usage", "admin_usage.go"))
+	assertFileExists(t, filepath.Join(root, "internal", "ratelimit", "admin_ratelimit.go"))
+	assertFileMissing(t, filepath.Join(root, "internal", "httpapi", "admin_usage.go"))
+	assertFileMissing(t, filepath.Join(root, "internal", "httpapi", "admin_ratelimit.go"))
+}
+
+func assertFileExists(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); err != nil {
+		t.Fatalf("expected %s: %v", path, err)
+	}
+}
+
+func assertFileMissing(t *testing.T, path string) {
+	t.Helper()
+	if _, err := os.Stat(path); !os.IsNotExist(err) {
+		t.Fatalf("did not expect %s", path)
 	}
 }
 

@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	openaiwire "LLMGateway/server/internal/protocol/openai"
 	"LLMGateway/server/internal/proxy"
+	openaiwire "LLMGateway/server/internal/proxy/openai"
 )
 
 // OpenAI dispatches the OpenAI-compatible downstream endpoints.

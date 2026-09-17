@@ -1,4 +1,4 @@
-package httpapi
+package ratelimit
 
 import (
 	"net/http"
@@ -8,7 +8,7 @@ import (
 	"LLMGateway/server/internal/domain"
 )
 
-func (a *Server) rateLimitData(r *http.Request) (any, bool, int, string) {
+func (a *Server) Data(r *http.Request) (any, bool, int, string) {
 	parts := splitPath(strings.TrimSuffix(r.URL.Path, "/"))
 	if len(parts) < 2 || parts[0] != "admin" || parts[1] != "rate-limits" {
 		return nil, false, 0, ""

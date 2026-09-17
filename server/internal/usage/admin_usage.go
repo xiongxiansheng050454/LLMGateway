@@ -1,4 +1,4 @@
-package httpapi
+package usage
 
 import (
 	"net/http"
@@ -15,7 +15,7 @@ const (
 	defaultDateTo    = "9999-12-31"
 )
 
-func (a *Server) usageData(r *http.Request) (any, bool, int, string) {
+func (a *Server) Data(r *http.Request) (any, bool, int, string) {
 	parts := splitPath(strings.TrimSuffix(r.URL.Path, "/"))
 	if len(parts) < 2 || parts[0] != "admin" {
 		return nil, false, 0, ""

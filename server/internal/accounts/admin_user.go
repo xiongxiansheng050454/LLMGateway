@@ -1,4 +1,4 @@
-package httpapi
+package accounts
 
 import (
 	"net/http"
@@ -9,7 +9,7 @@ import (
 )
 
 // userData dispatches /admin/users and /admin/keys requests.
-func (a *Server) userData(r *http.Request) (any, bool, int, string) {
+func (a *Server) Data(r *http.Request) (any, bool, int, string) {
 	parts := splitPath(strings.TrimSuffix(r.URL.Path, "/"))
 	if len(parts) < 2 || parts[0] != "admin" {
 		return nil, false, 0, ""

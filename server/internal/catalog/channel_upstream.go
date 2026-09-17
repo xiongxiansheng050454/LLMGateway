@@ -1,4 +1,4 @@
-package httpapi
+package catalog
 
 import (
 	"encoding/json"
@@ -10,7 +10,7 @@ import (
 func (a *Server) remoteModels(channelID int) (any, bool, int, string) {
 	ch, err := a.store.GetChannelSecret(channelID)
 	if err != nil {
-		return errorResponse(err)
+		return a.result(nil, err)
 	}
 	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(ch.BaseURL, "/")+"/v1/models", nil)
 	if err != nil {

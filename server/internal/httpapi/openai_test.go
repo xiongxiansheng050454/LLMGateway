@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"LLMGateway/server/internal/domain"
-	openaiwire "LLMGateway/server/internal/protocol/openai"
+	openaiwire "LLMGateway/server/internal/proxy/openai"
 	"LLMGateway/server/internal/store"
 	"LLMGateway/server/internal/store/memory"
 )

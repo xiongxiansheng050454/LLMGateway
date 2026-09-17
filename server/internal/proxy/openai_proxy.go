@@ -14,7 +14,7 @@ import (
 
 	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/money"
-	openaiwire "LLMGateway/server/internal/protocol/openai"
+	openaiwire "LLMGateway/server/internal/proxy/openai"
 	"LLMGateway/server/internal/store"
 )
 

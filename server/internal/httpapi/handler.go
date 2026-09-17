@@ -11,8 +11,12 @@ import (
 	"strings"
 	"time"
 
+	"LLMGateway/server/internal/accounts"
+	"LLMGateway/server/internal/catalog"
 	"LLMGateway/server/internal/proxy"
+	"LLMGateway/server/internal/ratelimit"
 	"LLMGateway/server/internal/store"
+	"LLMGateway/server/internal/usage"
 )
 
 // Server holds the HTTP entry points for the gateway. The concrete route table
@@ -30,6 +34,10 @@ type Server struct {
 	randIntN     func(int) int
 	now          func() time.Time
 	proxy        *proxy.Service
+	catalog      *catalog.Server
+	accounts     *accounts.Server
+	usage        *usage.Server
+	ratelimit    *ratelimit.Server
 	dashboardDir string
 	dashboard    http.Handler
 }
@@ -90,6 +98,10 @@ func NewServer(dashboardDir string, st store.Store, opts ...Option) *Server {
 		randIntN:     settings.randIntN,
 		now:          settings.now,
 		proxy:        proxy.NewService(st, client, settings.randIntN, settings.now),
+		catalog:      catalog.New(st, client),
+		accounts:     accounts.New(st),
+		usage:        usage.New(st),
+		ratelimit:    ratelimit.New(st),
 		dashboardDir: dashboardDir,
 		dashboard:    http.FileServer(http.Dir(dashboardDir)),
 	}
@@ -152,36 +164,18 @@ func (a *Server) Admin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Server) adminData(r *http.Request) (any, bool, int, string) {
-	if data, ok, status, msg := a.catalogData(r); ok || status != 0 {
-		return data, ok, status, msg
-	}
-	if data, ok, status, msg := a.userData(r); ok || status != 0 {
-		return data, ok, status, msg
-	}
-	if data, ok, status, msg := a.rateLimitData(r); ok || status != 0 {
-		return data, ok, status, msg
-	}
-	if data, ok, status, msg := a.usageData(r); ok || status != 0 {
-		return data, ok, status, msg
-	}
-	return nil, false, 0, ""
-}
-
-// catalogData dispatches /admin requests to the channel, model and pricing
-// domain handlers.
-func (a *Server) catalogData(r *http.Request) (any, bool, int, string) {
 	parts := splitPath(strings.TrimSuffix(r.URL.Path, "/"))
-	if len(parts) < 2 || parts[0] != "admin" {
-		return nil, false, 0, ""
+	if data, ok, status, msg := a.catalog.Data(r, parts); ok || status != 0 {
+		return data, ok, status, msg
 	}
-	if parts[1] == "channels" {
-		return a.channelData(r, parts)
+	if data, ok, status, msg := a.accounts.Data(r); ok || status != 0 {
+		return data, ok, status, msg
 	}
-	if parts[1] == "models" && len(parts) == 2 && r.Method == http.MethodGet {
-		return a.result(a.store.ListCatalogModels(r.URL.Query().Get("status") == "1"))
+	if data, ok, status, msg := a.ratelimit.Data(r); ok || status != 0 {
+		return data, ok, status, msg
 	}
-	if parts[1] == "pricing" && len(parts) == 2 {
-		return a.pricingData(r)
+	if data, ok, status, msg := a.usage.Data(r); ok || status != 0 {
+		return data, ok, status, msg
 	}
 	return nil, false, 0, ""
 }

@@ -1,4 +1,4 @@
-package httpapi
+package catalog
 
 import (
 	"io"
@@ -6,6 +6,19 @@ import (
 
 	"LLMGateway/server/internal/domain"
 )
+
+func (a *Server) Data(r *http.Request, parts []string) (any, bool, int, string) {
+	if len(parts) == 2 && parts[1] == "models" && r.Method == http.MethodGet {
+		return a.result(a.store.ListCatalogModels(r.URL.Query().Get("status") == "1"))
+	}
+	if len(parts) >= 2 && parts[1] == "channels" {
+		return a.channelData(r, parts)
+	}
+	if len(parts) == 2 && parts[1] == "pricing" {
+		return a.pricingData(r)
+	}
+	return nil, false, 0, ""
+}
 
 func (a *Server) pricingData(r *http.Request) (any, bool, int, string) {
 	switch r.Method {
