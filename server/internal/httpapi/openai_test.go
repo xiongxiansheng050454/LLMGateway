@@ -1,4 +1,4 @@
-package handler
+package httpapi
 
 import (
 	"bytes"
@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"LLMGateway/server/internal/domain"
+	openaiwire "LLMGateway/server/internal/protocol/openai"
 	"LLMGateway/server/internal/store"
 	"LLMGateway/server/internal/store/memory"
 )
@@ -115,7 +116,7 @@ func TestOpenAIModels(t *testing.T) {
 	if ok.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", ok.Code, ok.Body.String())
 	}
-	var list OpenAIModelList
+	var list openaiwire.OpenAIModelList
 	if err := json.Unmarshal(ok.Body.Bytes(), &list); err != nil {
 		t.Fatal(err)
 	}

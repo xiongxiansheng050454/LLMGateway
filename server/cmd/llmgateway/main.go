@@ -14,7 +14,7 @@ import (
 	"LLMGateway/server/internal/config"
 	"LLMGateway/server/internal/crypto"
 	"LLMGateway/server/internal/db/migrate"
-	"LLMGateway/server/internal/handler"
+	"LLMGateway/server/internal/httpapi"
 	"LLMGateway/server/internal/store"
 	"LLMGateway/server/internal/store/memory"
 	"LLMGateway/server/internal/store/postgres"
@@ -43,7 +43,7 @@ func run() error {
 	server := &http.Server{
 		Addr: cfg.Addr,
 		Handler: newRouter(cfg.DashboardDir, st,
-			handler.WithUpstreamTimeout(time.Duration(cfg.UpstreamTimeoutSeconds)*time.Second)),
+			httpapi.WithUpstreamTimeout(time.Duration(cfg.UpstreamTimeoutSeconds)*time.Second)),
 	}
 
 	serveErr := make(chan error, 1)

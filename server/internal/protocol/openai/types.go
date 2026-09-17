@@ -1,7 +1,7 @@
-package handler
+package openai
 
-// OpenAI protocol types. They live in the HTTP/protocol layer (handler) rather
-// than domain, so the core package does not depend on an external API contract.
+// OpenAI protocol types live outside domain/store so core packages do not
+// depend on an external API contract.
 
 // OpenAIModel is a single entry in GET /v1/models.
 type OpenAIModel struct {

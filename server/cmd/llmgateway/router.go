@@ -3,13 +3,13 @@ package main
 import (
 	"net/http"
 
-	"LLMGateway/server/internal/handler"
+	"LLMGateway/server/internal/httpapi"
 	"LLMGateway/server/internal/store"
 )
 
 // newRouter is the single place where HTTP paths are mapped to handlers.
-func newRouter(dashboardDir string, st store.Store, opts ...handler.Option) http.Handler {
-	server := handler.NewServer(dashboardDir, st, opts...)
+func newRouter(dashboardDir string, st store.Store, opts ...httpapi.Option) http.Handler {
+	server := httpapi.NewServer(dashboardDir, st, opts...)
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", server.Healthz)

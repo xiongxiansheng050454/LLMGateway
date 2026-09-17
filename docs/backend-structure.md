@@ -1,12 +1,13 @@
 # Backend Structure
 
-后端目录按职责分层，避免后续功能继续堆在 `server/internal/handler`。
+后端目录按职责分层，目录本身体现 HTTP 入口、协议适配、领域模型和存储实现边界。
 
 ```text
 server/                             Go 模块根（go.mod / go.sum / sqlc.yaml）
-server/cmd/llmgateway/              进程入口与 HTTP 路由表（router.go）：config -> store -> handler -> http.Server
+server/cmd/llmgateway/              进程入口与 HTTP 路由表（router.go）：config -> store -> httpapi -> http.Server
 server/internal/config/             环境变量配置读取，集中管理默认值
-server/internal/handler/            请求解析、响应封装、Dashboard 静态资源、/admin 与 /v1 分派编排
+server/internal/httpapi/            HTTP 入口、请求解析、响应封装、Dashboard 静态资源、/admin 与 /v1 分派编排
+server/internal/protocol/openai/    OpenAI 兼容 wire DTO 与协议响应结构
 server/internal/domain/             API 与业务共享类型，不依赖 HTTP 或数据库
 server/internal/money/              定点金额（int64 最小单位）解析与格式化
 server/internal/crypto/             渠道 api_key 加解密、网关 Key 生成与哈希
@@ -32,8 +33,9 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
 
 ## 约定
 
-- HTTP handler 只依赖 `server/internal/store.Store` 接口，不直接访问 PostgreSQL 或 sqlc。
-- 业务/API 共享结构放在 `server/internal/domain`，避免 handler、memory store、postgres store 互相引用具体实现。
+- HTTP 入口只依赖 `server/internal/store.Store` 接口，不直接访问 PostgreSQL 或 sqlc。
+- 业务/API 共享结构放在 `server/internal/domain`，避免 httpapi、memory store、postgres store 互相引用具体实现。
+- OpenAI 兼容 JSON wire type 放在 `server/internal/protocol/openai`；`server/internal/domain` 与 `server/internal/store` 不依赖 OpenAI 协议 DTO。
 - 默认使用 `server/internal/store/memory`；设置 `DATABASE_URL` 时使用 `server/internal/store/postgres`，两者实现同一个 `store.Store` 接口且行为一致。
 - sqlc 查询写在 `server/db/queries/*.sql`，schema 写在 `server/db/migrations/*.sql`，生成代码输出到 `server/internal/db/sqlc`。
 - 不要手改 `server/internal/db/sqlc` 生成文件；修改 SQL 后运行 `sqlc generate`。
@@ -45,24 +47,25 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
 - 金额能力集中在 `server/internal/money`，密钥能力集中在 `server/internal/crypto`；memory 与 postgres 均调用 `internal/money`，禁止各 store 各自实现金额解析。
 - 禁止用 `float64` 参与计费；金额在 DB 用 `NUMERIC`，在 Go 用定点整数，对外输出字符串。
 - 渠道 `api_key` 落库为密文，网关 Key 只存哈希；任何响应、日志、错误都不得出现明文密钥。
-- `server/internal/money` 与 `server/internal/crypto` 为叶子包，不得依赖 `server/internal/store` 或 `server/internal/handler`。
+- `server/internal/money` 与 `server/internal/crypto` 为叶子包，不得依赖 `server/internal/store` 或 `server/internal/httpapi`。
 - `server/internal/crypto` 的渠道密钥加密密钥来自环境变量 `CHANNEL_KEY_ENCRYPTION_KEY`（原始字节，长度 16/24/32）；缺失或非法时返回错误，禁止明文回退。
 - 网关 Key 仅保存 `server/internal/crypto.HashKey` 的哈希，明文 `full_key` 只在创建/重置时返回一次。
 - 阶段说明：本阶段 `server/internal/store/memory` 仍以进程内明文 `api_key` 支撑 MVP（不落盘），`server/internal/crypto` 先提供加解密与哈希能力；PostgreSQL store（#12）落库时使用 `api_key_ciphertext`，并复用本包完成加解密。
-- 不引入 service 层：HTTP 编排位于 `server/internal/handler`，与既有 `admin_*.go` 一致；下游代理按关注点分 `openai*.go`。
-- HTTP 路由表（路径到入口的映射）集中在 `server/cmd/llmgateway/router.go`；`server/internal/handler` 只提供入口方法，不构造 mux。
+- 不引入 service 层：HTTP 编排位于 `server/internal/httpapi`，与既有 `admin_*.go` 一致；下游代理按关注点分 `openai*.go`。
+- HTTP 路由表（路径到入口的映射）集中在 `server/cmd/llmgateway/router.go`；`server/internal/httpapi` 只提供入口方法，不构造 mux。
 
 ## 文件组织约定
 
-目录保持现有深度与扁平度：包内按领域拆文件，不再新增子包。这样既避免单文件膨胀，也避免 import 环和过度分层。
+目录保持较浅层级：包内按领域拆文件，仅在协议与存储实现处使用子包，使目录能直接呈现模块边界。
 
 - 每个包内按领域命名文件，禁止把多个领域堆进同一个文件：
   - `server/internal/domain/`：`common.go`、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`、`channelhealth.go`、`failurereason.go`；纯规则（熔断状态机、限流规范化 `NormalizeRateLimit`、时间校验 `Validate*`、`FailureReason`）归位此处
   - `server/internal/store/`：`store.go`（错误别名 + 组合接口）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`、`channelhealth.go`（仅端口接口）；`CanonicalJSON` 为序列化一致性辅助，非业务规则
-  - `server/internal/store/memory/`：`memory.go`（结构体/构造函数/共享辅助）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
-  - `server/internal/store/postgres/`：`postgres.go`（结构体/构造函数）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`
+  - `server/internal/store/memory/`：`memory.go`（结构体/构造函数/共享辅助）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`、`channelhealth.go`
+  - `server/internal/store/postgres/`：`postgres.go`（结构体/构造函数）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`、`channelhealth.go`
   - `server/cmd/llmgateway/`：`main.go`（装配与优雅关闭）、`router.go`（唯一 HTTP 路由表）
-  - `server/internal/handler/`：`handler.go`（入口方法/分派/响应/分页/静态托管）、`admin_channel.go`、`admin_pricing.go`、`admin_user.go`、`admin_key.go`、`admin_ratelimit.go`、`admin_usage.go`、`channel_upstream.go`、`openai.go`（/v1 分派与错误映射）、`openai_auth.go`、`openai_route.go`、`openai_billing.go`、`openai_ratelimit.go`、`openai_proxy.go`
+  - `server/internal/httpapi/`：`handler.go`（入口方法/分派/响应/分页/静态托管）、`admin_channel.go`、`admin_pricing.go`、`admin_user.go`、`admin_key.go`、`admin_ratelimit.go`、`admin_usage.go`、`channel_upstream.go`、`openai.go`（/v1 分派与错误映射）、`openai_auth.go`、`openai_route.go`、`openai_billing.go`、`openai_ratelimit.go`、`openai_proxy.go`
+  - `server/internal/protocol/openai/`：`types.go`（OpenAI 兼容请求、响应和错误 DTO）
 - `store.Store` 由领域子接口组合而成，禁止继续往 `store.go` 堆方法：
 
 ```go
@@ -83,7 +86,7 @@ var _ store.ChannelStore = (*memory.Store)(nil)
 
 ## 下游代理（/v1）
 
-- `GET /v1/models` 与 `POST /v1/chat/completions` 由 `server/internal/handler` 暴露，按关注点分文件：`openai.go`（分派/错误映射）、`openai_auth.go`、`openai_route.go`、`openai_billing.go`、`openai_ratelimit.go`、`openai_proxy.go`。
+- `GET /v1/models` 与 `POST /v1/chat/completions` 由 `server/internal/httpapi` 暴露，按关注点分文件：`openai.go`（分派/错误映射）、`openai_auth.go`、`openai_route.go`、`openai_billing.go`、`openai_ratelimit.go`、`openai_proxy.go`；OpenAI JSON DTO 位于 `server/internal/protocol/openai`。
 - 认证使用 `Authorization: Bearer <gateway-key>`；密钥经 `server/internal/crypto.HashKey` 后查询，明文不落日志/响应。
 - 路由候选按 `priority` 越大越优先，同级内按 `weight` 加权随机；非正余额渠道被排除。
 - 计费：缓存 token 已包含在 `prompt_tokens` 中，仅按 `(prompt_tokens - cached_tokens)` 计输入价，缓存部分计缓存价，避免重复计费。

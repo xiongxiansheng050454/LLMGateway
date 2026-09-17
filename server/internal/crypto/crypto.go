@@ -1,7 +1,7 @@
 // Package crypto holds the secret-handling primitives: symmetric encryption for
 // upstream channel api keys and hashing for gateway API keys.
 //
-// It is a leaf package: it must not depend on internal/store or internal/handler.
+// It is a leaf package: it must not depend on internal/store or internal/httpapi.
 package crypto
 
 import (

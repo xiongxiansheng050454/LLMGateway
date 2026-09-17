@@ -1,4 +1,4 @@
-package handler
+package httpapi
 
 import (
 	"bytes"
@@ -14,36 +14,37 @@ import (
 
 	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/money"
+	openaiwire "LLMGateway/server/internal/protocol/openai"
 	"LLMGateway/server/internal/store"
 )
 
 // models returns the OpenAI-style model list visible to the key, filtered by
 // its permissions.
-func (a *Server) models(auth *domain.AuthContext) (OpenAIModelList, error) {
+func (a *Server) models(auth *domain.AuthContext) (openaiwire.OpenAIModelList, error) {
 	result, err := a.store.ListCatalogModels(true)
 	if err != nil {
-		return OpenAIModelList{}, err
+		return openaiwire.OpenAIModelList{}, err
 	}
 
 	created := a.now().Unix()
 	seen := map[string]bool{}
-	data := []OpenAIModel{}
+	data := []openaiwire.OpenAIModel{}
 	for _, item := range result.List {
 		name := item.ModelName
 		if name == "" || seen[name] || !allowModel(auth, name) {
 			continue
 		}
 		seen[name] = true
-		data = append(data, OpenAIModel{ID: name, Object: "model", Created: created, OwnedBy: "llmgateway"})
+		data = append(data, openaiwire.OpenAIModel{ID: name, Object: "model", Created: created, OwnedBy: "llmgateway"})
 	}
-	return OpenAIModelList{Object: "list", Data: data}, nil
+	return openaiwire.OpenAIModelList{Object: "list", Data: data}, nil
 }
 
 // chatCompletions proxies a non-streaming chat completion request. It returns
 // the HTTP status and body to send downstream. A non-nil error is a
 // pre-flight/transport failure the handler maps to an OpenAI error.
 func (a *Server) chatCompletions(auth *domain.AuthContext, body []byte, clientIP string) (int, []byte, error) {
-	var req ChatCompletionRequest
+	var req openaiwire.ChatCompletionRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		return 0, nil, ErrInvalidRequest
 	}
@@ -194,7 +195,7 @@ func (a *Server) recordChannelHealth(channelID int, success bool, reason domain.
 	_, _ = a.store.RecordChannelFailure(channelID, reason)
 }
 
-func (a *Server) priceFor(channelID int, model string, usage *ChatCompletionUsage) (string, string, string, error) {
+func (a *Server) priceFor(channelID int, model string, usage *openaiwire.ChatCompletionUsage) (string, string, string, error) {
 	pricing, err := a.store.GetPricing(channelID, model)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -221,11 +222,11 @@ func (a *Server) priceFor(channelID int, model string, usage *ChatCompletionUsag
 	return cost, inputPrice, outputPrice, nil
 }
 
-func (a *Server) logUsage(requestID string, auth *domain.AuthContext, channelID *int, upstreamModel, model string, usage *ChatCompletionUsage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) {
+func (a *Server) logUsage(requestID string, auth *domain.AuthContext, channelID *int, upstreamModel, model string, usage *openaiwire.ChatCompletionUsage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) {
 	_, _ = a.store.InsertUsageLog(a.usageLogInput(requestID, auth, channelID, upstreamModel, model, usage, cost, inputPrice, outputPrice, durationMs, clientIP, status, errorCode))
 }
 
-func (a *Server) usageLogInput(requestID string, auth *domain.AuthContext, channelID *int, upstreamModel, model string, usage *ChatCompletionUsage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) domain.UsageLogInput {
+func (a *Server) usageLogInput(requestID string, auth *domain.AuthContext, channelID *int, upstreamModel, model string, usage *openaiwire.ChatCompletionUsage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) domain.UsageLogInput {
 	userID := auth.UserID
 	keyID := auth.KeyID
 
@@ -253,15 +254,15 @@ func (a *Server) usageLogInput(requestID string, auth *domain.AuthContext, chann
 	return input
 }
 
-func cachedTokenCount(usage *ChatCompletionUsage) int {
+func cachedTokenCount(usage *openaiwire.ChatCompletionUsage) int {
 	if usage == nil || usage.PromptTokensDetails == nil {
 		return 0
 	}
 	return usage.PromptTokensDetails.CachedTokens
 }
 
-func parseUsage(body []byte) *ChatCompletionUsage {
-	var parsed ChatCompletionResponse
+func parseUsage(body []byte) *openaiwire.ChatCompletionUsage {
+	var parsed openaiwire.ChatCompletionResponse
 	if err := json.Unmarshal(body, &parsed); err != nil {
 		return nil
 	}
