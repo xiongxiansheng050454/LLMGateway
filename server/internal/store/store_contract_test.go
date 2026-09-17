@@ -25,7 +25,7 @@ func TestStoreInterfacesDoNotReturnMapDTOs(t *testing.T) {
 }
 
 func TestProxyDoesNotOwnRouteCandidate(t *testing.T) {
-	path := filepath.Join("..", "proxy", "openai_route.go")
+	path := filepath.Join("..", "proxy", "routing.go")
 	file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
 	if err != nil {
 		t.Fatal(err)
