@@ -8,7 +8,7 @@ import (
 )
 
 func TestChatCompletionSuccessUsesStoreSettlementPort(t *testing.T) {
-	content, err := os.ReadFile(filepath.Join("..", "proxy", "openai_proxy.go"))
+	content, err := os.ReadFile(filepath.Join("..", "proxy", "orchestration.go"))
 	if err != nil {
 		t.Fatal(err)
 	}

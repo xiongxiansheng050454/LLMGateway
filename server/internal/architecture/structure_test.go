@@ -49,13 +49,20 @@ func TestBusinessModuleDocumentationExists(t *testing.T) {
 
 func TestProxyOrchestrationStaysOutOfHTTPAPI(t *testing.T) {
 	root := filepath.Join("..", "..")
-	for _, name := range []string{"openai_proxy.go", "openai_route.go", "openai_ratelimit.go", "openai_billing.go", "openai_auth.go"} {
+	for _, name := range []string{"orchestration.go", "routing.go", "ratelimiting.go", "billing.go", "authentication.go"} {
 		if _, err := os.Stat(filepath.Join(root, "internal", "proxy", name)); err != nil {
 			t.Fatalf("expected proxy orchestration file %s in internal/proxy: %v", name, err)
 		}
 		if _, err := os.Stat(filepath.Join(root, "internal", "httpapi", name)); !os.IsNotExist(err) {
 			t.Fatalf("proxy orchestration file %s should not live in internal/httpapi", name)
 		}
+	}
+}
+
+func TestProxyBusinessFilesUseDomainNames(t *testing.T) {
+	root := filepath.Join("..", "..", "internal", "proxy")
+	for _, name := range []string{"openai_proxy.go", "openai_route.go", "openai_ratelimit.go", "openai_billing.go", "openai_auth.go"} {
+		assertFileMissing(t, filepath.Join(root, name))
 	}
 }
 
