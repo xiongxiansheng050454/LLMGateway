@@ -29,11 +29,7 @@ func (a *Server) models(auth *domain.AuthContext) (OpenAIModelList, error) {
 	seen := map[string]bool{}
 	data := []OpenAIModel{}
 	for _, item := range result.List {
-		entry, ok := item.(map[string]any)
-		if !ok {
-			continue
-		}
-		name := toString(entry["model_name"])
+		name := item.ModelName
 		if name == "" || seen[name] || !allowModel(auth, name) {
 			continue
 		}
@@ -201,15 +197,15 @@ func (a *Server) priceFor(channelID int, model string, usage *ChatCompletionUsag
 		return "", "", "", err
 	}
 
-	inputPrice := toString(pricing["input_price_per_1m"])
-	outputPrice := toString(pricing["output_price_per_1m"])
+	inputPrice := pricing.InputPricePer1M
+	outputPrice := pricing.OutputPricePer1M
 	inputTokens, outputTokens, cachedTokens := 0, 0, 0
 	if usage != nil {
 		inputTokens = usage.PromptTokens
 		outputTokens = usage.CompletionTokens
 		cachedTokens = cachedTokenCount(usage)
 	}
-	cost, err := computeCost(inputPrice, outputPrice, toString(pricing["cached_input_price_per_1m"]), inputTokens, outputTokens, cachedTokens)
+	cost, err := computeCost(inputPrice, outputPrice, pricing.CachedInputPricePer1M, inputTokens, outputTokens, cachedTokens)
 	if err != nil {
 		return "", "", "", err
 	}
@@ -291,47 +287,4 @@ func newRequestID() string {
 		return "req_unknown"
 	}
 	return "req_" + hex.EncodeToString(buf)
-}
-
-func toInt(value any) int {
-	switch typed := value.(type) {
-	case int:
-		return typed
-	case int32:
-		return int(typed)
-	case int64:
-		return int(typed)
-	case float64:
-		return int(typed)
-	default:
-		return 0
-	}
-}
-
-func toInt64(value any) int64 {
-	switch typed := value.(type) {
-	case int:
-		return int64(typed)
-	case int32:
-		return int64(typed)
-	case int64:
-		return typed
-	case float64:
-		return int64(typed)
-	default:
-		return 0
-	}
-}
-
-func toString(value any) string {
-	switch typed := value.(type) {
-	case nil:
-		return ""
-	case string:
-		return typed
-	case []byte:
-		return string(typed)
-	default:
-		return fmt.Sprint(typed)
-	}
 }

@@ -31,21 +31,21 @@ func CanonicalJSON(value json.RawMessage) json.RawMessage {
 // Implementations must never return a gateway key's plaintext after creation or
 // reset, and must never persist the plaintext key (only its hash).
 type UserStore interface {
-	ListUsers(page, pageSize int) (domain.ListResponse, error)
-	CreateUser(domain.UserInput) (map[string]any, error)
-	UpdateUser(int, domain.UserInput) (map[string]any, error)
-	UpdateUserStatus(int, string) (map[string]any, error)
+	ListUsers(page, pageSize int) (domain.ListResponse[domain.UserDTO], error)
+	CreateUser(domain.UserInput) (domain.UserDTO, error)
+	UpdateUser(int, domain.UserInput) (domain.UserDTO, error)
+	UpdateUserStatus(int, string) (domain.UserDTO, error)
 	DeleteUser(int) error
-	RechargeUser(int, domain.RechargeInput) (map[string]any, error)
-	GetUserBalance(int) (map[string]any, error)
-	ListBalanceTransactions(userID, page, pageSize int) (domain.ListResponse, error)
+	RechargeUser(int, domain.RechargeInput) (domain.BalanceUpdateDTO, error)
+	GetUserBalance(int) (domain.BalanceDTO, error)
+	ListBalanceTransactions(userID, page, pageSize int) (domain.ListResponse[domain.BalanceTransactionDTO], error)
 
-	ListUserKeys(userID, page, pageSize int) (domain.ListResponse, error)
-	ListKeys(page, pageSize int) (domain.ListResponse, error)
-	CreateKey(userID int, in domain.KeyInput) (map[string]any, error)
-	UpdateKey(userID, keyID int, in domain.KeyUpdateInput) (map[string]any, error)
+	ListUserKeys(userID, page, pageSize int) (domain.ListResponse[domain.ClientKeyDTO], error)
+	ListKeys(page, pageSize int) (domain.ListResponse[domain.ClientKeyDTO], error)
+	CreateKey(userID int, in domain.KeyInput) (domain.KeySecretDTO, error)
+	UpdateKey(userID, keyID int, in domain.KeyUpdateInput) (domain.ClientKeyDTO, error)
 	DeleteKey(userID, keyID int) error
-	ResetKey(userID, keyID int) (map[string]any, error)
+	ResetKey(userID, keyID int) (domain.KeySecretDTO, error)
 
 	// AuthenticateKey looks up a gateway key by its hash and returns the raw
 	// key + user authentication state. Missing keys return ErrNotFound.
@@ -55,5 +55,5 @@ type UserStore interface {
 	// DebitUserBalance deducts amount (6 decimals) from the available balance
 	// inside a transaction and records a consume transaction. Insufficient
 	// balance returns ErrInvalid; a missing user returns ErrNotFound.
-	DebitUserBalance(userID int, amount string, description string) (map[string]any, error)
+	DebitUserBalance(userID int, amount string, description string) (domain.BalanceUpdateDTO, error)
 }

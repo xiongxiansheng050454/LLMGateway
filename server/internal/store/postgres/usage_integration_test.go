@@ -55,8 +55,8 @@ func TestPGUsageLogsAndStats(t *testing.T) {
 	if all.Total != 3 {
 		t.Fatalf("total = %d, want 3", all.Total)
 	}
-	row := all.List[0].(map[string]any)
-	if row["channel_name"] != "OpenAI" || row["total_cost"] == "" {
+	row := all.List[0]
+	if row.ChannelName != "OpenAI" || row.TotalCost == "" {
 		t.Fatalf("unexpected row: %+v", row)
 	}
 
@@ -84,10 +84,10 @@ func TestPGUsageLogsAndStats(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StatsOverview: %v", err)
 	}
-	if overview["request_count"] != int64(2) || overview["success_count"] != int64(1) || overview["error_count"] != int64(1) {
+	if overview.RequestCount != int64(2) || overview.SuccessCount != int64(1) || overview.ErrorCount != int64(1) {
 		t.Fatalf("unexpected overview: %+v", overview)
 	}
-	if overview["total_cost"] != "0.003000" || overview["active_user_count"] != int64(1) {
+	if overview.TotalCost != "0.003000" || overview.ActiveUserCount != int64(1) {
 		t.Fatalf("unexpected overview aggregates: %+v", overview)
 	}
 
@@ -98,8 +98,8 @@ func TestPGUsageLogsAndStats(t *testing.T) {
 	if daily.Total != 2 {
 		t.Fatalf("daily total = %d, want 2", daily.Total)
 	}
-	day := daily.List[0].(map[string]any)
-	if day["stat_date"] != "2026-09-16" || day["request_count"] != int64(2) || day["total_cost"] != "0.003000" {
+	day := daily.List[0]
+	if day.StatDate != "2026-09-16" || day.RequestCount != int64(2) || day.TotalCost != "0.003000" {
 		t.Fatalf("unexpected day: %+v", day)
 	}
 
@@ -110,8 +110,8 @@ func TestPGUsageLogsAndStats(t *testing.T) {
 	if len(channels.List) != 1 {
 		t.Fatalf("channels len = %d, want 1", len(channels.List))
 	}
-	channel := channels.List[0].(map[string]any)
-	if channel["channel_name"] != "OpenAI" || channel["request_count"] != int64(2) {
+	channel := channels.List[0]
+	if channel.ChannelName != "OpenAI" || channel.RequestCount != int64(2) {
 		t.Fatalf("unexpected channel stat: %+v", channel)
 	}
 }
@@ -140,7 +140,7 @@ func TestPGStatsEmptyReturnsZeroValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StatsOverview: %v", err)
 	}
-	if overview["request_count"] != int64(0) || overview["total_cost"] != "0.000000" {
+	if overview.RequestCount != int64(0) || overview.TotalCost != "0.000000" {
 		t.Fatalf("unexpected empty overview: %+v", overview)
 	}
 

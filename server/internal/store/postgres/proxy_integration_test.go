@@ -18,7 +18,7 @@ func createKeyAndHash(t *testing.T, st store.Store, userID int) (int, string) {
 	if err != nil {
 		t.Fatalf("CreateKey: %v", err)
 	}
-	return created["id"].(int), crypto.HashKey(created["full_key"].(string))
+	return created.ID, crypto.HashKey(created.FullKey)
 }
 
 func TestPGProxyStoreCapabilities(t *testing.T) {
@@ -60,8 +60,8 @@ func TestPGProxyStoreCapabilities(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DebitUserBalance: %v", err)
 	}
-	if result["balance_after"] != "21.500000" {
-		t.Fatalf("balance_after = %v, want 21.500000", result["balance_after"])
+	if result.BalanceAfter != "21.500000" {
+		t.Fatalf("balance_after = %v, want 21.500000", result.BalanceAfter)
 	}
 	if _, err := st.DebitUserBalance(1, "100.000000", "too much"); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("insufficient err = %v, want ErrInvalid", err)
@@ -76,7 +76,7 @@ func TestPGProxyStoreCapabilities(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return created["id"].(int)
+		return created.ID
 	}
 	channelA := create("A", 1, 10, 100, "5.000000")
 	channelB := create("B", 1, 10, 200, "")
@@ -94,7 +94,7 @@ func TestPGProxyStoreCapabilities(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetPricing: %v", err)
 	}
-	if pricing["input_price_per_1m"] != "0.10000000" || pricing["upstream_model"] != "up-gpt" {
+	if pricing.InputPricePer1M != "0.10000000" || pricing.UpstreamModel != "up-gpt" {
 		t.Fatalf("unexpected pricing: %+v", pricing)
 	}
 	if _, err := st.GetPricing(channelA, "missing"); !errors.Is(err, store.ErrNotFound) {
@@ -108,13 +108,13 @@ func TestPGProxyStoreCapabilities(t *testing.T) {
 	if candidates.Total != 3 {
 		t.Fatalf("candidates total = %d, want 3", candidates.Total)
 	}
-	if candidates.List[0].(map[string]any)["channel_id"] != channelB {
+	if candidates.List[0].ChannelID != channelB {
 		t.Fatalf("first candidate = %+v, want channel B", candidates.List[0])
 	}
-	if candidates.List[1].(map[string]any)["channel_id"] != channelA {
+	if candidates.List[1].ChannelID != channelA {
 		t.Fatalf("second candidate = %+v, want channel A", candidates.List[1])
 	}
-	if candidates.List[2].(map[string]any)["channel_id"] != channelC {
+	if candidates.List[2].ChannelID != channelC {
 		t.Fatalf("third candidate = %+v, want channel C", candidates.List[2])
 	}
 
@@ -179,8 +179,8 @@ func TestPGDebitUserBalanceConcurrent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if balance["available_balance"] != "80.000000" {
-		t.Fatalf("balance = %v, want 80.000000", balance["available_balance"])
+	if balance.AvailableBalance != "80.000000" {
+		t.Fatalf("balance = %v, want 80.000000", balance.AvailableBalance)
 	}
 }
 
@@ -228,7 +228,7 @@ func runProxyScenario(t *testing.T, st store.Store) proxySnapshot {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return created["id"].(int)
+		return created.ID
 	}
 	channelA := create("A", 10, 100, "5.000000")
 	channelB := create("B", 10, 200, "")
@@ -255,11 +255,10 @@ func runProxyScenario(t *testing.T, st store.Store) proxySnapshot {
 	routeUpstream := ""
 	routeBalance := ""
 	for _, item := range candidates.List {
-		entry := item.(map[string]any)
-		routeOrder = append(routeOrder, entry["channel_id"].(int))
-		routeUpstream = entry["upstream_model"].(string)
-		if balance, ok := entry["balance"].(*string); ok && balance != nil {
-			routeBalance = *balance
+		routeOrder = append(routeOrder, item.ChannelID)
+		routeUpstream = item.UpstreamModel
+		if item.Balance != nil {
+			routeBalance = *item.Balance
 		}
 	}
 
@@ -282,14 +281,14 @@ func runProxyScenario(t *testing.T, st store.Store) proxySnapshot {
 		authUserStatus:   auth.UserStatus,
 		authBalance:      auth.AvailableBalance,
 		authPermissions:  string(auth.Permissions),
-		pricingInput:     pricing["input_price_per_1m"].(string),
-		pricingUpstream:  pricing["upstream_model"].(string),
-		pricingCached:    pricing["cached_input_price_per_1m"].(string),
-		pricingCurrency:  pricing["currency"].(string),
+		pricingInput:     pricing.InputPricePer1M,
+		pricingUpstream:  pricing.UpstreamModel,
+		pricingCached:    pricing.CachedInputPricePer1M,
+		pricingCurrency:  pricing.Currency,
 		routeOrder:       routeOrder,
 		routeUpstream:    routeUpstream,
 		routeBalance:     routeBalance,
-		afterDebit:       debit["balance_after"].(string),
+		afterDebit:       debit.BalanceAfter,
 		insufficientErr:  errorKind(insufficientErr),
 		missingPricingIs: errors.Is(missingPricingErr, store.ErrNotFound),
 		countAll:         countAll,

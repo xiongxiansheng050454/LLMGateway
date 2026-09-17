@@ -134,30 +134,10 @@ func int8Value(value *int) pgtype.Int8 {
 	return pgtype.Int8{Int64: int64(*value), Valid: true}
 }
 
-func channelDTO(id int64, name, baseURL, authType string, status, weight, priority int32, balance string, modelCount int32) map[string]any {
-	return map[string]any{
-		"id":          int(id),
-		"name":        name,
-		"base_url":    baseURL,
-		"auth_type":   authType,
-		"status":      int(status),
-		"weight":      int(weight),
-		"priority":    int(priority),
-		"balance":     optionalString(balance),
-		"model_count": int(modelCount),
-	}
+func channelDTO(id int64, name, baseURL, authType string, status, weight, priority int32, balance string, modelCount int32) domain.ChannelDTO {
+	return domain.ChannelDTO{ID: int(id), Name: name, BaseURL: baseURL, AuthType: authType, Status: int(status), Weight: int(weight), Priority: int(priority), Balance: optionalString(balance), ModelCount: int(modelCount)}
 }
 
-func pricingDTO(id, channelID int64, channelName, modelName, upstreamModel, inputPrice, outputPrice, cachedPrice, currency string) map[string]any {
-	return map[string]any{
-		"id":                        int(id),
-		"channel_id":                int(channelID),
-		"channel_name":              channelName,
-		"model_name":                modelName,
-		"upstream_model":            upstreamModel,
-		"input_price_per_1m":        inputPrice,
-		"output_price_per_1m":       outputPrice,
-		"cached_input_price_per_1m": cachedPrice,
-		"currency":                  currency,
-	}
+func pricingDTO(id, channelID int64, channelName, modelName, upstreamModel, inputPrice, outputPrice, cachedPrice, currency string) domain.PricingDTO {
+	return domain.PricingDTO{ID: int(id), ChannelID: int(channelID), ChannelName: channelName, ModelName: modelName, UpstreamModel: upstreamModel, InputPricePer1M: inputPrice, OutputPricePer1M: outputPrice, CachedInputPricePer1M: cachedPrice, Currency: currency}
 }

@@ -69,6 +69,58 @@ type UsageLog struct {
 	CreatedAt            string
 }
 
+type UsageLogDTO struct {
+	ID                   int    `json:"id"`
+	RequestID            string `json:"request_id"`
+	UserID               *int   `json:"user_id"`
+	APIKeyID             *int   `json:"api_key_id"`
+	ChannelID            *int   `json:"channel_id"`
+	ChannelName          string `json:"channel_name"`
+	Model                string `json:"model"`
+	UpstreamModel        string `json:"upstream_model"`
+	InputTokens          int64  `json:"input_tokens"`
+	OutputTokens         int64  `json:"output_tokens"`
+	CachedInputTokens    int64  `json:"cached_input_tokens"`
+	TotalTokens          int64  `json:"total_tokens"`
+	UnitPriceInputPer1M  string `json:"unit_price_input_per_1m"`
+	UnitPriceOutputPer1M string `json:"unit_price_output_per_1m"`
+	TotalCost            string `json:"total_cost"`
+	DurationMs           int64  `json:"duration_ms"`
+	TTFTMs               *int   `json:"ttft_ms"`
+	Status               string `json:"status"`
+	ErrorCode            string `json:"error_code"`
+	ClientIP             string `json:"client_ip"`
+	CreatedAt            string `json:"created_at"`
+}
+
+type StatsOverviewDTO struct {
+	RequestCount    int64  `json:"request_count"`
+	SuccessCount    int64  `json:"success_count"`
+	ErrorCount      int64  `json:"error_count"`
+	TotalTokens     int64  `json:"total_tokens"`
+	TotalCost       string `json:"total_cost"`
+	ActiveUserCount int64  `json:"active_user_count"`
+}
+
+type StatsDailyDTO struct {
+	StatDate     string `json:"stat_date"`
+	RequestCount int64  `json:"request_count"`
+	SuccessCount int64  `json:"success_count"`
+	ErrorCount   int64  `json:"error_count"`
+	TotalTokens  int64  `json:"total_tokens"`
+	TotalCost    string `json:"total_cost"`
+}
+
+type StatsChannelDTO struct {
+	ChannelID    int    `json:"channel_id"`
+	ChannelName  string `json:"channel_name"`
+	RequestCount int64  `json:"request_count"`
+	SuccessCount int64  `json:"success_count"`
+	ErrorCount   int64  `json:"error_count"`
+	TotalTokens  int64  `json:"total_tokens"`
+	TotalCost    string `json:"total_cost"`
+}
+
 type UsageLogFilter struct {
 	UserID    *int
 	ChannelID *int

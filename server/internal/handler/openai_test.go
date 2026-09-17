@@ -72,7 +72,7 @@ func newProxyFixtureWithStore(t *testing.T, upstream http.Handler, st store.Stor
 	if err != nil {
 		t.Fatal(err)
 	}
-	channelID := channel["id"].(int)
+	channelID := channel.ID
 	if _, err := st.CreateChannelModel(channelID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +83,7 @@ func newProxyFixtureWithStore(t *testing.T, upstream http.Handler, st store.Stor
 	return &proxyFixture{
 		server:   NewServer(filepath.Join("..", "..", "..", "dashboard"), st, opts...),
 		store:    st,
-		fullKey:  created["full_key"].(string),
+		fullKey:  created.FullKey,
 		upstream: server,
 	}
 }
@@ -155,8 +155,8 @@ func TestChatCompletionsSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if balance["available_balance"] != "9.999550" {
-		t.Fatalf("user balance = %v, want 9.999550", balance["available_balance"])
+	if balance.AvailableBalance != "9.999550" {
+		t.Fatalf("user balance = %v, want 9.999550", balance.AvailableBalance)
 	}
 
 	channelBalance, err := f.store.GetChannelSecret(1)
@@ -174,18 +174,17 @@ func TestChatCompletionsSuccess(t *testing.T) {
 	if logs.Total != 1 {
 		t.Fatalf("usage logs total = %d, want 1", logs.Total)
 	}
-	entry := logs.List[0].(map[string]any)
-	if entry["status"] != "success" || entry["total_tokens"] != 1500 || entry["total_cost"] != "0.000450" {
+	entry := logs.List[0]
+	if entry.Status != "success" || entry.TotalTokens != 1500 || entry.TotalCost != "0.000450" {
 		t.Fatalf("unexpected usage log: %+v", entry)
 	}
-	channelID, ok := entry["channel_id"].(*int)
-	if !ok || channelID == nil || *channelID != 1 {
+	if entry.ChannelID == nil || *entry.ChannelID != 1 {
 		t.Fatalf("usage log channel mismatch: %+v", entry)
 	}
-	if entry["upstream_model"] != "up-gpt" || entry["model"] != "gpt" {
+	if entry.UpstreamModel != "up-gpt" || entry.Model != "gpt" {
 		t.Fatalf("usage log model mismatch: %+v", entry)
 	}
-	if entry["unit_price_input_per_1m"] != "0.15000000" || entry["unit_price_output_per_1m"] != "0.60000000" {
+	if entry.UnitPriceInputPer1M != "0.15000000" || entry.UnitPriceOutputPer1M != "0.60000000" {
 		t.Fatalf("usage log unit prices missing: %+v", entry)
 	}
 
@@ -193,7 +192,7 @@ func TestChatCompletionsSuccess(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if keys.List[0].(map[string]any)["last_used_at"] == nil {
+	if keys.List[0].LastUsedAt == nil {
 		t.Fatal("last_used_at not updated")
 	}
 }
@@ -216,16 +215,16 @@ func TestChatCompletionsCachedTokensBilling(t *testing.T) {
 
 	// (1000-200)*0.15/1e6 + 200*0.075/1e6 + 500*0.6/1e6 = 0.000435
 	balance, _ := f.store.GetUserBalance(1)
-	if balance["available_balance"] != "9.999565" {
-		t.Fatalf("balance = %v, want 9.999565", balance["available_balance"])
+	if balance.AvailableBalance != "9.999565" {
+		t.Fatalf("balance = %v, want 9.999565", balance.AvailableBalance)
 	}
 	logs, _ := f.store.ListUsageLogs(domain.UsageLogFilter{Page: 1, PageSize: 20})
-	entry := logs.List[0].(map[string]any)
-	if entry["total_cost"] != "0.000435" {
-		t.Fatalf("cost = %v, want 0.000435 (cached tokens must not be double charged)", entry["total_cost"])
+	entry := logs.List[0]
+	if entry.TotalCost != "0.000435" {
+		t.Fatalf("cost = %v, want 0.000435 (cached tokens must not be double charged)", entry.TotalCost)
 	}
-	if entry["cached_input_tokens"] != 200 {
-		t.Fatalf("cached_input_tokens = %v, want 200", entry["cached_input_tokens"])
+	if entry.CachedInputTokens != 200 {
+		t.Fatalf("cached_input_tokens = %v, want 200", entry.CachedInputTokens)
 	}
 }
 
@@ -245,8 +244,8 @@ func TestChatCompletionsAuthFailures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	secondKey := created["full_key"].(string)
-	if _, err := f.store.UpdateKey(1, created["id"].(int), domain.KeyUpdateInput{IsActive: boolPointer(false)}); err != nil {
+	secondKey := created.FullKey
+	if _, err := f.store.UpdateKey(1, created.ID, domain.KeyUpdateInput{IsActive: boolPointer(false)}); err != nil {
 		t.Fatal(err)
 	}
 	if res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", secondKey, body); res.Code != http.StatusUnauthorized {
@@ -258,7 +257,7 @@ func TestChatCompletionsAuthFailures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", expired["full_key"].(string), body); res.Code != http.StatusUnauthorized {
+	if res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", expired.FullKey, body); res.Code != http.StatusUnauthorized {
 		t.Fatalf("expired key status = %d, want 401", res.Code)
 	}
 
@@ -310,15 +309,15 @@ func TestChatCompletionsUpstreamFailureDoesNotCharge(t *testing.T) {
 	}
 
 	balance, _ := f.store.GetUserBalance(1)
-	if balance["available_balance"] != "10.000000" {
-		t.Fatalf("balance changed on upstream failure: %v", balance["available_balance"])
+	if balance.AvailableBalance != "10.000000" {
+		t.Fatalf("balance changed on upstream failure: %v", balance.AvailableBalance)
 	}
 	logs, _ := f.store.ListUsageLogs(domain.UsageLogFilter{Page: 1, PageSize: 20})
 	if logs.Total != 1 {
 		t.Fatalf("usage logs total = %d, want 1 failure log", logs.Total)
 	}
-	entry := logs.List[0].(map[string]any)
-	if entry["status"] != "error" || entry["total_cost"] != "0.000000" {
+	entry := logs.List[0]
+	if entry.Status != "error" || entry.TotalCost != "0.000000" {
 		t.Fatalf("unexpected failure log: %+v", entry)
 	}
 }
@@ -332,7 +331,7 @@ func TestChatCompletionsRateLimited(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if rule["id"] == nil {
+	if rule.ID == 0 {
 		t.Fatal("rule not created")
 	}
 
@@ -387,8 +386,7 @@ func TestChatCompletionsTripsBreakerAndSkipsChannel(t *testing.T) {
 	logs, _ := f.store.ListUsageLogs(domain.UsageLogFilter{Page: 1, PageSize: 50})
 	found := false
 	for _, item := range logs.List {
-		entry := item.(map[string]any)
-		if entry["error_code"] == "no_healthy_channel" {
+		if item.ErrorCode == "no_healthy_channel" {
 			found = true
 		}
 	}

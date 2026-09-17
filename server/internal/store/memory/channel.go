@@ -10,19 +10,19 @@ import (
 	"LLMGateway/server/internal/store"
 )
 
-func (s *Store) ListChannels() (domain.ListResponse, error) {
+func (s *Store) ListChannels() (domain.ListResponse[domain.ChannelDTO], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	list := []any{}
+	list := []domain.ChannelDTO{}
 	for _, ch := range s.channels {
 		list = append(list, s.channelDTO(ch))
 	}
-	return domain.ListResponse{List: list, Total: len(list)}, nil
+	return domain.ListResponse[domain.ChannelDTO]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) CreateChannel(in domain.ChannelInput) (map[string]any, error) {
+func (s *Store) CreateChannel(in domain.ChannelInput) (domain.ChannelDTO, error) {
 	if strings.TrimSpace(in.APIKey) == "" {
-		return nil, fmt.Errorf("%w: api_key is required", store.ErrInvalid)
+		return domain.ChannelDTO{}, fmt.Errorf("%w: api_key is required", store.ErrInvalid)
 	}
 	if in.AuthType == "" {
 		in.AuthType = "bearer"
@@ -33,7 +33,7 @@ func (s *Store) CreateChannel(in domain.ChannelInput) (map[string]any, error) {
 
 	balance, err := normalizeBalance(in.Balance)
 	if err != nil {
-		return nil, err
+		return domain.ChannelDTO{}, err
 	}
 
 	s.mu.Lock()
@@ -44,17 +44,17 @@ func (s *Store) CreateChannel(in domain.ChannelInput) (map[string]any, error) {
 	return s.channelDTO(ch), nil
 }
 
-func (s *Store) UpdateChannel(id int, in domain.ChannelInput) (map[string]any, error) {
+func (s *Store) UpdateChannel(id int, in domain.ChannelInput) (domain.ChannelDTO, error) {
 	balance, err := normalizeBalance(in.Balance)
 	if err != nil {
-		return nil, err
+		return domain.ChannelDTO{}, err
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ch, ok := s.channels[id]
 	if !ok {
-		return nil, store.ErrNotFound
+		return domain.ChannelDTO{}, store.ErrNotFound
 	}
 	ch.Name, ch.BaseURL, ch.AuthType, ch.Status, ch.Weight, ch.Priority = in.Name, in.BaseURL, in.AuthType, in.Status, in.Weight, in.Priority
 	if strings.TrimSpace(in.APIKey) != "" {
@@ -64,47 +64,47 @@ func (s *Store) UpdateChannel(id int, in domain.ChannelInput) (map[string]any, e
 	return s.channelDTO(ch), nil
 }
 
-func (s *Store) UpdateChannelStatus(id int, status int) (map[string]any, error) {
+func (s *Store) UpdateChannelStatus(id int, status int) (domain.ChannelDTO, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ch, ok := s.channels[id]
 	if !ok {
-		return nil, store.ErrNotFound
+		return domain.ChannelDTO{}, store.ErrNotFound
 	}
 	ch.Status = status
 	return s.channelDTO(ch), nil
 }
 
-func (s *Store) UpdateChannelBalance(id int, balance string, delta string) (map[string]any, error) {
+func (s *Store) UpdateChannelBalance(id int, balance string, delta string) (domain.ChannelDTO, error) {
 	if balance == "" && delta == "" {
-		return nil, fmt.Errorf("%w: balance or delta is required", store.ErrInvalid)
+		return domain.ChannelDTO{}, fmt.Errorf("%w: balance or delta is required", store.ErrInvalid)
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ch, ok := s.channels[id]
 	if !ok {
-		return nil, store.ErrNotFound
+		return domain.ChannelDTO{}, store.ErrNotFound
 	}
 
 	base := money.Amount(0)
 	if balance != "" {
 		parsed, err := money.Parse6(balance)
 		if err != nil {
-			return nil, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
+			return domain.ChannelDTO{}, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
 		}
 		base = parsed
 	} else if ch.Balance != nil {
 		parsed, err := money.Parse6(*ch.Balance)
 		if err != nil {
-			return nil, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
+			return domain.ChannelDTO{}, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
 		}
 		base = parsed
 	}
 	if delta != "" {
 		parsed, err := money.Parse6(delta)
 		if err != nil {
-			return nil, fmt.Errorf("%w: invalid delta", store.ErrInvalid)
+			return domain.ChannelDTO{}, fmt.Errorf("%w: invalid delta", store.ErrInvalid)
 		}
 		base = base.Add(parsed)
 	}
@@ -140,14 +140,14 @@ func (s *Store) GetChannelSecret(id int) (*domain.Channel, error) {
 	return &copy, nil
 }
 
-func (s *Store) ListChannelModels(channelID int) (domain.ListResponse, error) {
+func (s *Store) ListChannelModels(channelID int) (domain.ListResponse[domain.ChannelModel], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	list := []any{}
+	list := []domain.ChannelModel{}
 	for _, m := range s.models[channelID] {
 		list = append(list, *m)
 	}
-	return domain.ListResponse{List: list, Total: len(list)}, nil
+	return domain.ListResponse[domain.ChannelModel]{List: list, Total: len(list)}, nil
 }
 
 func (s *Store) CreateChannelModel(channelID int, in domain.ChannelModel) (domain.ChannelModel, error) {
@@ -193,10 +193,10 @@ func (s *Store) DeleteChannelModel(channelID, modelID int) error {
 	return nil
 }
 
-func (s *Store) ListCatalogModels(enabledOnly bool) (domain.ListResponse, error) {
+func (s *Store) ListCatalogModels(enabledOnly bool) (domain.ListResponse[domain.CatalogModelDTO], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	byName := map[string]map[string]any{}
+	byName := map[string]*domain.CatalogModelDTO{}
 	for channelID, models := range s.models {
 		ch := s.channels[channelID]
 		if ch == nil {
@@ -208,54 +208,54 @@ func (s *Store) ListCatalogModels(enabledOnly bool) (domain.ListResponse, error)
 			}
 			entry := byName[m.ModelName]
 			if entry == nil {
-				entry = map[string]any{"model_name": m.ModelName, "status": 1, "channels": []any{}}
+				entry = &domain.CatalogModelDTO{ModelName: m.ModelName, Status: 1}
 				byName[m.ModelName] = entry
 			}
-			entry["channels"] = append(entry["channels"].([]any), map[string]any{"channel_id": channelID, "channel_name": ch.Name, "upstream_model": m.UpstreamModel, "enabled": m.Enabled})
+			entry.Channels = append(entry.Channels, domain.CatalogChannelDTO{ChannelID: channelID, ChannelName: ch.Name, UpstreamModel: m.UpstreamModel, Enabled: m.Enabled})
 		}
 	}
-	list := []any{}
+	list := []domain.CatalogModelDTO{}
 	for _, item := range byName {
-		list = append(list, item)
+		list = append(list, *item)
 	}
-	return domain.ListResponse{List: list, Total: len(list)}, nil
+	return domain.ListResponse[domain.CatalogModelDTO]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) ListPricing() (domain.ListResponse, error) {
+func (s *Store) ListPricing() (domain.ListResponse[domain.PricingDTO], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	list := []any{}
+	list := []domain.PricingDTO{}
 	for _, p := range s.pricing {
 		list = append(list, s.pricingDTO(p))
 	}
-	return domain.ListResponse{List: list, Total: len(list)}, nil
+	return domain.ListResponse[domain.PricingDTO]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) UpsertPricing(in domain.PricingInput) (map[string]any, error) {
+func (s *Store) UpsertPricing(in domain.PricingInput) (domain.PricingDTO, error) {
 	if in.ChannelID <= 0 || strings.TrimSpace(in.ModelName) == "" {
-		return nil, fmt.Errorf("%w: channel_id and model_name are required", store.ErrInvalid)
+		return domain.PricingDTO{}, fmt.Errorf("%w: channel_id and model_name are required", store.ErrInvalid)
 	}
 
 	inputPrice, err := normalizePrice8(in.InputPricePer1M, "input_price_per_1m")
 	if err != nil {
-		return nil, err
+		return domain.PricingDTO{}, err
 	}
 	outputPrice, err := normalizePrice8(in.OutputPricePer1M, "output_price_per_1m")
 	if err != nil {
-		return nil, err
+		return domain.PricingDTO{}, err
 	}
 	cachedPrice, err := normalizeOptionalPrice8(in.CachedInputPricePer1M, "cached_input_price_per_1m")
 	if err != nil {
-		return nil, err
+		return domain.PricingDTO{}, err
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.channels[in.ChannelID]; !ok {
-		return nil, store.ErrNotFound
+		return domain.PricingDTO{}, store.ErrNotFound
 	}
 	if !s.hasChannelModelLocked(in.ChannelID, in.ModelName) {
-		return nil, fmt.Errorf("%w: model mapping not found", store.ErrInvalid)
+		return domain.PricingDTO{}, fmt.Errorf("%w: model mapping not found", store.ErrInvalid)
 	}
 
 	key := pricingKey(in.ChannelID, in.ModelName)
@@ -279,21 +279,21 @@ func (s *Store) DeletePricing(in domain.DeletePricingInput) error {
 	return nil
 }
 
-func (s *Store) GetPricing(channelID int, modelName string) (map[string]any, error) {
+func (s *Store) GetPricing(channelID int, modelName string) (domain.PricingDTO, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	pricing, ok := s.pricing[pricingKey(channelID, modelName)]
 	if !ok {
-		return nil, store.ErrNotFound
+		return domain.PricingDTO{}, store.ErrNotFound
 	}
 	return s.pricingDTO(pricing), nil
 }
 
-func (s *Store) RouteCandidates(modelName string) (domain.ListResponse, error) {
+func (s *Store) RouteCandidates(modelName string) (domain.ListResponse[domain.RouteCandidate], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	candidates := []map[string]any{}
+	candidates := []domain.RouteCandidate{}
 	for channelID, models := range s.models {
 		channel := s.channels[channelID]
 		if channel == nil || channel.Status != 1 {
@@ -308,43 +308,31 @@ func (s *Store) RouteCandidates(modelName string) (domain.ListResponse, error) {
 			if model.ModelName != modelName || !model.Enabled {
 				continue
 			}
-			candidates = append(candidates, map[string]any{
-				"channel_id":     channelID,
-				"channel_name":   channel.Name,
-				"upstream_model": model.UpstreamModel,
-				"priority":       channel.Priority,
-				"weight":         channel.Weight,
-				"balance":        channel.Balance,
-			})
+			candidates = append(candidates, domain.RouteCandidate{ChannelID: channelID, ChannelName: channel.Name, UpstreamModel: model.UpstreamModel, Priority: channel.Priority, Weight: channel.Weight, Balance: channel.Balance})
 		}
 	}
 
 	sort.Slice(candidates, func(i, j int) bool {
-		if candidates[i]["priority"].(int) != candidates[j]["priority"].(int) {
-			return candidates[i]["priority"].(int) > candidates[j]["priority"].(int)
+		if candidates[i].Priority != candidates[j].Priority {
+			return candidates[i].Priority > candidates[j].Priority
 		}
-		if candidates[i]["weight"].(int) != candidates[j]["weight"].(int) {
-			return candidates[i]["weight"].(int) > candidates[j]["weight"].(int)
+		if candidates[i].Weight != candidates[j].Weight {
+			return candidates[i].Weight > candidates[j].Weight
 		}
-		return candidates[i]["channel_id"].(int) < candidates[j]["channel_id"].(int)
+		return candidates[i].ChannelID < candidates[j].ChannelID
 	})
-
-	list := []any{}
-	for _, candidate := range candidates {
-		list = append(list, candidate)
-	}
-	return domain.ListResponse{List: list, Total: len(list)}, nil
+	return domain.ListResponse[domain.RouteCandidate]{List: candidates, Total: len(candidates)}, nil
 }
 
-func (s *Store) TestChannel(channelID int) (map[string]any, error) {
+func (s *Store) TestChannel(channelID int) (domain.ChannelTestResultDTO, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.channels[channelID]; !ok {
-		return nil, store.ErrNotFound
+		return domain.ChannelTestResultDTO{}, store.ErrNotFound
 	}
-	items := []any{}
+	items := []domain.ChannelTestItemDTO{}
 	for _, m := range s.models[channelID] {
-		items = append(items, map[string]any{"model_alias": m.ModelName, "upstream_model": m.UpstreamModel, "http_status": 0, "latency_ms": 0, "ok": false, "error": "not tested in MVP"})
+		items = append(items, domain.ChannelTestItemDTO{ModelAlias: m.ModelName, UpstreamModel: m.UpstreamModel, Error: "not tested in MVP"})
 	}
-	return map[string]any{"list": items}, nil
+	return domain.ChannelTestResultDTO{List: items}, nil
 }

@@ -22,11 +22,11 @@ func TestPGUserCRUDAndBalance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	if created["id"] != 1 || created["user_group"] != "default" || created["status"] != "active" {
+	if created.ID != 1 || created.UserGroup != "default" || created.Status != "active" {
 		t.Fatalf("unexpected user: %+v", created)
 	}
-	if created["balance"].(map[string]any)["available_balance"] != "0.000000" {
-		t.Fatalf("unexpected balance: %+v", created["balance"])
+	if created.Balance.AvailableBalance != "0.000000" {
+		t.Fatalf("unexpected balance: %+v", created.Balance)
 	}
 
 	if _, err := st.UpdateUser(1, domain.UserInput{Nickname: "Alice2", UserGroup: "vip"}); err != nil {
@@ -36,7 +36,7 @@ func TestPGUserCRUDAndBalance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateUserStatus: %v", err)
 	}
-	if updated["nickname"] != "Alice2" || updated["user_group"] != "vip" || updated["status"] != "suspended" {
+	if updated.Nickname != "Alice2" || updated.UserGroup != "vip" || updated.Status != "suspended" {
 		t.Fatalf("unexpected updated user: %+v", updated)
 	}
 	if _, err := st.UpdateUserStatus(1, "bogus"); !errors.Is(err, store.ErrInvalid) {
@@ -55,8 +55,8 @@ func TestPGUserCRUDAndBalance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RechargeUser: %v", err)
 	}
-	if recharged["balance_after"] != "50.500000" {
-		t.Fatalf("balance_after = %v, want 50.500000", recharged["balance_after"])
+	if recharged.BalanceAfter != "50.500000" {
+		t.Fatalf("balance_after = %v, want 50.500000", recharged.BalanceAfter)
 	}
 
 	// Idempotent recharge by related_order_id.
@@ -68,12 +68,12 @@ func TestPGUserCRUDAndBalance(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first["balance_after"] != second["balance_after"] {
-		t.Fatalf("idempotent recharge mismatch: %v vs %v", first["balance_after"], second["balance_after"])
+	if first.BalanceAfter != second.BalanceAfter {
+		t.Fatalf("idempotent recharge mismatch: %v vs %v", first.BalanceAfter, second.BalanceAfter)
 	}
 	balance, _ := st.GetUserBalance(1)
-	if balance["available_balance"] != "60.500000" {
-		t.Fatalf("available_balance = %v, want 60.500000", balance["available_balance"])
+	if balance.AvailableBalance != "60.500000" {
+		t.Fatalf("available_balance = %v, want 60.500000", balance.AvailableBalance)
 	}
 
 	txs, err := st.ListBalanceTransactions(1, 1, 20)
@@ -112,7 +112,7 @@ func TestPGRechargeOrderScopedPerUserAndConcurrent(t *testing.T) {
 
 	// Concurrent repeats of the same order for the same user must be idempotent.
 	const workers = 8
-	results := make([]map[string]any, workers)
+	results := make([]domain.BalanceUpdateDTO, workers)
 	errs := make([]error, workers)
 	var wg sync.WaitGroup
 	for i := 0; i < workers; i++ {
@@ -128,10 +128,10 @@ func TestPGRechargeOrderScopedPerUserAndConcurrent(t *testing.T) {
 			t.Fatalf("worker %d: %v", i, err)
 		}
 	}
-	first := results[0]["balance_after"]
+	first := results[0].BalanceAfter
 	for i, result := range results {
-		if result["balance_after"] != first {
-			t.Fatalf("worker %d balance_after = %v, want %v", i, result["balance_after"], first)
+		if result.BalanceAfter != first {
+			t.Fatalf("worker %d balance_after = %v, want %v", i, result.BalanceAfter, first)
 		}
 	}
 
@@ -155,11 +155,11 @@ func TestPGKeysLifecycleHidesPlaintext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateKey: %v", err)
 	}
-	fullKey, _ := created["full_key"].(string)
+	fullKey := created.FullKey
 	if fullKey == "" {
 		t.Fatalf("full_key missing: %+v", created)
 	}
-	keyID := created["id"].(int)
+	keyID := created.ID
 
 	// The database must store the hash, never the plaintext key.
 	var storedHash string
@@ -174,11 +174,8 @@ func TestPGKeysLifecycleHidesPlaintext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListUserKeys: %v", err)
 	}
-	row := listed.List[0].(map[string]any)
-	if _, ok := row["full_key"]; ok {
-		t.Fatalf("list leaked full_key: %+v", row)
-	}
-	if row["key_name"] != "default" || row["prefix"] != "sk-" || row["is_active"] != true {
+	row := listed.List[0]
+	if row.KeyName != "default" || row.Prefix != "sk-" || row.IsActive != true {
 		t.Fatalf("unexpected key row: %+v", row)
 	}
 
@@ -194,7 +191,7 @@ func TestPGKeysLifecycleHidesPlaintext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateKey: %v", err)
 	}
-	if updated["is_active"] != false {
+	if updated.IsActive != false {
 		t.Fatalf("key not deactivated: %+v", updated)
 	}
 	if _, err := st.UpdateKey(1, keyID, domain.KeyUpdateInput{}); !errors.Is(err, store.ErrInvalid) {
@@ -205,7 +202,7 @@ func TestPGKeysLifecycleHidesPlaintext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResetKey: %v", err)
 	}
-	newKey, _ := reset["full_key"].(string)
+	newKey := reset.FullKey
 	if newKey == "" || newKey == fullKey {
 		t.Fatalf("reset did not produce a new key")
 	}

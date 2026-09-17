@@ -11,6 +11,23 @@ type User struct {
 	FrozenBalance    string
 }
 
+type UserDTO struct {
+	ID        int        `json:"id"`
+	Nickname  string     `json:"nickname"`
+	UserGroup string     `json:"user_group"`
+	Status    string     `json:"status"`
+	Balance   BalanceDTO `json:"balance"`
+}
+
+type BalanceDTO struct {
+	AvailableBalance string `json:"available_balance"`
+	FrozenBalance    string `json:"frozen_balance"`
+}
+
+type BalanceUpdateDTO struct {
+	BalanceAfter string `json:"balance_after"`
+}
+
 type UserInput struct {
 	Nickname  string `json:"nickname"`
 	UserGroup string `json:"user_group"`
@@ -39,6 +56,14 @@ type BalanceTransaction struct {
 	CreatedAt    string `json:"created_at"`
 }
 
+type BalanceTransactionDTO struct {
+	ID           int    `json:"id"`
+	TxType       string `json:"tx_type"`
+	Amount       string `json:"amount"`
+	BalanceAfter string `json:"balance_after"`
+	CreatedAt    string `json:"created_at"`
+}
+
 type ClientKey struct {
 	ID         int     `json:"id"`
 	UserID     int     `json:"user_id"`
@@ -47,6 +72,21 @@ type ClientKey struct {
 	IsActive   bool    `json:"is_active"`
 	LastUsedAt *string `json:"last_used_at"`
 	ExpiresAt  *string `json:"expires_at"`
+}
+
+type ClientKeyDTO struct {
+	ID         int     `json:"id"`
+	UserID     int     `json:"user_id"`
+	KeyName    string  `json:"key_name"`
+	Prefix     string  `json:"prefix"`
+	IsActive   bool    `json:"is_active"`
+	LastUsedAt *string `json:"last_used_at"`
+	ExpiresAt  *string `json:"expires_at"`
+}
+
+type KeySecretDTO struct {
+	ID      int    `json:"id,omitempty"`
+	FullKey string `json:"full_key"`
 }
 
 type KeyInput struct {

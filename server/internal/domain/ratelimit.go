@@ -20,6 +20,20 @@ type RateLimitRule struct {
 	Extras        json.RawMessage
 }
 
+type RateLimitRuleDTO struct {
+	ID            int             `json:"id"`
+	RuleName      string          `json:"rule_name"`
+	TargetType    string          `json:"target_type"`
+	TargetValue   string          `json:"target_value"`
+	Metric        string          `json:"metric"`
+	LimitValue    int64           `json:"limit_value"`
+	WindowSeconds int             `json:"window_seconds"`
+	Action        string          `json:"action"`
+	Priority      int             `json:"priority"`
+	Enabled       bool            `json:"enabled"`
+	Extras        json.RawMessage `json:"extras"`
+}
+
 var (
 	validTargetTypes = map[string]bool{"global": true, "user": true, "api_key": true, "model": true, "channel": true}
 	validMetrics     = map[string]bool{"rpm": true, "tpm": true, "rpd": true, "tpd": true, "concurrency": true}

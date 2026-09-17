@@ -98,11 +98,11 @@ func New() *Store {
 	}
 }
 
-func (s *Store) channelDTO(ch *domain.Channel) map[string]any {
-	return map[string]any{"id": ch.ID, "name": ch.Name, "base_url": ch.BaseURL, "auth_type": ch.AuthType, "status": ch.Status, "weight": ch.Weight, "priority": ch.Priority, "balance": ch.Balance, "model_count": len(s.models[ch.ID])}
+func (s *Store) channelDTO(ch *domain.Channel) domain.ChannelDTO {
+	return domain.ChannelDTO{ID: ch.ID, Name: ch.Name, BaseURL: ch.BaseURL, AuthType: ch.AuthType, Status: ch.Status, Weight: ch.Weight, Priority: ch.Priority, Balance: ch.Balance, ModelCount: len(s.models[ch.ID])}
 }
 
-func (s *Store) pricingDTO(p *domain.Pricing) map[string]any {
+func (s *Store) pricingDTO(p *domain.Pricing) domain.PricingDTO {
 	channelName, upstream := "", ""
 	if ch := s.channels[p.ChannelID]; ch != nil {
 		channelName = ch.Name
@@ -113,7 +113,7 @@ func (s *Store) pricingDTO(p *domain.Pricing) map[string]any {
 			break
 		}
 	}
-	return map[string]any{"id": p.ID, "channel_id": p.ChannelID, "channel_name": channelName, "model_name": p.ModelName, "upstream_model": upstream, "input_price_per_1m": p.InputPricePer1M, "output_price_per_1m": p.OutputPricePer1M, "cached_input_price_per_1m": p.CachedInputPricePer1M, "currency": p.Currency}
+	return domain.PricingDTO{ID: p.ID, ChannelID: p.ChannelID, ChannelName: channelName, ModelName: p.ModelName, UpstreamModel: upstream, InputPricePer1M: p.InputPricePer1M, OutputPricePer1M: p.OutputPricePer1M, CachedInputPricePer1M: p.CachedInputPricePer1M, Currency: p.Currency}
 }
 
 func (s *Store) hasChannelModelLocked(channelID int, modelName string) bool {

@@ -28,11 +28,11 @@ func TestRateLimitCRUDAndFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateRateLimit: %v", err)
 	}
-	if created["id"] != 1 || created["target_value"] != "*" || created["priority"] != 100 || created["enabled"] != true {
+	if created.ID != 1 || created.TargetValue != "*" || created.Priority != 100 || created.Enabled != true {
 		t.Fatalf("unexpected rule: %+v", created)
 	}
-	if created["extras"] != nil && string(created["extras"].(json.RawMessage)) != "{}" {
-		t.Fatalf("extras = %v, want {}", created["extras"])
+	if created.Extras != nil && string(created.Extras) != "{}" {
+		t.Fatalf("extras = %v, want {}", created.Extras)
 	}
 
 	if _, err := st.CreateRateLimit(domain.RateLimitInput{RuleName: strp("bad"), TargetType: strp("nope"), Metric: strp("rpm"), LimitValue: int64p(1), WindowSeconds: intp(1), Action: strp("reject")}); !errors.Is(err, store.ErrInvalid) {
@@ -55,7 +55,7 @@ func TestRateLimitCRUDAndFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateRateLimit: %v", err)
 	}
-	if updated["enabled"] != false || updated["rule_name"] != "default user rpm" {
+	if updated.Enabled != false || updated.RuleName != "default user rpm" {
 		t.Fatalf("partial update lost fields: %+v", updated)
 	}
 
