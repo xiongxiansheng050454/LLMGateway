@@ -18,10 +18,6 @@ import (
 	"strings"
 )
 
-// EnvChannelKey is the environment variable holding the channel api_key
-// encryption key (raw bytes; 16, 24 or 32 bytes for AES-128/192/256).
-const EnvChannelKey = "CHANNEL_KEY_ENCRYPTION_KEY"
-
 // ErrInvalidKey is returned when an encryption key is missing or malformed.
 var ErrInvalidKey = errors.New("invalid encryption key")
 

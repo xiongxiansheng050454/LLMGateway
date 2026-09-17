@@ -5,6 +5,10 @@ import (
 	"testing"
 )
 
+// testEnvChannelKey mirrors config.EnvChannelKey without creating a crypto ->
+// config dependency.
+const testEnvChannelKey = "CHANNEL_KEY_ENCRYPTION_KEY"
+
 func testKey() []byte {
 	return []byte("0123456789abcdef0123456789abcdef")
 }
@@ -83,18 +87,18 @@ func TestNewCipherRejectsInvalidKeyLength(t *testing.T) {
 }
 
 func TestNewCipherFromEnv(t *testing.T) {
-	t.Setenv(EnvChannelKey, "0123456789abcdef0123456789abcdef")
-	if _, err := NewCipherFromEnv(EnvChannelKey); err != nil {
+	t.Setenv(testEnvChannelKey, "0123456789abcdef0123456789abcdef")
+	if _, err := NewCipherFromEnv(testEnvChannelKey); err != nil {
 		t.Fatalf("NewCipherFromEnv: %v", err)
 	}
 
-	t.Setenv(EnvChannelKey, "")
-	if _, err := NewCipherFromEnv(EnvChannelKey); err == nil {
+	t.Setenv(testEnvChannelKey, "")
+	if _, err := NewCipherFromEnv(testEnvChannelKey); err == nil {
 		t.Fatal("missing env key should fail, not fall back to plaintext")
 	}
 
-	t.Setenv(EnvChannelKey, "too-short")
-	if _, err := NewCipherFromEnv(EnvChannelKey); err == nil {
+	t.Setenv(testEnvChannelKey, "too-short")
+	if _, err := NewCipherFromEnv(testEnvChannelKey); err == nil {
 		t.Fatal("invalid env key length should fail")
 	}
 }

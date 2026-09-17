@@ -2,8 +2,6 @@ package config
 
 import (
 	"testing"
-
-	"LLMGateway/server/internal/crypto"
 )
 
 func TestLoadDefaults(t *testing.T) {
@@ -11,7 +9,7 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("DASHBOARD_DIR", "")
 	t.Setenv("DATABASE_URL", "")
 	t.Setenv("MIGRATIONS_DIR", "")
-	t.Setenv(crypto.EnvChannelKey, "")
+	t.Setenv(EnvChannelKey, "")
 
 	cfg := Load()
 	if cfg.Addr != ":8080" {
@@ -36,7 +34,7 @@ func TestLoadOverrides(t *testing.T) {
 	t.Setenv("DASHBOARD_DIR", "/srv/dashboard")
 	t.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db?sslmode=disable")
 	t.Setenv("MIGRATIONS_DIR", "/srv/migrations")
-	t.Setenv(crypto.EnvChannelKey, "0123456789abcdef0123456789abcdef")
+	t.Setenv(EnvChannelKey, "0123456789abcdef0123456789abcdef")
 
 	cfg := Load()
 	if cfg.Addr != ":9999" {

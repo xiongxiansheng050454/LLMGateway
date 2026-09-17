@@ -15,13 +15,20 @@ server/internal/store/memory/       默认内存实现，用于 MVP、测试和�
 server/internal/store/postgres/     PostgreSQL Store 实现
 server/internal/db/migrate/         最小迁移 runner，按文件名顺序应用 server/db/migrations/*.sql
 server/internal/db/sqlc/            sqlc 生成代码输出目录，不手写业务逻辑
-server/db/migrations/               PostgreSQL schema 迁移 SQL
-server/db/queries/                  sqlc 查询 SQL
+server/db/migrations/               PostgreSQL schema 迁移 SQL（SQL 资产）
+server/db/queries/                  sqlc 查询 SQL（SQL 资产）
 deployments/                        本地开发部署配置，如 PostgreSQL docker compose
 dashboard/                          静态前端控制台（仓库根，由 server 通过 ../dashboard 托管）
 ```
 
 Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执行（或在仓库根使用 `go -C server ...`）。
+
+两个 `db` 目录职责不同，不要混淆：
+
+- `server/db/`：SQL 资产（`migrations/` 迁移、`queries/` sqlc 查询），由 `sqlc.yaml` 读取。
+- `server/internal/db/`：Go 包（`migrate/` 迁移 runner、`sqlc/` 生成代码），由 Go 代码导入。
+
+`CHANNEL_KEY_ENCRYPTION_KEY` 环境变量名常量位于 `server/internal/config`（env 解析职责）；`server/internal/crypto` 只负责密钥长度/算法校验，不再定义 env 常量。
 
 ## 约定
 

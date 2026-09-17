@@ -16,6 +16,13 @@ import (
 
 // Server holds the HTTP entry points for the gateway. The concrete route table
 // (which path maps to which entry point) lives in cmd/llmgateway/router.go.
+// adminResponse is the unified envelope for /admin endpoints.
+type adminResponse struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Data    any    `json:"data"`
+}
+
 type Server struct {
 	store        store.Store
 	client       *http.Client
