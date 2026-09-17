@@ -461,6 +461,61 @@ func (f failingHealthStore) RecordChannelFailure(int, string) (domain.ChannelHea
 	return domain.ChannelHealth{}, errors.New("health store unavailable")
 }
 
+func TestClassifyUpstreamResult(t *testing.T) {
+	tests := []struct {
+		name    string
+		status  int
+		err     error
+		failure bool
+		reason  string
+	}{
+		{"transport error", 0, errors.New("dial tcp: refused"), true, "upstream_unreachable"},
+		{"429", http.StatusTooManyRequests, nil, true, "upstream_429"},
+		{"401", http.StatusUnauthorized, nil, true, "upstream_401"},
+		{"403", http.StatusForbidden, nil, true, "upstream_403"},
+		{"402", http.StatusPaymentRequired, nil, true, "upstream_402"},
+		{"500", http.StatusInternalServerError, nil, true, "upstream_500"},
+		{"503", http.StatusServiceUnavailable, nil, true, "upstream_503"},
+		{"400", http.StatusBadRequest, nil, false, ""},
+		{"404", http.StatusNotFound, nil, false, ""},
+		{"422", http.StatusUnprocessableEntity, nil, false, ""},
+		{"200", http.StatusOK, nil, false, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			failure, reason := classifyUpstreamResult(tt.status, tt.err)
+			if failure != tt.failure || reason != tt.reason {
+				t.Fatalf("classifyUpstreamResult(%d, %v) = (%v, %q), want (%v, %q)", tt.status, tt.err, failure, reason, tt.failure, tt.reason)
+			}
+		})
+	}
+}
+
+func TestChatCompletionsClientErrorDoesNotTripBreaker(t *testing.T) {
+	var calls int32
+	upstream := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&calls, 1)
+		writeJSON(w, http.StatusBadRequest, map[string]any{"error": "bad request"})
+	})
+	f := newProxyFixture(t, upstream)
+	body := `{"model":"gpt","messages":[]}`
+
+	for i := 0; i < 6; i++ {
+		res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, body)
+		if res.Code != http.StatusBadRequest {
+			t.Fatalf("attempt %d status = %d, want 400 passthrough", i, res.Code)
+		}
+	}
+
+	health, _ := f.store.GetChannelHealth(1)
+	if health.State != domain.HealthClosed {
+		t.Fatalf("state = %s, want closed (client errors must not trip the breaker)", health.State)
+	}
+	if got := atomic.LoadInt32(&calls); got != 6 {
+		t.Fatalf("upstream calls = %d, want 6 (channel must stay routable)", got)
+	}
+}
+
 func stringPointer(v string) *string { return &v }
 func intPointer(v int) *int          { return &v }
 func int64Pointer(v int64) *int64    { return &v }

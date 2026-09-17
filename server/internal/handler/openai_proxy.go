@@ -106,7 +106,9 @@ func (a *Server) chatCompletions(auth *domain.AuthContext, body []byte, clientIP
 
 	resp, err := a.client.Do(httpReq)
 	if err != nil {
-		a.recordChannelHealth(candidate.ChannelID, false, "upstream_unreachable")
+		if failure, reason := classifyUpstreamResult(0, err); failure {
+			a.recordChannelHealth(candidate.ChannelID, false, reason)
+		}
 		a.logUsage(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", "upstream_unreachable")
 		return 0, nil, ErrUpstream
 	}
@@ -115,7 +117,9 @@ func (a *Server) chatCompletions(auth *domain.AuthContext, body []byte, clientIP
 	durationMs := elapsedMs(start, a.now())
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		a.recordChannelHealth(candidate.ChannelID, false, fmt.Sprintf("upstream_%d", resp.StatusCode))
+		if failure, reason := classifyUpstreamResult(resp.StatusCode, nil); failure {
+			a.recordChannelHealth(candidate.ChannelID, false, reason)
+		}
 		a.logUsage(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", durationMs, clientIP, "error", fmt.Sprintf("upstream_%d", resp.StatusCode))
 		return resp.StatusCode, responseBody, nil
 	}
@@ -149,6 +153,26 @@ func (a *Server) chatCompletions(auth *domain.AuthContext, body []byte, clientIP
 	_ = a.store.UpdateKeyLastUsed(auth.KeyID)
 
 	return http.StatusOK, rewriteResponseModel(responseBody, req.Model), nil
+}
+
+// classifyUpstreamResult decides whether an upstream outcome should count as a
+// channel failure. Only transport errors, upstream 429/401/403/402 and 5xx are
+// penalised; other client errors (400/404/...) are passed through without
+// tripping the breaker, so a bad caller cannot open a healthy channel.
+func classifyUpstreamResult(statusCode int, err error) (bool, string) {
+	if err != nil {
+		return true, "upstream_unreachable"
+	}
+	switch {
+	case statusCode == http.StatusTooManyRequests:
+		return true, fmt.Sprintf("upstream_%d", statusCode)
+	case statusCode == http.StatusUnauthorized, statusCode == http.StatusForbidden, statusCode == http.StatusPaymentRequired:
+		return true, fmt.Sprintf("upstream_%d", statusCode)
+	case statusCode >= 500 && statusCode <= 599:
+		return true, fmt.Sprintf("upstream_%d", statusCode)
+	default:
+		return false, ""
+	}
 }
 
 // recordChannelHealth drives the circuit breaker state machine. It is

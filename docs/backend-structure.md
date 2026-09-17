@@ -80,7 +80,7 @@ var _ store.ChannelStore = (*memory.Store)(nil)
 - 认证使用 `Authorization: Bearer <gateway-key>`；密钥经 `server/internal/crypto.HashKey` 后查询，明文不落日志/响应。
 - 路由候选按 `priority` 越大越优先，同级内按 `weight` 加权随机；非正余额渠道被排除。
 - 计费：缓存 token 已包含在 `prompt_tokens` 中，仅按 `(prompt_tokens - cached_tokens)` 计输入价，缓存部分计缓存价，避免重复计费。
-- 熔断：每个渠道有 `channel_health` 状态（closed/open/half-open）。连续失败达阈值（默认 5）或确定性失败（上游 401/403/402）立即 open；冷却（默认 30s）后惰性转为 half-open 允许探测，探测成功回 closed、失败回 open。`ListRouteCandidates` 排除 open 渠道，全部不可用时返回 `503 no_healthy_channel`。健康记录为 best-effort。
+- 熔断：每个渠道有 `channel_health` 状态（closed/open/half-open）。连续失败达阈值（默认 5）或确定性失败（上游 401/403/402）立即 open；冷却（默认 30s）后惰性转为 half-open 允许探测，探测成功回 closed、失败回 open。`ListRouteCandidates` 排除 open 渠道；当无可用渠道（无映射或全部 open）时返回 `503 no_healthy_channel`（错误码由 `no_available_channel` 变更而来，同时覆盖这两种情况）。失败分类仅计入传输错误、上游 429/401/403/402 与 5xx，其余 4xx 透传且不计渠道失败。健康记录为 best-effort。
 - 已知限制（后续 issue 处理）：
   - 未配置 `model_pricing` 的渠道×模型按 cost=0 放行（建议为所有可路由模型配置定价）。
   - 用户扣费、渠道扣费、usage log 不是单一事务；渠道扣费为 best-effort，`last_used_at` 更新为 best-effort。
