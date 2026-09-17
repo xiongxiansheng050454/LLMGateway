@@ -11,6 +11,7 @@ import (
 
 	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/catalog"
+	"LLMGateway/server/internal/httpcommon"
 	"LLMGateway/server/internal/proxy"
 	"LLMGateway/server/internal/ratelimit"
 	"LLMGateway/server/internal/store"
@@ -158,10 +159,7 @@ func (a *Server) Admin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (a *Server) adminData(r *http.Request) (any, bool, int, string) {
-	parts := strings.Split(strings.Trim(strings.TrimSuffix(r.URL.Path, "/"), "/"), "/")
-	if len(parts) == 1 && parts[0] == "" {
-		parts = nil
-	}
+	parts := httpcommon.SplitPath(strings.TrimSuffix(r.URL.Path, "/"))
 	if data, ok, status, msg := a.catalog.Data(r, parts); ok || status != 0 {
 		return data, ok, status, msg
 	}

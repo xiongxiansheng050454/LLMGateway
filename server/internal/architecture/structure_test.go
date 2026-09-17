@@ -70,6 +70,12 @@ func TestHTTPAPIDoesNotOwnBusinessHelpers(t *testing.T) {
 			t.Fatalf("httpapi still owns obsolete helper %q", name)
 		}
 	}
+	if !strings.Contains(string(content), "httpcommon.SplitPath") {
+		t.Fatal("httpapi must use the shared path parser")
+	}
+	if strings.Contains(string(content), "strings.Split") {
+		t.Fatal("httpapi must not duplicate path parsing")
+	}
 }
 
 func TestAdminEntrypointsStayInBusinessModules(t *testing.T) {
