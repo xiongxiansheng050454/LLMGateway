@@ -39,7 +39,11 @@ func (a *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 		writeProxyError(w, err)
 		return
 	}
-	writeJSON(w, http.StatusOK, models)
+	data := make([]openaiwire.OpenAIModel, 0, len(models.Models))
+	for _, model := range models.Models {
+		data = append(data, openaiwire.OpenAIModel{ID: model.ID, Object: "model", Created: model.Created, OwnedBy: model.OwnedBy})
+	}
+	writeJSON(w, http.StatusOK, openaiwire.OpenAIModelList{Object: "list", Data: data})
 }
 
 func (a *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
@@ -58,14 +62,19 @@ func (a *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	status, responseBody, err := a.proxy.ChatCompletions(auth, body, clientIP(r))
+	req, err := openaiwire.ParseRequest(body)
+	if err != nil {
+		writeProxyError(w, proxy.ErrInvalidRequest)
+		return
+	}
+	response, err := a.proxy.ChatCompletions(auth, req, clientIP(r))
 	if err != nil {
 		writeProxyError(w, err)
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
-	w.WriteHeader(status)
-	_, _ = w.Write(responseBody)
+	w.WriteHeader(response.Status)
+	_, _ = w.Write(response.Body)
 }
 
 // writeProxyError maps proxy errors to OpenAI-compatible HTTP responses.

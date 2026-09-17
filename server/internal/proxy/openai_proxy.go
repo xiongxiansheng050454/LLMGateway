@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/rand"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -14,55 +13,50 @@ import (
 
 	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/money"
-	openaiwire "LLMGateway/server/internal/proxy/openai"
 	"LLMGateway/server/internal/store"
 )
 
 // models returns the OpenAI-style model list visible to the key, filtered by
 // its permissions.
-func (a *Service) Models(auth *domain.AuthContext) (openaiwire.OpenAIModelList, error) {
+func (a *Service) Models(auth *domain.AuthContext) (ModelList, error) {
 	result, err := a.store.ListCatalogModels(true)
 	if err != nil {
-		return openaiwire.OpenAIModelList{}, err
+		return ModelList{}, err
 	}
 
 	created := a.now().Unix()
 	seen := map[string]bool{}
-	data := []openaiwire.OpenAIModel{}
+	data := []Model{}
 	for _, item := range result.List {
 		name := item.ModelName
 		if name == "" || seen[name] || !allowModel(auth, name) {
 			continue
 		}
 		seen[name] = true
-		data = append(data, openaiwire.OpenAIModel{ID: name, Object: "model", Created: created, OwnedBy: "llmgateway"})
+		data = append(data, Model{ID: name, Created: created, OwnedBy: "llmgateway"})
 	}
-	return openaiwire.OpenAIModelList{Object: "list", Data: data}, nil
+	return ModelList{Models: data}, nil
 }
 
 // chatCompletions proxies a non-streaming chat completion request. It returns
 // the HTTP status and body to send downstream. A non-nil error is a
 // pre-flight/transport failure the handler maps to an OpenAI error.
-func (a *Service) ChatCompletions(auth *domain.AuthContext, body []byte, clientIP string) (int, []byte, error) {
-	var req openaiwire.ChatCompletionRequest
-	if err := json.Unmarshal(body, &req); err != nil {
-		return 0, nil, ErrInvalidRequest
-	}
+func (a *Service) ChatCompletions(auth *domain.AuthContext, req ChatRequest, clientIP string) (ChatResponse, error) {
 	if req.Model == "" {
-		return 0, nil, ErrInvalidRequest
+		return ChatResponse{}, ErrInvalidRequest
 	}
 	if req.Stream {
-		return 0, nil, ErrStreamingUnsupported
+		return ChatResponse{}, ErrStreamingUnsupported
 	}
 	if !allowModel(auth, req.Model) {
-		return 0, nil, ErrForbidden
+		return ChatResponse{}, ErrForbidden
 	}
 	balance, err := money.Parse6(auth.AvailableBalance)
 	if err != nil {
-		return 0, nil, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
+		return ChatResponse{}, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
 	}
 	if balance.Cmp(0) <= 0 {
-		return 0, nil, ErrInsufficientBalance
+		return ChatResponse{}, ErrInsufficientBalance
 	}
 
 	requestID := newRequestID()
@@ -71,7 +65,7 @@ func (a *Service) ChatCompletions(auth *domain.AuthContext, body []byte, clientI
 		if errors.Is(err, ErrRateLimited) {
 			a.logUsage(requestID, auth, nil, "", req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", "rate_limited")
 		}
-		return 0, nil, err
+		return ChatResponse{}, err
 	}
 
 	candidate, err := a.selectChannel(req.Model)
@@ -80,28 +74,31 @@ func (a *Service) ChatCompletions(auth *domain.AuthContext, body []byte, clientI
 			// Degraded: every candidate is tripped open or there is no mapping.
 			a.logUsage(requestID, auth, nil, "", req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", "no_healthy_channel")
 		}
-		return 0, nil, err
+		return ChatResponse{}, err
 	}
 	if err := a.checkChannelRateLimit(auth, req.Model, candidate.ChannelID); err != nil {
 		if errors.Is(err, ErrRateLimited) {
 			a.logUsage(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", "rate_limited")
 		}
-		return 0, nil, err
+		return ChatResponse{}, err
 	}
 
 	secret, err := a.store.GetChannelSecret(candidate.ChannelID)
 	if err != nil {
-		return 0, nil, err
+		return ChatResponse{}, err
 	}
 
-	upstreamBody, err := rewriteModel(body, candidate.UpstreamModel)
+	if a.adapter.RewriteRequest == nil {
+		return ChatResponse{}, ErrInvalidRequest
+	}
+	upstreamBody, err := a.adapter.RewriteRequest(req.Body, candidate.UpstreamModel)
 	if err != nil {
-		return 0, nil, ErrInvalidRequest
+		return ChatResponse{}, ErrInvalidRequest
 	}
 
 	httpReq, err := http.NewRequest(http.MethodPost, strings.TrimRight(secret.BaseURL, "/")+"/v1/chat/completions", bytes.NewReader(upstreamBody))
 	if err != nil {
-		return 0, nil, ErrUpstream
+		return ChatResponse{}, ErrUpstream
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
 	httpReq.Header.Set("Accept", "application/json")
@@ -115,7 +112,7 @@ func (a *Service) ChatCompletions(auth *domain.AuthContext, body []byte, clientI
 			a.recordChannelHealth(candidate.ChannelID, false, reason)
 		}
 		a.logUsage(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", "upstream_unreachable")
-		return 0, nil, ErrUpstream
+		return ChatResponse{}, ErrUpstream
 	}
 	defer resp.Body.Close()
 	responseBody, _ := io.ReadAll(resp.Body)
@@ -126,15 +123,18 @@ func (a *Service) ChatCompletions(auth *domain.AuthContext, body []byte, clientI
 			a.recordChannelHealth(candidate.ChannelID, false, reason)
 		}
 		a.logUsage(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", durationMs, clientIP, "error", fmt.Sprintf("upstream_%d", resp.StatusCode))
-		return resp.StatusCode, responseBody, nil
+		return ChatResponse{Status: resp.StatusCode, Body: responseBody}, nil
 	}
 
 	a.recordChannelHealth(candidate.ChannelID, true, "")
 
-	usage := parseUsage(responseBody)
+	if a.adapter.ParseUsage == nil || a.adapter.RewriteResponse == nil {
+		return ChatResponse{}, ErrInvalidRequest
+	}
+	usage := a.adapter.ParseUsage(responseBody)
 	cost, inputPrice, outputPrice, err := a.priceFor(candidate.ChannelID, req.Model, usage)
 	if err != nil {
-		return 0, nil, err
+		return ChatResponse{}, err
 	}
 
 	usageLog := a.usageLogInput(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, usage, cost, inputPrice, outputPrice, durationMs, clientIP, "success", "")
@@ -149,16 +149,16 @@ func (a *Service) ChatCompletions(auth *domain.AuthContext, body []byte, clientI
 	if err != nil {
 		if errors.Is(err, store.ErrInvalid) {
 			a.logUsage(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, usage, "0.000000", inputPrice, outputPrice, durationMs, clientIP, "error", "insufficient_balance")
-			return 0, nil, ErrInsufficientBalance
+			return ChatResponse{}, ErrInsufficientBalance
 		}
-		return 0, nil, err
+		return ChatResponse{}, err
 	}
 
 	// Best-effort: the request already succeeded and was charged, so a
 	// last_used_at update failure must not turn it into an error response.
 	_ = a.store.UpdateKeyLastUsed(auth.KeyID)
 
-	return http.StatusOK, rewriteResponseModel(responseBody, req.Model), nil
+	return ChatResponse{Status: http.StatusOK, Body: a.adapter.RewriteResponse(responseBody, req.Model), Usage: usage}, nil
 }
 
 // classifyUpstreamResult decides whether an upstream outcome should count as a
@@ -195,7 +195,7 @@ func (a *Service) recordChannelHealth(channelID int, success bool, reason domain
 	_, _ = a.store.RecordChannelFailure(channelID, reason)
 }
 
-func (a *Service) priceFor(channelID int, model string, usage *openaiwire.ChatCompletionUsage) (string, string, string, error) {
+func (a *Service) priceFor(channelID int, model string, usage *Usage) (string, string, string, error) {
 	pricing, err := a.store.GetPricing(channelID, model)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -222,11 +222,11 @@ func (a *Service) priceFor(channelID int, model string, usage *openaiwire.ChatCo
 	return cost, inputPrice, outputPrice, nil
 }
 
-func (a *Service) logUsage(requestID string, auth *domain.AuthContext, channelID *int, upstreamModel, model string, usage *openaiwire.ChatCompletionUsage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) {
+func (a *Service) logUsage(requestID string, auth *domain.AuthContext, channelID *int, upstreamModel, model string, usage *Usage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) {
 	_, _ = a.store.InsertUsageLog(a.usageLogInput(requestID, auth, channelID, upstreamModel, model, usage, cost, inputPrice, outputPrice, durationMs, clientIP, status, errorCode))
 }
 
-func (a *Service) usageLogInput(requestID string, auth *domain.AuthContext, channelID *int, upstreamModel, model string, usage *openaiwire.ChatCompletionUsage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) domain.UsageLogInput {
+func (a *Service) usageLogInput(requestID string, auth *domain.AuthContext, channelID *int, upstreamModel, model string, usage *Usage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) domain.UsageLogInput {
 	userID := auth.UserID
 	keyID := auth.KeyID
 
@@ -254,41 +254,11 @@ func (a *Service) usageLogInput(requestID string, auth *domain.AuthContext, chan
 	return input
 }
 
-func cachedTokenCount(usage *openaiwire.ChatCompletionUsage) int {
-	if usage == nil || usage.PromptTokensDetails == nil {
+func cachedTokenCount(usage *Usage) int {
+	if usage == nil {
 		return 0
 	}
-	return usage.PromptTokensDetails.CachedTokens
-}
-
-func parseUsage(body []byte) *openaiwire.ChatCompletionUsage {
-	var parsed openaiwire.ChatCompletionResponse
-	if err := json.Unmarshal(body, &parsed); err != nil {
-		return nil
-	}
-	return parsed.Usage
-}
-
-func rewriteModel(body []byte, upstreamModel string) ([]byte, error) {
-	var payload map[string]any
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return nil, err
-	}
-	payload["model"] = upstreamModel
-	return json.Marshal(payload)
-}
-
-func rewriteResponseModel(body []byte, publicModel string) []byte {
-	var payload map[string]any
-	if err := json.Unmarshal(body, &payload); err != nil {
-		return body
-	}
-	payload["model"] = publicModel
-	rewritten, err := json.Marshal(payload)
-	if err != nil {
-		return body
-	}
-	return rewritten
+	return usage.CachedInputTokens
 }
 
 func elapsedMs(start, end time.Time) int {

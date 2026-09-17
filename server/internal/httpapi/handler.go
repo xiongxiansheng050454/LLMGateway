@@ -13,6 +13,7 @@ import (
 	"LLMGateway/server/internal/catalog"
 	"LLMGateway/server/internal/httpcommon"
 	"LLMGateway/server/internal/proxy"
+	openaiwire "LLMGateway/server/internal/proxy/openai"
 	"LLMGateway/server/internal/ratelimit"
 	"LLMGateway/server/internal/store"
 	"LLMGateway/server/internal/usage"
@@ -92,7 +93,7 @@ func NewServer(dashboardDir string, st store.Store, opts ...Option) *Server {
 	return &Server{
 		store:        st,
 		client:       client,
-		proxy:        proxy.NewService(st, client, settings.randIntN, settings.now),
+		proxy:        proxy.NewService(st, client, settings.randIntN, settings.now, openaiwire.Adapter()),
 		catalog:      catalog.New(st, client),
 		accounts:     accounts.New(st),
 		usage:        usage.New(st),
