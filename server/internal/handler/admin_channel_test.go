@@ -7,7 +7,7 @@ import (
 )
 
 func TestChannelCRUDDoesNotLeakAPIKey(t *testing.T) {
-	handler := newTestHandler()
+	handler := newTestServer()
 
 	created := adminDo(t, handler, http.MethodPost, "/admin/channels", map[string]any{
 		"name": "OpenAI", "base_url": "https://api.openai.test", "api_key": "sk-secret", "auth_type": "bearer", "status": 1, "weight": 100, "priority": 10, "balance": "100.000000",
@@ -45,14 +45,14 @@ func TestChannelCRUDDoesNotLeakAPIKey(t *testing.T) {
 }
 
 func TestChannelCreateRequiresAPIKey(t *testing.T) {
-	res := adminRaw(t, newTestHandler(), http.MethodPost, "/admin/channels", map[string]any{"name": "missing key", "base_url": "https://api.test"})
+	res := adminRaw(t, newTestServer(), http.MethodPost, "/admin/channels", map[string]any{"name": "missing key", "base_url": "https://api.test"})
 	if res.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want %d; body=%s", res.Code, http.StatusBadRequest, res.Body.String())
 	}
 }
 
 func TestModelMappingsCatalogPricingAndCascadeDelete(t *testing.T) {
-	handler := newTestHandler()
+	handler := newTestServer()
 	adminDo(t, handler, http.MethodPost, "/admin/channels", map[string]any{"name": "OpenAI", "base_url": "https://api.openai.test", "api_key": "sk-secret", "auth_type": "bearer", "status": 1})
 
 	mapping := adminDo(t, handler, http.MethodPost, "/admin/channels/1/models", map[string]any{"model_name": "gpt-4o-mini", "upstream_model": "gpt-4o-mini-up", "enabled": true})
@@ -99,7 +99,7 @@ func TestRemoteModelsUsesFakeUpstream(t *testing.T) {
 	}))
 	defer upstream.Close()
 
-	handler := newTestHandler()
+	handler := newTestServer()
 	adminDo(t, handler, http.MethodPost, "/admin/channels", map[string]any{"name": "Fake", "base_url": upstream.URL, "api_key": "sk-secret", "auth_type": "bearer", "status": 1})
 	remote := adminDo(t, handler, http.MethodPost, "/admin/channels/1/remote-models", map[string]any{})
 	data := remote["data"].(map[string]any)
@@ -109,7 +109,7 @@ func TestRemoteModelsUsesFakeUpstream(t *testing.T) {
 }
 
 func TestInvalidBalanceReturnsBadRequest(t *testing.T) {
-	handler := newTestHandler()
+	handler := newTestServer()
 	adminDo(t, handler, http.MethodPost, "/admin/channels", map[string]any{"name": "OpenAI", "base_url": "https://api.openai.test", "api_key": "sk-secret", "auth_type": "bearer", "status": 1})
 
 	res := adminRaw(t, handler, http.MethodPut, "/admin/channels/1/balance", map[string]any{"delta": "abc"})
@@ -119,14 +119,14 @@ func TestInvalidBalanceReturnsBadRequest(t *testing.T) {
 }
 
 func TestDeleteMissingChannelReturnsNotFound(t *testing.T) {
-	res := adminRaw(t, newTestHandler(), http.MethodDelete, "/admin/channels/404", nil)
+	res := adminRaw(t, newTestServer(), http.MethodDelete, "/admin/channels/404", nil)
 	if res.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d; body=%s", res.Code, http.StatusNotFound, res.Body.String())
 	}
 }
 
 func TestDeleteMissingModelMappingReturnsNotFound(t *testing.T) {
-	handler := newTestHandler()
+	handler := newTestServer()
 	adminDo(t, handler, http.MethodPost, "/admin/channels", map[string]any{"name": "OpenAI", "base_url": "https://api.openai.test", "api_key": "sk-secret", "auth_type": "bearer", "status": 1})
 
 	res := adminRaw(t, handler, http.MethodDelete, "/admin/channels/1/models/404", nil)

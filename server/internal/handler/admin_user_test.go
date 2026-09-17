@@ -7,7 +7,7 @@ import (
 )
 
 func TestUserCRUDRechargeAndBalance(t *testing.T) {
-	handler := newTestHandler()
+	handler := newTestServer()
 
 	created := adminDo(t, handler, http.MethodPost, "/admin/users", map[string]any{"nickname": "Alice"})
 	user := created["data"].(map[string]any)
@@ -64,7 +64,7 @@ func TestUserCRUDRechargeAndBalance(t *testing.T) {
 }
 
 func TestKeyLifecycleHidesPlaintext(t *testing.T) {
-	handler := newTestHandler()
+	handler := newTestServer()
 	adminDo(t, handler, http.MethodPost, "/admin/users", map[string]any{"nickname": "Alice"})
 
 	created := adminDo(t, handler, http.MethodPost, "/admin/users/1/keys", map[string]any{"key_name": "default", "prefix": "sk-"})
@@ -108,14 +108,14 @@ func TestKeyLifecycleHidesPlaintext(t *testing.T) {
 }
 
 func TestListKeysMissingUserReturnsNotFound(t *testing.T) {
-	res := adminRaw(t, newTestHandler(), http.MethodGet, "/admin/users/404/keys", nil)
+	res := adminRaw(t, newTestServer(), http.MethodGet, "/admin/users/404/keys", nil)
 	if res.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d; body=%s", res.Code, http.StatusNotFound, res.Body.String())
 	}
 }
 
 func TestUserListReturnsFrozenBalanceFields(t *testing.T) {
-	handler := newTestHandler()
+	handler := newTestServer()
 	adminDo(t, handler, http.MethodPost, "/admin/users", map[string]any{"nickname": "Alice"})
 
 	listed := adminDo(t, handler, http.MethodGet, "/admin/users?page=1&page_size=20", nil)
