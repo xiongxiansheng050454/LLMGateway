@@ -72,8 +72,15 @@ func (a *Server) chatCompletions(auth *domain.AuthContext, body []byte, clientIP
 		return 0, nil, ErrInsufficientBalance
 	}
 
+	requestID := newRequestID()
+	start := a.now()
+
 	candidate, err := a.selectChannel(req.Model)
 	if err != nil {
+		if errors.Is(err, ErrNoHealthyChannel) {
+			// Degraded: every candidate is tripped open or there is no mapping.
+			a.logUsage(requestID, auth, nil, "", req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", "no_healthy_channel")
+		}
 		return 0, nil, err
 	}
 
@@ -87,9 +94,6 @@ func (a *Server) chatCompletions(auth *domain.AuthContext, body []byte, clientIP
 		return 0, nil, ErrInvalidRequest
 	}
 
-	requestID := newRequestID()
-	start := a.now()
-
 	httpReq, err := http.NewRequest(http.MethodPost, strings.TrimRight(secret.BaseURL, "/")+"/v1/chat/completions", bytes.NewReader(upstreamBody))
 	if err != nil {
 		return 0, nil, ErrUpstream
@@ -102,7 +106,8 @@ func (a *Server) chatCompletions(auth *domain.AuthContext, body []byte, clientIP
 
 	resp, err := a.client.Do(httpReq)
 	if err != nil {
-		a.logUsage(requestID, auth, candidate, req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", "upstream_unreachable")
+		a.recordChannelHealth(candidate.ChannelID, false, "upstream_unreachable")
+		a.logUsage(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", "upstream_unreachable")
 		return 0, nil, ErrUpstream
 	}
 	defer resp.Body.Close()
@@ -110,9 +115,12 @@ func (a *Server) chatCompletions(auth *domain.AuthContext, body []byte, clientIP
 	durationMs := elapsedMs(start, a.now())
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		a.logUsage(requestID, auth, candidate, req.Model, nil, "0.000000", "", "", durationMs, clientIP, "error", fmt.Sprintf("upstream_%d", resp.StatusCode))
+		a.recordChannelHealth(candidate.ChannelID, false, fmt.Sprintf("upstream_%d", resp.StatusCode))
+		a.logUsage(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", durationMs, clientIP, "error", fmt.Sprintf("upstream_%d", resp.StatusCode))
 		return resp.StatusCode, responseBody, nil
 	}
+
+	a.recordChannelHealth(candidate.ChannelID, true, "")
 
 	usage := parseUsage(responseBody)
 	cost, inputPrice, outputPrice, err := a.priceFor(candidate.ChannelID, req.Model, usage)
@@ -123,7 +131,7 @@ func (a *Server) chatCompletions(auth *domain.AuthContext, body []byte, clientIP
 	if cost != "0.000000" {
 		if _, err := a.store.DebitUserBalance(auth.UserID, cost, "chat completion "+requestID); err != nil {
 			if errors.Is(err, store.ErrInvalid) {
-				a.logUsage(requestID, auth, candidate, req.Model, usage, "0.000000", inputPrice, outputPrice, durationMs, clientIP, "error", "insufficient_balance")
+				a.logUsage(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, usage, "0.000000", inputPrice, outputPrice, durationMs, clientIP, "error", "insufficient_balance")
 				return 0, nil, ErrInsufficientBalance
 			}
 			return 0, nil, err
@@ -134,13 +142,23 @@ func (a *Server) chatCompletions(auth *domain.AuthContext, body []byte, clientIP
 		}
 	}
 
-	a.logUsage(requestID, auth, candidate, req.Model, usage, cost, inputPrice, outputPrice, durationMs, clientIP, "success", "")
+	a.logUsage(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, usage, cost, inputPrice, outputPrice, durationMs, clientIP, "success", "")
 
 	// Best-effort: the request already succeeded and was charged, so a
 	// last_used_at update failure must not turn it into an error response.
 	_ = a.store.UpdateKeyLastUsed(auth.KeyID)
 
 	return http.StatusOK, rewriteResponseModel(responseBody, req.Model), nil
+}
+
+// recordChannelHealth drives the circuit breaker state machine. It is
+// best-effort: a recording failure must never change the response.
+func (a *Server) recordChannelHealth(channelID int, success bool, reason string) {
+	if success {
+		_, _ = a.store.RecordChannelSuccess(channelID)
+		return
+	}
+	_, _ = a.store.RecordChannelFailure(channelID, reason)
 }
 
 func (a *Server) priceFor(channelID int, model string, usage *domain.ChatCompletionUsage) (string, string, string, error) {
@@ -170,18 +188,17 @@ func (a *Server) priceFor(channelID int, model string, usage *domain.ChatComplet
 	return cost, inputPrice, outputPrice, nil
 }
 
-func (a *Server) logUsage(requestID string, auth *domain.AuthContext, candidate RouteCandidate, model string, usage *domain.ChatCompletionUsage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) {
+func (a *Server) logUsage(requestID string, auth *domain.AuthContext, channelID *int, upstreamModel, model string, usage *domain.ChatCompletionUsage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) {
 	userID := auth.UserID
 	keyID := auth.KeyID
-	channelID := candidate.ChannelID
 
 	input := domain.UsageLogInput{
 		RequestID:            requestID,
 		UserID:               &userID,
 		APIKeyID:             &keyID,
-		ChannelID:            &channelID,
+		ChannelID:            channelID,
 		Model:                model,
-		UpstreamModel:        candidate.UpstreamModel,
+		UpstreamModel:        upstreamModel,
 		UnitPriceInputPer1M:  inputPrice,
 		UnitPriceOutputPer1M: outputPrice,
 		TotalCost:            cost,

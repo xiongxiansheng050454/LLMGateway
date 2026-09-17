@@ -49,7 +49,8 @@ func (a *Server) selectChannel(model string) (RouteCandidate, error) {
 		candidates = append(candidates, candidate)
 	}
 	if len(candidates) == 0 {
-		return RouteCandidate{}, ErrNoChannel
+		// No mapping, no enabled channel, or every candidate is tripped open.
+		return RouteCandidate{}, ErrNoHealthyChannel
 	}
 
 	highest := candidates[0].Priority
