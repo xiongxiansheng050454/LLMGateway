@@ -3,24 +3,26 @@ SELECT channel_id, state, consecutive_failures, success_count, failure_count, op
 FROM channel_health
 WHERE channel_id = $1;
 
--- name: UpsertChannelHealth :exec
-INSERT INTO channel_health (channel_id, state, consecutive_failures, success_count, failure_count, opened_at, updated_at)
-VALUES (
-    sqlc.arg(channel_id),
-    sqlc.arg(state),
-    sqlc.arg(consecutive_failures),
-    sqlc.arg(success_count),
-    sqlc.arg(failure_count),
-    sqlc.narg(opened_at),
-    now()
-)
-ON CONFLICT (channel_id) DO UPDATE SET
-    state = EXCLUDED.state,
-    consecutive_failures = EXCLUDED.consecutive_failures,
-    success_count = EXCLUDED.success_count,
-    failure_count = EXCLUDED.failure_count,
-    opened_at = EXCLUDED.opened_at,
-    updated_at = now();
+-- name: EnsureChannelHealth :exec
+INSERT INTO channel_health (channel_id)
+VALUES ($1)
+ON CONFLICT (channel_id) DO NOTHING;
+
+-- name: GetChannelHealthForUpdate :one
+SELECT channel_id, state, consecutive_failures, success_count, failure_count, opened_at, updated_at
+FROM channel_health
+WHERE channel_id = $1
+FOR UPDATE;
+
+-- name: UpdateChannelHealth :execrows
+UPDATE channel_health
+SET state = sqlc.arg(state),
+    consecutive_failures = sqlc.arg(consecutive_failures),
+    success_count = sqlc.arg(success_count),
+    failure_count = sqlc.arg(failure_count),
+    opened_at = sqlc.narg(opened_at),
+    updated_at = now()
+WHERE channel_id = sqlc.arg(channel_id);
 
 -- name: DeleteChannelHealth :execrows
 DELETE FROM channel_health WHERE channel_id = $1;

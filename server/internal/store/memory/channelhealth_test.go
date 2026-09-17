@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"sync"
 	"testing"
 	"time"
 
@@ -107,6 +108,36 @@ func TestListChannelHealth(t *testing.T) {
 	entry := list.List[0].(map[string]any)
 	if entry["channel_id"] != 1 || entry["state"] != "closed" {
 		t.Fatalf("unexpected entry: %+v", entry)
+	}
+}
+
+func TestChannelHealthConcurrentFailures(t *testing.T) {
+	st, _ := newHealthTestStore()
+
+	const workers = 20
+	var wg sync.WaitGroup
+	errs := make(chan error, workers)
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := st.RecordChannelFailure(1, "upstream_500"); err != nil {
+				errs <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent RecordChannelFailure: %v", err)
+	}
+
+	health, err := st.GetChannelHealth(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.ConsecutiveFailures != workers {
+		t.Fatalf("consecutive_failures = %d, want %d", health.ConsecutiveFailures, workers)
 	}
 }
 

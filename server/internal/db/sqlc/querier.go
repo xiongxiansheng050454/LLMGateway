@@ -33,10 +33,12 @@ type Querier interface {
 	DeletePricing(ctx context.Context, arg DeletePricingParams) error
 	DeleteRateLimitRule(ctx context.Context, id int64) (int64, error)
 	DeleteUser(ctx context.Context, id int64) (int64, error)
+	EnsureChannelHealth(ctx context.Context, channelID int64) error
 	GetAuthContextByKeyHash(ctx context.Context, keyHash string) (GetAuthContextByKeyHashRow, error)
 	GetBalanceTransactionByOrder(ctx context.Context, arg GetBalanceTransactionByOrderParams) (GetBalanceTransactionByOrderRow, error)
 	GetChannel(ctx context.Context, id int64) (GetChannelRow, error)
 	GetChannelHealth(ctx context.Context, channelID int64) (ChannelHealth, error)
+	GetChannelHealthForUpdate(ctx context.Context, channelID int64) (ChannelHealth, error)
 	GetChannelModel(ctx context.Context, arg GetChannelModelParams) (GetChannelModelRow, error)
 	GetChannelSecret(ctx context.Context, id int64) (GetChannelSecretRow, error)
 	GetKey(ctx context.Context, arg GetKeyParams) (GetKeyRow, error)
@@ -65,6 +67,7 @@ type Querier interface {
 	StatsOverview(ctx context.Context, arg StatsOverviewParams) (StatsOverviewRow, error)
 	UpdateChannel(ctx context.Context, arg UpdateChannelParams) (int64, error)
 	UpdateChannelBalance(ctx context.Context, arg UpdateChannelBalanceParams) (int64, error)
+	UpdateChannelHealth(ctx context.Context, arg UpdateChannelHealthParams) (int64, error)
 	UpdateChannelModel(ctx context.Context, arg UpdateChannelModelParams) (UpdateChannelModelRow, error)
 	UpdateChannelStatus(ctx context.Context, arg UpdateChannelStatusParams) (int64, error)
 	UpdateKeyActive(ctx context.Context, arg UpdateKeyActiveParams) (int64, error)
@@ -75,7 +78,6 @@ type Querier interface {
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (int64, error)
 	UpdateUserBalance(ctx context.Context, arg UpdateUserBalanceParams) (int64, error)
 	UpdateUserStatus(ctx context.Context, arg UpdateUserStatusParams) (int64, error)
-	UpsertChannelHealth(ctx context.Context, arg UpsertChannelHealthParams) error
 	UpsertPricing(ctx context.Context, arg UpsertPricingParams) (int64, error)
 }
 

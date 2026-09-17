@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -114,6 +115,43 @@ func TestPGChannelHealthHalfOpen(t *testing.T) {
 	}
 	if reopened.State != domain.HealthOpen {
 		t.Fatalf("state = %s, want open after half-open failure", reopened.State)
+	}
+}
+
+func TestPGChannelHealthConcurrentFailures(t *testing.T) {
+	st := testStore(t)
+	channelID := createHealthTestChannel(t, st)
+
+	const workers = 20
+	var wg sync.WaitGroup
+	errs := make(chan error, workers)
+	for i := 0; i < workers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, err := st.RecordChannelFailure(channelID, "upstream_500"); err != nil {
+				errs <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatalf("concurrent RecordChannelFailure: %v", err)
+	}
+
+	health, err := st.GetChannelHealth(channelID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.ConsecutiveFailures != workers {
+		t.Fatalf("consecutive_failures = %d, want %d (lost updates)", health.ConsecutiveFailures, workers)
+	}
+	if health.FailureCount != int64(workers) {
+		t.Fatalf("failure_count = %d, want %d", health.FailureCount, workers)
+	}
+	if health.State != domain.HealthOpen {
+		t.Fatalf("state = %s, want open", health.State)
 	}
 }
 
