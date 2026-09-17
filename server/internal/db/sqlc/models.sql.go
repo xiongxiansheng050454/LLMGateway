@@ -189,9 +189,21 @@ SELECT
     COALESCE(c.balance::text, '') AS balance
 FROM channel_models cm
 JOIN channels c ON c.id = cm.channel_id
+LEFT JOIN channel_health h ON h.channel_id = c.id
 WHERE cm.model_name = $1 AND cm.enabled = true AND c.status = 1
+  -- Exclude open channels, but treat them as half-open (allowed) once the
+  -- cooldown has elapsed; a missing health row means closed.
+  AND NOT (
+      COALESCE(h.state, 'closed') = 'open'
+      AND (h.opened_at IS NULL OR h.opened_at + ($2::int * interval '1 second') > now())
+  )
 ORDER BY c.priority DESC, c.weight DESC, c.id
 `
+
+type ListRouteCandidatesParams struct {
+	ModelName       string `json:"model_name"`
+	CooldownSeconds int32  `json:"cooldown_seconds"`
+}
 
 type ListRouteCandidatesRow struct {
 	ChannelID     int64       `json:"channel_id"`
@@ -202,8 +214,8 @@ type ListRouteCandidatesRow struct {
 	Balance       interface{} `json:"balance"`
 }
 
-func (q *Queries) ListRouteCandidates(ctx context.Context, modelName string) ([]ListRouteCandidatesRow, error) {
-	rows, err := q.db.Query(ctx, listRouteCandidates, modelName)
+func (q *Queries) ListRouteCandidates(ctx context.Context, arg ListRouteCandidatesParams) ([]ListRouteCandidatesRow, error) {
+	rows, err := q.db.Query(ctx, listRouteCandidates, arg.ModelName, arg.CooldownSeconds)
 	if err != nil {
 		return nil, err
 	}

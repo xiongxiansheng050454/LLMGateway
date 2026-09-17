@@ -19,4 +19,5 @@ type Store interface {
 	UserStore
 	RateLimitStore
 	UsageStore
+	ChannelHealthStore
 }

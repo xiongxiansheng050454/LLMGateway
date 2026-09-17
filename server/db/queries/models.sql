@@ -33,7 +33,14 @@ SELECT
     COALESCE(c.balance::text, '') AS balance
 FROM channel_models cm
 JOIN channels c ON c.id = cm.channel_id
-WHERE cm.model_name = $1 AND cm.enabled = true AND c.status = 1
+LEFT JOIN channel_health h ON h.channel_id = c.id
+WHERE cm.model_name = sqlc.arg(model_name) AND cm.enabled = true AND c.status = 1
+  -- Exclude open channels, but treat them as half-open (allowed) once the
+  -- cooldown has elapsed; a missing health row means closed.
+  AND NOT (
+      COALESCE(h.state, 'closed') = 'open'
+      AND (h.opened_at IS NULL OR h.opened_at + (sqlc.arg(cooldown_seconds)::int * interval '1 second') > now())
+  )
 ORDER BY c.priority DESC, c.weight DESC, c.id;
 
 -- name: ListCatalogModels :many

@@ -299,6 +299,11 @@ func (s *Store) RouteCandidates(modelName string) (domain.ListResponse, error) {
 		if channel == nil || channel.Status != 1 {
 			continue
 		}
+		// Exclude open (tripped) channels; a missing health row means closed and
+		// a cooled-down open channel is treated as half-open.
+		if s.channelHealthLocked(channelID).State == domain.HealthOpen {
+			continue
+		}
 		for _, model := range models {
 			if model.ModelName != modelName || !model.Enabled {
 				continue

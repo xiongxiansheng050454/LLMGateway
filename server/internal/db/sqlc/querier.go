@@ -27,6 +27,7 @@ type Querier interface {
 	CreateUser(ctx context.Context, arg CreateUserParams) (int64, error)
 	CreateUserBalance(ctx context.Context, userID int64) error
 	DeleteChannel(ctx context.Context, id int64) (int64, error)
+	DeleteChannelHealth(ctx context.Context, channelID int64) (int64, error)
 	DeleteChannelModel(ctx context.Context, arg DeleteChannelModelParams) (int64, error)
 	DeleteKey(ctx context.Context, arg DeleteKeyParams) (int64, error)
 	DeletePricing(ctx context.Context, arg DeletePricingParams) error
@@ -35,6 +36,7 @@ type Querier interface {
 	GetAuthContextByKeyHash(ctx context.Context, keyHash string) (GetAuthContextByKeyHashRow, error)
 	GetBalanceTransactionByOrder(ctx context.Context, arg GetBalanceTransactionByOrderParams) (GetBalanceTransactionByOrderRow, error)
 	GetChannel(ctx context.Context, id int64) (GetChannelRow, error)
+	GetChannelHealth(ctx context.Context, channelID int64) (ChannelHealth, error)
 	GetChannelModel(ctx context.Context, arg GetChannelModelParams) (GetChannelModelRow, error)
 	GetChannelSecret(ctx context.Context, id int64) (GetChannelSecretRow, error)
 	GetKey(ctx context.Context, arg GetKeyParams) (GetKeyRow, error)
@@ -46,12 +48,13 @@ type Querier interface {
 	InsertUsageLog(ctx context.Context, arg InsertUsageLogParams) (int64, error)
 	ListBalanceTransactions(ctx context.Context, arg ListBalanceTransactionsParams) ([]ListBalanceTransactionsRow, error)
 	ListCatalogModels(ctx context.Context, enabledOnly bool) ([]ListCatalogModelsRow, error)
+	ListChannelHealth(ctx context.Context) ([]ChannelHealth, error)
 	ListChannelModels(ctx context.Context, channelID int64) ([]ListChannelModelsRow, error)
 	ListChannels(ctx context.Context) ([]ListChannelsRow, error)
 	ListKeys(ctx context.Context, arg ListKeysParams) ([]ListKeysRow, error)
 	ListPricing(ctx context.Context) ([]ListPricingRow, error)
 	ListRateLimitRules(ctx context.Context, arg ListRateLimitRulesParams) ([]ListRateLimitRulesRow, error)
-	ListRouteCandidates(ctx context.Context, modelName string) ([]ListRouteCandidatesRow, error)
+	ListRouteCandidates(ctx context.Context, arg ListRouteCandidatesParams) ([]ListRouteCandidatesRow, error)
 	ListUsageLogs(ctx context.Context, arg ListUsageLogsParams) ([]ListUsageLogsRow, error)
 	ListUserKeys(ctx context.Context, arg ListUserKeysParams) ([]ListUserKeysRow, error)
 	ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error)
@@ -72,6 +75,7 @@ type Querier interface {
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (int64, error)
 	UpdateUserBalance(ctx context.Context, arg UpdateUserBalanceParams) (int64, error)
 	UpdateUserStatus(ctx context.Context, arg UpdateUserStatusParams) (int64, error)
+	UpsertChannelHealth(ctx context.Context, arg UpsertChannelHealthParams) error
 	UpsertPricing(ctx context.Context, arg UpsertPricingParams) (int64, error)
 }
 
