@@ -16,8 +16,8 @@ func seedKey(t *testing.T, st *Store, userID int) (keyID int, keyHash string) {
 	if err != nil {
 		t.Fatalf("CreateKey: %v", err)
 	}
-	fullKey := created["full_key"].(string)
-	return created["id"].(int), crypto.HashKey(fullKey)
+	fullKey := created.FullKey
+	return created.ID, crypto.HashKey(fullKey)
 }
 
 func TestAuthenticateKey(t *testing.T) {
@@ -72,8 +72,8 @@ func TestDebitUserBalance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("DebitUserBalance: %v", err)
 	}
-	if result["balance_after"] != "6.500000" {
-		t.Fatalf("balance_after = %v, want 6.500000", result["balance_after"])
+	if result.BalanceAfter != "6.500000" {
+		t.Fatalf("balance_after = %v, want 6.500000", result.BalanceAfter)
 	}
 
 	if _, err := st.DebitUserBalance(1, "100.000000", "too much"); !errors.Is(err, store.ErrInvalid) {
@@ -88,8 +88,8 @@ func TestDebitUserBalance(t *testing.T) {
 
 	// Balance must remain unchanged after the rejected debits.
 	balance, _ := st.GetUserBalance(1)
-	if balance["available_balance"] != "6.500000" {
-		t.Fatalf("balance changed by rejected debit: %v", balance["available_balance"])
+	if balance.AvailableBalance != "6.500000" {
+		t.Fatalf("balance changed by rejected debit: %v", balance.AvailableBalance)
 	}
 }
 
@@ -121,8 +121,8 @@ func TestDebitUserBalanceConcurrent(t *testing.T) {
 	}
 
 	balance, _ := st.GetUserBalance(1)
-	if balance["available_balance"] != "80.000000" {
-		t.Fatalf("balance = %v, want 80.000000", balance["available_balance"])
+	if balance.AvailableBalance != "80.000000" {
+		t.Fatalf("balance = %v, want 80.000000", balance.AvailableBalance)
 	}
 }
 
@@ -133,7 +133,7 @@ func TestGetPricingAndRouteCandidates(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return created["id"].(int)
+		return created.ID
 	}
 	channelA := create("A", 1, 10, 100, "5.000000")
 	channelB := create("B", 1, 10, 200, "")
@@ -158,7 +158,7 @@ func TestGetPricingAndRouteCandidates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetPricing: %v", err)
 	}
-	if pricing["input_price_per_1m"] != "0.10000000" || pricing["upstream_model"] != "up-gpt" {
+	if pricing.InputPricePer1M != "0.10000000" || pricing.UpstreamModel != "up-gpt" {
 		t.Fatalf("unexpected pricing: %+v", pricing)
 	}
 	if _, err := st.GetPricing(channelA, "missing"); !errors.Is(err, store.ErrNotFound) {
@@ -172,19 +172,19 @@ func TestGetPricingAndRouteCandidates(t *testing.T) {
 	if candidates.Total != 3 {
 		t.Fatalf("candidates total = %d, want 3", candidates.Total)
 	}
-	first := candidates.List[0].(map[string]any)
-	if first["channel_id"] != channelB || first["weight"] != 200 {
+	first := candidates.List[0]
+	if first.ChannelID != channelB || first.Weight != 200 {
 		t.Fatalf("first candidate = %+v, want channel B (weight 200)", first)
 	}
-	second := candidates.List[1].(map[string]any)
-	if second["channel_id"] != channelA {
+	second := candidates.List[1]
+	if second.ChannelID != channelA {
 		t.Fatalf("second candidate = %+v, want channel A", second)
 	}
-	third := candidates.List[2].(map[string]any)
-	if third["channel_id"] != channelC {
+	third := candidates.List[2]
+	if third.ChannelID != channelC {
 		t.Fatalf("third candidate = %+v, want channel C", third)
 	}
-	if third["upstream_model"] != "up-gpt" {
+	if third.UpstreamModel != "up-gpt" {
 		t.Fatalf("candidate missing upstream_model: %+v", third)
 	}
 }

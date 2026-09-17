@@ -35,7 +35,7 @@ func (s *Store) ResetChannelHealth(channelID int) error {
 	return nil
 }
 
-func (s *Store) ListChannelHealth() (domain.ListResponse, error) {
+func (s *Store) ListChannelHealth() (domain.ListResponse[domain.ChannelHealthDTO], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -45,12 +45,12 @@ func (s *Store) ListChannelHealth() (domain.ListResponse, error) {
 	}
 	sort.Ints(ids)
 
-	list := []any{}
+	list := []domain.ChannelHealthDTO{}
 	for _, id := range ids {
 		health := s.channelHealthLocked(id)
 		list = append(list, channelHealthDTO(&health))
 	}
-	return domain.ListResponse{List: list, Total: len(ids)}, nil
+	return domain.ListResponse[domain.ChannelHealthDTO]{List: list, Total: len(ids)}, nil
 }
 
 // channelHealthLocked returns the channel health with the lazy open ->
@@ -63,14 +63,6 @@ func (s *Store) channelHealthLocked(channelID int) domain.ChannelHealth {
 	return domain.EvaluateChannelHealth(*current, s.now(), s.breaker)
 }
 
-func channelHealthDTO(health *domain.ChannelHealth) map[string]any {
-	return map[string]any{
-		"channel_id":           health.ChannelID,
-		"state":                string(health.State),
-		"consecutive_failures": health.ConsecutiveFailures,
-		"success_count":        health.SuccessCount,
-		"failure_count":        health.FailureCount,
-		"opened_at":            health.OpenedAt,
-		"updated_at":           health.UpdatedAt,
-	}
+func channelHealthDTO(health *domain.ChannelHealth) domain.ChannelHealthDTO {
+	return domain.ChannelHealthDTO{ChannelID: health.ChannelID, State: string(health.State), ConsecutiveFailures: health.ConsecutiveFailures, SuccessCount: health.SuccessCount, FailureCount: health.FailureCount, OpenedAt: health.OpenedAt, UpdatedAt: health.UpdatedAt}
 }

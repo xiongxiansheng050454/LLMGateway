@@ -15,11 +15,36 @@ type Channel struct {
 	Balance  *string
 }
 
+type ChannelDTO struct {
+	ID         int     `json:"id"`
+	Name       string  `json:"name"`
+	BaseURL    string  `json:"base_url"`
+	AuthType   string  `json:"auth_type"`
+	Status     int     `json:"status"`
+	Weight     int     `json:"weight"`
+	Priority   int     `json:"priority"`
+	Balance    *string `json:"balance"`
+	ModelCount int     `json:"model_count"`
+}
+
 type ChannelModel struct {
 	ID            int    `json:"id"`
 	ModelName     string `json:"model_name"`
 	UpstreamModel string `json:"upstream_model"`
 	Enabled       bool   `json:"enabled"`
+}
+
+type CatalogChannelDTO struct {
+	ChannelID     int    `json:"channel_id"`
+	ChannelName   string `json:"channel_name"`
+	UpstreamModel string `json:"upstream_model"`
+	Enabled       bool   `json:"enabled"`
+}
+
+type CatalogModelDTO struct {
+	ModelName string              `json:"model_name"`
+	Status    int                 `json:"status"`
+	Channels  []CatalogChannelDTO `json:"channels"`
 }
 
 type Pricing struct {
@@ -30,6 +55,40 @@ type Pricing struct {
 	OutputPricePer1M      string
 	CachedInputPricePer1M string
 	Currency              string
+}
+
+type PricingDTO struct {
+	ID                    int    `json:"id"`
+	ChannelID             int    `json:"channel_id"`
+	ChannelName           string `json:"channel_name"`
+	ModelName             string `json:"model_name"`
+	UpstreamModel         string `json:"upstream_model"`
+	InputPricePer1M       string `json:"input_price_per_1m"`
+	OutputPricePer1M      string `json:"output_price_per_1m"`
+	CachedInputPricePer1M string `json:"cached_input_price_per_1m"`
+	Currency              string `json:"currency"`
+}
+
+type RouteCandidate struct {
+	ChannelID     int
+	ChannelName   string
+	UpstreamModel string
+	Priority      int
+	Weight        int
+	Balance       *string
+}
+
+type ChannelTestItemDTO struct {
+	ModelAlias    string `json:"model_alias"`
+	UpstreamModel string `json:"upstream_model"`
+	HTTPStatus    int    `json:"http_status"`
+	LatencyMs     int    `json:"latency_ms"`
+	OK            bool   `json:"ok"`
+	Error         string `json:"error"`
+}
+
+type ChannelTestResultDTO struct {
+	List []ChannelTestItemDTO `json:"list"`
 }
 
 type ChannelInput struct {

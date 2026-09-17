@@ -31,17 +31,13 @@ func (a *Server) checkRateLimit(auth *domain.AuthContext, model string) error {
 		return err
 	}
 	for _, item := range result.List {
-		rule, ok := item.(map[string]any)
-		if !ok {
+		if item.Metric != "rpm" || item.Action != "reject" {
 			continue
 		}
-		if toString(rule["metric"]) != "rpm" || toString(rule["action"]) != "reject" {
+		if !matchesTarget(item, auth, model) {
 			continue
 		}
-		if !matchesTarget(rule, auth, model) {
-			continue
-		}
-		limit := toInt64(rule["limit_value"])
+		limit := item.LimitValue
 		if limit <= 0 {
 			continue
 		}
@@ -61,19 +57,16 @@ func (a *Server) checkRateLimit(auth *domain.AuthContext, model string) error {
 // Known limitation: rpm counting is per user/key, not per model or channel, so
 // a model-scoped rule counts all of that user's requests. channel scoping is not
 // evaluated because the channel is not chosen until after the limit check.
-func matchesTarget(rule map[string]any, auth *domain.AuthContext, model string) bool {
-	targetType := toString(rule["target_type"])
-	targetValue := toString(rule["target_value"])
-
-	switch targetType {
+func matchesTarget(rule domain.RateLimitRuleDTO, auth *domain.AuthContext, model string) bool {
+	switch rule.TargetType {
 	case "global":
 		return true
 	case "user":
-		return targetValue == "*" || targetValue == strconv.Itoa(auth.UserID)
+		return rule.TargetValue == "*" || rule.TargetValue == strconv.Itoa(auth.UserID)
 	case "api_key":
-		return targetValue == "*" || targetValue == strconv.Itoa(auth.KeyID)
+		return rule.TargetValue == "*" || rule.TargetValue == strconv.Itoa(auth.KeyID)
 	case "model":
-		return targetValue == "*" || targetValue == model
+		return rule.TargetValue == "*" || rule.TargetValue == model
 	default:
 		// channel scoping is not known before routing and is not enforced here.
 		return false

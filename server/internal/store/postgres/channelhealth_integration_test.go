@@ -12,7 +12,7 @@ import (
 )
 
 func createHealthTestChannel(t *testing.T, st interface {
-	CreateChannel(domain.ChannelInput) (map[string]any, error)
+	CreateChannel(domain.ChannelInput) (domain.ChannelDTO, error)
 	CreateChannelModel(int, domain.ChannelModel) (domain.ChannelModel, error)
 }) int {
 	t.Helper()
@@ -20,7 +20,7 @@ func createHealthTestChannel(t *testing.T, st interface {
 	if err != nil {
 		t.Fatal(err)
 	}
-	channelID := created["id"].(int)
+	channelID := created.ID
 	if _, err := st.CreateChannelModel(channelID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
@@ -172,7 +172,7 @@ func runHealthScenario(t *testing.T, st store.Store, clock *time.Time) healthSna
 	if err != nil {
 		t.Fatal(err)
 	}
-	channelID := created["id"].(int)
+	channelID := created.ID
 
 	var health domain.ChannelHealth
 	for i := 0; i < 5; i++ {
@@ -202,7 +202,7 @@ func runHealthScenario(t *testing.T, st store.Store, clock *time.Time) healthSna
 	if err != nil {
 		t.Fatal(err)
 	}
-	det, err := st.RecordChannelFailure(second["id"].(int), domain.FailureUpstream401)
+	det, err := st.RecordChannelFailure(second.ID, domain.FailureUpstream401)
 	if err != nil {
 		t.Fatal(err)
 	}

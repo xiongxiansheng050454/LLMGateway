@@ -90,17 +90,17 @@ func (s *Store) ResetChannelHealth(channelID int) error {
 	return nil
 }
 
-func (s *Store) ListChannelHealth() (domain.ListResponse, error) {
+func (s *Store) ListChannelHealth() (domain.ListResponse[domain.ChannelHealthDTO], error) {
 	rows, err := s.queries.ListChannelHealth(context.Background())
 	if err != nil {
-		return domain.ListResponse{}, mapError(err)
+		return domain.ListResponse[domain.ChannelHealthDTO]{}, mapError(err)
 	}
-	list := []any{}
+	list := []domain.ChannelHealthDTO{}
 	for _, row := range rows {
 		health := domain.EvaluateChannelHealth(channelHealthFromRow(row), s.now(), s.breaker)
 		list = append(list, channelHealthDTO(&health))
 	}
-	return domain.ListResponse{List: list, Total: len(list)}, nil
+	return domain.ListResponse[domain.ChannelHealthDTO]{List: list, Total: len(list)}, nil
 }
 
 func channelHealthFromRow(row sqlc.ChannelHealth) domain.ChannelHealth {
@@ -119,14 +119,6 @@ func channelHealthFromRow(row sqlc.ChannelHealth) domain.ChannelHealth {
 	}
 }
 
-func channelHealthDTO(health *domain.ChannelHealth) map[string]any {
-	return map[string]any{
-		"channel_id":           health.ChannelID,
-		"state":                string(health.State),
-		"consecutive_failures": health.ConsecutiveFailures,
-		"success_count":        health.SuccessCount,
-		"failure_count":        health.FailureCount,
-		"opened_at":            health.OpenedAt,
-		"updated_at":           health.UpdatedAt,
-	}
+func channelHealthDTO(health *domain.ChannelHealth) domain.ChannelHealthDTO {
+	return domain.ChannelHealthDTO{ChannelID: health.ChannelID, State: string(health.State), ConsecutiveFailures: health.ConsecutiveFailures, SuccessCount: health.SuccessCount, FailureCount: health.FailureCount, OpenedAt: health.OpenedAt, UpdatedAt: health.UpdatedAt}
 }

@@ -16,11 +16,11 @@ func TestUserCRUDAndBalance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	if created["id"] != 1 || created["user_group"] != "default" || created["status"] != "active" {
+	if created.ID != 1 || created.UserGroup != "default" || created.Status != "active" {
 		t.Fatalf("unexpected user: %+v", created)
 	}
-	balance := created["balance"].(map[string]any)
-	if balance["available_balance"] != "0.000000" || balance["frozen_balance"] != "0.000000" {
+	balance := created.Balance
+	if balance.AvailableBalance != "0.000000" || balance.FrozenBalance != "0.000000" {
 		t.Fatalf("unexpected initial balance: %+v", balance)
 	}
 
@@ -41,8 +41,8 @@ func TestUserCRUDAndBalance(t *testing.T) {
 	if listed.Total != 1 {
 		t.Fatalf("ListUsers total = %d, want 1", listed.Total)
 	}
-	row := listed.List[0].(map[string]any)
-	if row["nickname"] != "Alice2" || row["user_group"] != "vip" || row["status"] != "suspended" {
+	row := listed.List[0]
+	if row.Nickname != "Alice2" || row.UserGroup != "vip" || row.Status != "suspended" {
 		t.Fatalf("unexpected listed user: %+v", row)
 	}
 
@@ -67,16 +67,16 @@ func TestRechargeNormalizesAndIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RechargeUser: %v", err)
 	}
-	if result["balance_after"] != "50.500000" {
-		t.Fatalf("balance_after = %v, want 50.500000", result["balance_after"])
+	if result.BalanceAfter != "50.500000" {
+		t.Fatalf("balance_after = %v, want 50.500000", result.BalanceAfter)
 	}
 
 	balance, err := st.GetUserBalance(1)
 	if err != nil {
 		t.Fatalf("GetUserBalance: %v", err)
 	}
-	if balance["available_balance"] != "50.500000" {
-		t.Fatalf("available_balance = %v", balance["available_balance"])
+	if balance.AvailableBalance != "50.500000" {
+		t.Fatalf("available_balance = %v", balance.AvailableBalance)
 	}
 
 	// Same related_order_id must not double-credit.
@@ -88,12 +88,12 @@ func TestRechargeNormalizesAndIsIdempotent(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if first["balance_after"] != second["balance_after"] {
-		t.Fatalf("idempotent recharge mismatch: %v vs %v", first["balance_after"], second["balance_after"])
+	if first.BalanceAfter != second.BalanceAfter {
+		t.Fatalf("idempotent recharge mismatch: %v vs %v", first.BalanceAfter, second.BalanceAfter)
 	}
 	balance, _ = st.GetUserBalance(1)
-	if balance["available_balance"] != "60.500000" {
-		t.Fatalf("available_balance = %v, want 60.500000", balance["available_balance"])
+	if balance.AvailableBalance != "60.500000" {
+		t.Fatalf("available_balance = %v, want 60.500000", balance.AvailableBalance)
 	}
 
 	if _, err := st.RechargeUser(1, domain.RechargeInput{Amount: "abc"}); !errors.Is(err, store.ErrInvalid) {
@@ -125,11 +125,11 @@ func TestKeysLifecycleHidesPlaintext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateKey: %v", err)
 	}
-	fullKey, _ := created["full_key"].(string)
+	fullKey := created.FullKey
 	if fullKey == "" {
 		t.Fatalf("full_key missing: %+v", created)
 	}
-	keyID := created["id"].(int)
+	keyID := created.ID
 
 	// The stored record must keep only the hash.
 	key := st.keys[keyID]
@@ -141,11 +141,8 @@ func TestKeysLifecycleHidesPlaintext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListUserKeys: %v", err)
 	}
-	row := listed.List[0].(map[string]any)
-	if _, ok := row["full_key"]; ok {
-		t.Fatalf("list leaked full_key: %+v", row)
-	}
-	if row["key_name"] != "default" || row["prefix"] != "sk-" || row["is_active"] != true {
+	row := listed.List[0]
+	if row.KeyName != "default" || row.Prefix != "sk-" || row.IsActive != true {
 		t.Fatalf("unexpected key row: %+v", row)
 	}
 
@@ -161,7 +158,7 @@ func TestKeysLifecycleHidesPlaintext(t *testing.T) {
 		t.Fatalf("UpdateKey: %v", err)
 	}
 	listed, _ = st.ListUserKeys(1, 1, 20)
-	if listed.List[0].(map[string]any)["is_active"] != false {
+	if listed.List[0].IsActive != false {
 		t.Fatal("key was not deactivated")
 	}
 
@@ -169,7 +166,7 @@ func TestKeysLifecycleHidesPlaintext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ResetKey: %v", err)
 	}
-	newKey, _ := reset["full_key"].(string)
+	newKey := reset.FullKey
 	if newKey == "" || newKey == fullKey {
 		t.Fatalf("reset did not produce a new key: %q", newKey)
 	}
@@ -204,16 +201,15 @@ func TestCreateKeyNormalizesExpiresAtToUTC(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateKey: %v", err)
 	}
-	keyID := created["id"].(int)
+	keyID := created.ID
 
 	listed, err := st.ListUserKeys(1, 1, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
-	row := listed.List[0].(map[string]any)
-	expires, ok := row["expires_at"].(*string)
-	if !ok || expires == nil || *expires != "2026-12-31T16:00:00Z" {
-		t.Fatalf("expires_at = %v, want 2026-12-31T16:00:00Z (UTC)", row["expires_at"])
+	row := listed.List[0]
+	if row.ExpiresAt == nil || *row.ExpiresAt != "2026-12-31T16:00:00Z" {
+		t.Fatalf("expires_at = %v, want 2026-12-31T16:00:00Z (UTC)", row.ExpiresAt)
 	}
 	if keyID == 0 {
 		t.Fatal("unexpected key id")

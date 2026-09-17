@@ -7,7 +7,7 @@ import (
 	"LLMGateway/server/internal/store"
 )
 
-func (s *Store) ListRateLimits(enabled *bool, page, pageSize int) (domain.ListResponse, error) {
+func (s *Store) ListRateLimits(enabled *bool, page, pageSize int) (domain.ListResponse[domain.RateLimitRuleDTO], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -26,17 +26,17 @@ func (s *Store) ListRateLimits(enabled *bool, page, pageSize int) (domain.ListRe
 	})
 
 	start, end := pageBounds(len(rules), page, pageSize)
-	list := []any{}
+	list := []domain.RateLimitRuleDTO{}
 	for _, rule := range rules[start:end] {
 		list = append(list, rateLimitDTO(rule))
 	}
-	return domain.ListResponse{List: list, Total: len(rules)}, nil
+	return domain.ListResponse[domain.RateLimitRuleDTO]{List: list, Total: len(rules)}, nil
 }
 
-func (s *Store) CreateRateLimit(in domain.RateLimitInput) (map[string]any, error) {
+func (s *Store) CreateRateLimit(in domain.RateLimitInput) (domain.RateLimitRuleDTO, error) {
 	rule, err := domain.NormalizeRateLimit(in, nil)
 	if err != nil {
-		return nil, err
+		return domain.RateLimitRuleDTO{}, err
 	}
 
 	s.mu.Lock()
@@ -48,17 +48,17 @@ func (s *Store) CreateRateLimit(in domain.RateLimitInput) (map[string]any, error
 	return rateLimitDTO(&stored), nil
 }
 
-func (s *Store) UpdateRateLimit(id int, in domain.RateLimitInput) (map[string]any, error) {
+func (s *Store) UpdateRateLimit(id int, in domain.RateLimitInput) (domain.RateLimitRuleDTO, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	existing, ok := s.rateLimits[id]
 	if !ok {
-		return nil, store.ErrNotFound
+		return domain.RateLimitRuleDTO{}, store.ErrNotFound
 	}
 
 	rule, err := domain.NormalizeRateLimit(in, existing)
 	if err != nil {
-		return nil, err
+		return domain.RateLimitRuleDTO{}, err
 	}
 	rule.ID = id
 	*s.rateLimits[id] = rule
@@ -75,18 +75,6 @@ func (s *Store) DeleteRateLimit(id int) error {
 	return nil
 }
 
-func rateLimitDTO(rule *domain.RateLimitRule) map[string]any {
-	return map[string]any{
-		"id":             rule.ID,
-		"rule_name":      rule.RuleName,
-		"target_type":    rule.TargetType,
-		"target_value":   rule.TargetValue,
-		"metric":         rule.Metric,
-		"limit_value":    rule.LimitValue,
-		"window_seconds": rule.WindowSeconds,
-		"action":         rule.Action,
-		"priority":       rule.Priority,
-		"enabled":        rule.Enabled,
-		"extras":         rule.Extras,
-	}
+func rateLimitDTO(rule *domain.RateLimitRule) domain.RateLimitRuleDTO {
+	return domain.RateLimitRuleDTO{ID: rule.ID, RuleName: rule.RuleName, TargetType: rule.TargetType, TargetValue: rule.TargetValue, Metric: rule.Metric, LimitValue: rule.LimitValue, WindowSeconds: rule.WindowSeconds, Action: rule.Action, Priority: rule.Priority, Enabled: rule.Enabled, Extras: rule.Extras}
 }

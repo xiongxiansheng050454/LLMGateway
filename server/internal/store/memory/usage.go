@@ -41,9 +41,9 @@ func (s *Store) InsertUsageLog(in domain.UsageLogInput) (int, error) {
 	return log.ID, nil
 }
 
-func (s *Store) ListUsageLogs(filter domain.UsageLogFilter) (domain.ListResponse, error) {
+func (s *Store) ListUsageLogs(filter domain.UsageLogFilter) (domain.ListResponse[domain.UsageLogDTO], error) {
 	if err := domain.ValidateTimeRange(filter.StartTime, filter.EndTime); err != nil {
-		return domain.ListResponse{}, err
+		return domain.ListResponse[domain.UsageLogDTO]{}, err
 	}
 
 	s.mu.Lock()
@@ -51,7 +51,7 @@ func (s *Store) ListUsageLogs(filter domain.UsageLogFilter) (domain.ListResponse
 
 	rows, err := s.filterUsageLogsLocked(filter)
 	if err != nil {
-		return domain.ListResponse{}, err
+		return domain.ListResponse[domain.UsageLogDTO]{}, err
 	}
 	sort.Slice(rows, func(i, j int) bool {
 		if rows[i].CreatedAt != rows[j].CreatedAt {
@@ -61,14 +61,14 @@ func (s *Store) ListUsageLogs(filter domain.UsageLogFilter) (domain.ListResponse
 	})
 
 	start, end := pageBounds(len(rows), filter.Page, filter.PageSize)
-	list := []any{}
+	list := []domain.UsageLogDTO{}
 	for _, log := range rows[start:end] {
 		list = append(list, usageLogDTO(&log))
 	}
-	return domain.ListResponse{List: list, Total: len(rows)}, nil
+	return domain.ListResponse[domain.UsageLogDTO]{List: list, Total: len(rows)}, nil
 }
 
-func (s *Store) GetUsageLog(id int) (map[string]any, error) {
+func (s *Store) GetUsageLog(id int) (domain.UsageLogDTO, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.usageLogs {
@@ -76,7 +76,7 @@ func (s *Store) GetUsageLog(id int) (map[string]any, error) {
 			return usageLogDTO(&s.usageLogs[i]), nil
 		}
 	}
-	return nil, store.ErrNotFound
+	return domain.UsageLogDTO{}, store.ErrNotFound
 }
 
 func (s *Store) CountRequestsSince(userID int, apiKeyID *int, since string) (int, error) {
@@ -107,23 +107,14 @@ func (s *Store) CountRequestsSince(userID int, apiKeyID *int, since string) (int
 	return count, nil
 }
 
-func (s *Store) StatsOverview(startTime, endTime string) (map[string]any, error) {
+func (s *Store) StatsOverview(startTime, endTime string) (domain.StatsOverviewDTO, error) {
 	start, end, err := parseRange(startTime, endTime)
 	if err != nil {
-		return nil, err
+		return domain.StatsOverviewDTO{}, err
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-
-	overview := map[string]any{
-		"request_count":     0,
-		"success_count":     0,
-		"error_count":       0,
-		"total_tokens":      0,
-		"total_cost":        "0.000000",
-		"active_user_count": 0,
-	}
 
 	var requests, success, errors, tokens int
 	cost := money.Amount(0)
@@ -147,18 +138,12 @@ func (s *Store) StatsOverview(startTime, endTime string) (map[string]any, error)
 		}
 	}
 
-	overview["request_count"] = requests
-	overview["success_count"] = success
-	overview["error_count"] = errors
-	overview["total_tokens"] = tokens
-	overview["total_cost"] = money.Format6(cost)
-	overview["active_user_count"] = len(users)
-	return overview, nil
+	return domain.StatsOverviewDTO{RequestCount: int64(requests), SuccessCount: int64(success), ErrorCount: int64(errors), TotalTokens: int64(tokens), TotalCost: money.Format6(cost), ActiveUserCount: int64(len(users))}, nil
 }
 
-func (s *Store) StatsDaily(dateFrom, dateTo string, page, pageSize int) (domain.ListResponse, error) {
+func (s *Store) StatsDaily(dateFrom, dateTo string, page, pageSize int) (domain.ListResponse[domain.StatsDailyDTO], error) {
 	if err := domain.ValidateDateRange(dateFrom, dateTo); err != nil {
-		return domain.ListResponse{}, err
+		return domain.ListResponse[domain.StatsDailyDTO]{}, err
 	}
 
 	s.mu.Lock()
@@ -198,25 +183,18 @@ func (s *Store) StatsDaily(dateFrom, dateTo string, page, pageSize int) (domain.
 	sort.Strings(dates)
 
 	start, end := pageBounds(len(dates), page, pageSize)
-	list := []any{}
+	list := []domain.StatsDailyDTO{}
 	for _, date := range dates[start:end] {
 		entry := byDate[date]
-		list = append(list, map[string]any{
-			"stat_date":     date,
-			"request_count": entry.requests,
-			"success_count": entry.success,
-			"error_count":   entry.errors,
-			"total_tokens":  entry.tokens,
-			"total_cost":    money.Format6(entry.cost),
-		})
+		list = append(list, domain.StatsDailyDTO{StatDate: date, RequestCount: int64(entry.requests), SuccessCount: int64(entry.success), ErrorCount: int64(entry.errors), TotalTokens: int64(entry.tokens), TotalCost: money.Format6(entry.cost)})
 	}
-	return domain.ListResponse{List: list, Total: len(dates)}, nil
+	return domain.ListResponse[domain.StatsDailyDTO]{List: list, Total: len(dates)}, nil
 }
 
-func (s *Store) StatsChannels(startTime, endTime string) (domain.ListResponse, error) {
+func (s *Store) StatsChannels(startTime, endTime string) (domain.ListResponse[domain.StatsChannelDTO], error) {
 	start, end, err := parseRange(startTime, endTime)
 	if err != nil {
-		return domain.ListResponse{}, err
+		return domain.ListResponse[domain.StatsChannelDTO]{}, err
 	}
 
 	s.mu.Lock()
@@ -262,20 +240,12 @@ func (s *Store) StatsChannels(startTime, endTime string) (domain.ListResponse, e
 		return order[i] < order[j]
 	})
 
-	list := []any{}
+	list := []domain.StatsChannelDTO{}
 	for _, channelID := range order {
 		entry := byChannel[channelID]
-		list = append(list, map[string]any{
-			"channel_id":    channelID,
-			"channel_name":  entry.name,
-			"request_count": entry.requests,
-			"success_count": entry.success,
-			"error_count":   entry.errors,
-			"total_tokens":  entry.tokens,
-			"total_cost":    money.Format6(entry.cost),
-		})
+		list = append(list, domain.StatsChannelDTO{ChannelID: channelID, ChannelName: entry.name, RequestCount: int64(entry.requests), SuccessCount: int64(entry.success), ErrorCount: int64(entry.errors), TotalTokens: int64(entry.tokens), TotalCost: money.Format6(entry.cost)})
 	}
-	return domain.ListResponse{List: list}, nil
+	return domain.ListResponse[domain.StatsChannelDTO]{List: list}, nil
 }
 
 // orZero6/orZero8 mirror the PostgreSQL NOT NULL DEFAULT 0 columns so both
@@ -337,30 +307,8 @@ func (s *Store) channelNameLocked(channelID *int) string {
 	return ""
 }
 
-func usageLogDTO(log *domain.UsageLog) map[string]any {
-	return map[string]any{
-		"id":                       log.ID,
-		"request_id":               log.RequestID,
-		"user_id":                  log.UserID,
-		"api_key_id":               log.APIKeyID,
-		"channel_id":               log.ChannelID,
-		"channel_name":             log.ChannelName,
-		"model":                    log.Model,
-		"upstream_model":           log.UpstreamModel,
-		"input_tokens":             log.InputTokens,
-		"output_tokens":            log.OutputTokens,
-		"cached_input_tokens":      log.CachedInputTokens,
-		"total_tokens":             log.TotalTokens,
-		"unit_price_input_per_1m":  log.UnitPriceInputPer1M,
-		"unit_price_output_per_1m": log.UnitPriceOutputPer1M,
-		"total_cost":               log.TotalCost,
-		"duration_ms":              log.DurationMs,
-		"ttft_ms":                  log.TTFTMs,
-		"status":                   log.Status,
-		"error_code":               log.ErrorCode,
-		"client_ip":                log.ClientIP,
-		"created_at":               log.CreatedAt,
-	}
+func usageLogDTO(log *domain.UsageLog) domain.UsageLogDTO {
+	return domain.UsageLogDTO{ID: log.ID, RequestID: log.RequestID, UserID: log.UserID, APIKeyID: log.APIKeyID, ChannelID: log.ChannelID, ChannelName: log.ChannelName, Model: log.Model, UpstreamModel: log.UpstreamModel, InputTokens: int64(log.InputTokens), OutputTokens: int64(log.OutputTokens), CachedInputTokens: int64(log.CachedInputTokens), TotalTokens: int64(log.TotalTokens), UnitPriceInputPer1M: log.UnitPriceInputPer1M, UnitPriceOutputPer1M: log.UnitPriceOutputPer1M, TotalCost: log.TotalCost, DurationMs: int64(log.DurationMs), TTFTMs: log.TTFTMs, Status: log.Status, ErrorCode: log.ErrorCode, ClientIP: log.ClientIP, CreatedAt: log.CreatedAt}
 }
 
 func parseRange(startTime, endTime string) (time.Time, time.Time, error) {

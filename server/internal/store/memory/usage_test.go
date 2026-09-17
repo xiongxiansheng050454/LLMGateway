@@ -41,8 +41,8 @@ func TestUsageLogsFilterAndPaging(t *testing.T) {
 		t.Fatalf("total = %d, want 3", all.Total)
 	}
 	// Ordered by created_at DESC.
-	first := all.List[0].(map[string]any)
-	if first["model"] != "gpt-4o-mini" || first["status"] != "success" {
+	first := all.List[0]
+	if first.Model != "gpt-4o-mini" || first.Status != "success" {
 		t.Fatalf("unexpected first row: %+v", first)
 	}
 
@@ -109,10 +109,10 @@ func TestInsertUsageLogResolvesChannelName(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if dto["channel_name"] != "OpenAI" {
-		t.Fatalf("channel_name = %v, want OpenAI", dto["channel_name"])
+	if dto.ChannelName != "OpenAI" {
+		t.Fatalf("channel_name = %v, want OpenAI", dto.ChannelName)
 	}
-	if dto["created_at"] == "" {
+	if dto.CreatedAt == "" {
 		t.Fatal("created_at should be set")
 	}
 }
@@ -124,7 +124,7 @@ func TestStatsEmptyReturnsZeroValues(t *testing.T) {
 	if err != nil {
 		t.Fatalf("StatsOverview: %v", err)
 	}
-	if overview["request_count"] != 0 || overview["total_cost"] != "0.000000" || overview["active_user_count"] != 0 {
+	if overview.RequestCount != 0 || overview.TotalCost != "0.000000" || overview.ActiveUserCount != 0 {
 		t.Fatalf("unexpected empty overview: %+v", overview)
 	}
 
@@ -161,10 +161,10 @@ func TestStatsAggregation(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if overview["request_count"] != 2 || overview["success_count"] != 1 || overview["error_count"] != 1 {
+	if overview.RequestCount != 2 || overview.SuccessCount != 1 || overview.ErrorCount != 1 {
 		t.Fatalf("unexpected overview counts: %+v", overview)
 	}
-	if overview["total_tokens"] != 300 || overview["total_cost"] != "0.003000" || overview["active_user_count"] != 1 {
+	if overview.TotalTokens != 300 || overview.TotalCost != "0.003000" || overview.ActiveUserCount != 1 {
 		t.Fatalf("unexpected overview aggregates: %+v", overview)
 	}
 
@@ -175,8 +175,8 @@ func TestStatsAggregation(t *testing.T) {
 	if daily.Total != 2 {
 		t.Fatalf("daily total = %d, want 2", daily.Total)
 	}
-	firstDay := daily.List[0].(map[string]any)
-	if firstDay["stat_date"] != "2026-09-16" || firstDay["request_count"] != 2 || firstDay["total_cost"] != "0.003000" {
+	firstDay := daily.List[0]
+	if firstDay.StatDate != "2026-09-16" || firstDay.RequestCount != 2 || firstDay.TotalCost != "0.003000" {
 		t.Fatalf("unexpected first day: %+v", firstDay)
 	}
 
@@ -187,8 +187,8 @@ func TestStatsAggregation(t *testing.T) {
 	if len(channels.List) != 2 {
 		t.Fatalf("channels len = %d, want 2", len(channels.List))
 	}
-	top := channels.List[0].(map[string]any)
-	if top["channel_name"] == "" || top["request_count"] != 1 {
+	top := channels.List[0]
+	if top.ChannelName == "" || top.RequestCount != 1 {
 		t.Fatalf("unexpected channel stat: %+v", top)
 	}
 }

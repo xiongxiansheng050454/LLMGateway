@@ -30,7 +30,7 @@ func seedRoutingStore(t *testing.T) *memory.Store {
 		if err != nil {
 			t.Fatal(err)
 		}
-		return created["id"].(int)
+		return created.ID
 	}
 	low := create("low", 5, 100, "")
 	highA := create("highA", 10, 100, "")

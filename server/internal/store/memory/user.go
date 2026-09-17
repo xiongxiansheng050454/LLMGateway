@@ -17,7 +17,7 @@ func nowRFC3339() string {
 	return time.Now().UTC().Format(time.RFC3339)
 }
 
-func (s *Store) ListUsers(page, pageSize int) (domain.ListResponse, error) {
+func (s *Store) ListUsers(page, pageSize int) (domain.ListResponse[domain.UserDTO], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -28,14 +28,14 @@ func (s *Store) ListUsers(page, pageSize int) (domain.ListResponse, error) {
 	sort.Ints(ids)
 
 	start, end := pageBounds(len(ids), page, pageSize)
-	list := []any{}
+	list := []domain.UserDTO{}
 	for _, id := range ids[start:end] {
 		list = append(list, s.userDTO(s.users[id]))
 	}
-	return domain.ListResponse{List: list, Total: len(ids)}, nil
+	return domain.ListResponse[domain.UserDTO]{List: list, Total: len(ids)}, nil
 }
 
-func (s *Store) CreateUser(in domain.UserInput) (map[string]any, error) {
+func (s *Store) CreateUser(in domain.UserInput) (domain.UserDTO, error) {
 	if in.UserGroup == "" {
 		in.UserGroup = "default"
 	}
@@ -43,7 +43,7 @@ func (s *Store) CreateUser(in domain.UserInput) (map[string]any, error) {
 		in.Status = "active"
 	}
 	if in.Status != "active" && in.Status != "suspended" {
-		return nil, fmt.Errorf("%w: invalid status", store.ErrInvalid)
+		return domain.UserDTO{}, fmt.Errorf("%w: invalid status", store.ErrInvalid)
 	}
 
 	s.mu.Lock()
@@ -54,12 +54,12 @@ func (s *Store) CreateUser(in domain.UserInput) (map[string]any, error) {
 	return s.userDTO(user), nil
 }
 
-func (s *Store) UpdateUser(id int, in domain.UserInput) (map[string]any, error) {
+func (s *Store) UpdateUser(id int, in domain.UserInput) (domain.UserDTO, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	user, ok := s.users[id]
 	if !ok {
-		return nil, store.ErrNotFound
+		return domain.UserDTO{}, store.ErrNotFound
 	}
 	if in.UserGroup != "" {
 		user.UserGroup = in.UserGroup
@@ -68,16 +68,16 @@ func (s *Store) UpdateUser(id int, in domain.UserInput) (map[string]any, error) 
 	return s.userDTO(user), nil
 }
 
-func (s *Store) UpdateUserStatus(id int, status string) (map[string]any, error) {
+func (s *Store) UpdateUserStatus(id int, status string) (domain.UserDTO, error) {
 	if status != "active" && status != "suspended" {
-		return nil, fmt.Errorf("%w: invalid status", store.ErrInvalid)
+		return domain.UserDTO{}, fmt.Errorf("%w: invalid status", store.ErrInvalid)
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	user, ok := s.users[id]
 	if !ok {
-		return nil, store.ErrNotFound
+		return domain.UserDTO{}, store.ErrNotFound
 	}
 	user.Status = status
 	return s.userDTO(user), nil
@@ -104,28 +104,28 @@ func (s *Store) DeleteUser(id int) error {
 	return nil
 }
 
-func (s *Store) RechargeUser(id int, in domain.RechargeInput) (map[string]any, error) {
+func (s *Store) RechargeUser(id int, in domain.RechargeInput) (domain.BalanceUpdateDTO, error) {
 	amount, err := money.Parse6(in.Amount)
 	if err != nil || amount.Cmp(0) <= 0 {
-		return nil, fmt.Errorf("%w: invalid amount", store.ErrInvalid)
+		return domain.BalanceUpdateDTO{}, fmt.Errorf("%w: invalid amount", store.ErrInvalid)
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	user, ok := s.users[id]
 	if !ok {
-		return nil, store.ErrNotFound
+		return domain.BalanceUpdateDTO{}, store.ErrNotFound
 	}
 
 	if in.RelatedOrderID != "" {
 		if existing, ok := s.orders[orderKey(id, in.RelatedOrderID)]; ok {
-			return map[string]any{"balance_after": existing.BalanceAfter}, nil
+			return domain.BalanceUpdateDTO{BalanceAfter: existing.BalanceAfter}, nil
 		}
 	}
 
 	current, err := money.Parse6(user.AvailableBalance)
 	if err != nil {
-		return nil, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
+		return domain.BalanceUpdateDTO{}, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
 	}
 	next := current.Add(amount)
 	user.AvailableBalance = money.Format6(next)
@@ -143,68 +143,68 @@ func (s *Store) RechargeUser(id int, in domain.RechargeInput) (map[string]any, e
 	if in.RelatedOrderID != "" {
 		s.orders[orderKey(id, in.RelatedOrderID)] = tx
 	}
-	return map[string]any{"balance_after": user.AvailableBalance}, nil
+	return domain.BalanceUpdateDTO{BalanceAfter: user.AvailableBalance}, nil
 }
 
-func (s *Store) GetUserBalance(id int) (map[string]any, error) {
+func (s *Store) GetUserBalance(id int) (domain.BalanceDTO, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	user, ok := s.users[id]
 	if !ok {
-		return nil, store.ErrNotFound
+		return domain.BalanceDTO{}, store.ErrNotFound
 	}
 	return balanceDTO(user.AvailableBalance, user.FrozenBalance), nil
 }
 
-func (s *Store) ListBalanceTransactions(userID, page, pageSize int) (domain.ListResponse, error) {
+func (s *Store) ListBalanceTransactions(userID, page, pageSize int) (domain.ListResponse[domain.BalanceTransactionDTO], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.users[userID]; !ok {
-		return domain.ListResponse{}, store.ErrNotFound
+		return domain.ListResponse[domain.BalanceTransactionDTO]{}, store.ErrNotFound
 	}
 
 	rows := s.transactions[userID]
 	sort.Slice(rows, func(i, j int) bool { return rows[i].ID > rows[j].ID })
 	start, end := pageBounds(len(rows), page, pageSize)
-	list := []any{}
+	list := []domain.BalanceTransactionDTO{}
 	for _, tx := range rows[start:end] {
-		list = append(list, map[string]any{"id": tx.ID, "tx_type": tx.TxType, "amount": tx.Amount, "balance_after": tx.BalanceAfter, "created_at": tx.CreatedAt})
+		list = append(list, domain.BalanceTransactionDTO{ID: tx.ID, TxType: tx.TxType, Amount: tx.Amount, BalanceAfter: tx.BalanceAfter, CreatedAt: tx.CreatedAt})
 	}
-	return domain.ListResponse{List: list, Total: len(rows)}, nil
+	return domain.ListResponse[domain.BalanceTransactionDTO]{List: list, Total: len(rows)}, nil
 }
 
-func (s *Store) ListUserKeys(userID, page, pageSize int) (domain.ListResponse, error) {
+func (s *Store) ListUserKeys(userID, page, pageSize int) (domain.ListResponse[domain.ClientKeyDTO], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.users[userID]; !ok {
-		return domain.ListResponse{}, store.ErrNotFound
+		return domain.ListResponse[domain.ClientKeyDTO]{}, store.ErrNotFound
 	}
 	keys := s.sortedKeysLocked(userID)
 	start, end := pageBounds(len(keys), page, pageSize)
-	list := []any{}
+	list := []domain.ClientKeyDTO{}
 	for _, key := range keys[start:end] {
 		list = append(list, keyDTO(key))
 	}
-	return domain.ListResponse{List: list, Total: len(keys)}, nil
+	return domain.ListResponse[domain.ClientKeyDTO]{List: list, Total: len(keys)}, nil
 }
 
-func (s *Store) ListKeys(page, pageSize int) (domain.ListResponse, error) {
+func (s *Store) ListKeys(page, pageSize int) (domain.ListResponse[domain.ClientKeyDTO], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	keys := s.sortedKeysLocked(0)
 	start, end := pageBounds(len(keys), page, pageSize)
-	list := []any{}
+	list := []domain.ClientKeyDTO{}
 	for _, key := range keys[start:end] {
 		list = append(list, keyDTO(key))
 	}
-	return domain.ListResponse{List: list, Total: len(keys)}, nil
+	return domain.ListResponse[domain.ClientKeyDTO]{List: list, Total: len(keys)}, nil
 }
 
-func (s *Store) CreateKey(userID int, in domain.KeyInput) (map[string]any, error) {
+func (s *Store) CreateKey(userID int, in domain.KeyInput) (domain.KeySecretDTO, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.users[userID]; !ok {
-		return nil, store.ErrNotFound
+		return domain.KeySecretDTO{}, store.ErrNotFound
 	}
 
 	keyName := in.KeyName
@@ -222,7 +222,7 @@ func (s *Store) CreateKey(userID int, in domain.KeyInput) (map[string]any, error
 
 	fullKey, err := crypto.GenerateGatewayKey(prefix)
 	if err != nil {
-		return nil, err
+		return domain.KeySecretDTO{}, err
 	}
 
 	key := &memoryKey{
@@ -238,19 +238,19 @@ func (s *Store) CreateKey(userID int, in domain.KeyInput) (map[string]any, error
 	}
 	s.nextKeyID++
 	s.keys[key.id] = key
-	return map[string]any{"id": key.id, "full_key": fullKey}, nil
+	return domain.KeySecretDTO{ID: key.id, FullKey: fullKey}, nil
 }
 
-func (s *Store) UpdateKey(userID, keyID int, in domain.KeyUpdateInput) (map[string]any, error) {
+func (s *Store) UpdateKey(userID, keyID int, in domain.KeyUpdateInput) (domain.ClientKeyDTO, error) {
 	if in.IsActive == nil {
-		return nil, fmt.Errorf("%w: is_active is required", store.ErrInvalid)
+		return domain.ClientKeyDTO{}, fmt.Errorf("%w: is_active is required", store.ErrInvalid)
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	key, ok := s.keys[keyID]
 	if !ok || key.userID != userID {
-		return nil, store.ErrNotFound
+		return domain.ClientKeyDTO{}, store.ErrNotFound
 	}
 	key.isActive = *in.IsActive
 	return keyDTO(key), nil
@@ -267,20 +267,20 @@ func (s *Store) DeleteKey(userID, keyID int) error {
 	return nil
 }
 
-func (s *Store) ResetKey(userID, keyID int) (map[string]any, error) {
+func (s *Store) ResetKey(userID, keyID int) (domain.KeySecretDTO, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	key, ok := s.keys[keyID]
 	if !ok || key.userID != userID {
-		return nil, store.ErrNotFound
+		return domain.KeySecretDTO{}, store.ErrNotFound
 	}
 
 	fullKey, err := crypto.GenerateGatewayKey(key.prefix)
 	if err != nil {
-		return nil, err
+		return domain.KeySecretDTO{}, err
 	}
 	key.keyHash = crypto.HashKey(fullKey)
-	return map[string]any{"full_key": fullKey}, nil
+	return domain.KeySecretDTO{FullKey: fullKey}, nil
 }
 
 func (s *Store) AuthenticateKey(keyHash string) (*domain.AuthContext, error) {
@@ -323,25 +323,25 @@ func (s *Store) UpdateKeyLastUsed(keyID int) error {
 	return nil
 }
 
-func (s *Store) DebitUserBalance(userID int, amount string, description string) (map[string]any, error) {
+func (s *Store) DebitUserBalance(userID int, amount string, description string) (domain.BalanceUpdateDTO, error) {
 	parsed, err := money.Parse6(amount)
 	if err != nil || parsed.Cmp(0) <= 0 {
-		return nil, fmt.Errorf("%w: invalid amount", store.ErrInvalid)
+		return domain.BalanceUpdateDTO{}, fmt.Errorf("%w: invalid amount", store.ErrInvalid)
 	}
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	user, ok := s.users[userID]
 	if !ok {
-		return nil, store.ErrNotFound
+		return domain.BalanceUpdateDTO{}, store.ErrNotFound
 	}
 
 	current, err := money.Parse6(user.AvailableBalance)
 	if err != nil {
-		return nil, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
+		return domain.BalanceUpdateDTO{}, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
 	}
 	if current.Cmp(parsed) < 0 {
-		return nil, fmt.Errorf("%w: insufficient balance", store.ErrInvalid)
+		return domain.BalanceUpdateDTO{}, fmt.Errorf("%w: insufficient balance", store.ErrInvalid)
 	}
 	next := current.Sub(parsed)
 	user.AvailableBalance = money.Format6(next)
@@ -356,33 +356,19 @@ func (s *Store) DebitUserBalance(userID int, amount string, description string) 
 	}
 	s.nextTxID++
 	s.transactions[userID] = append(s.transactions[userID], tx)
-	return map[string]any{"balance_after": user.AvailableBalance}, nil
+	return domain.BalanceUpdateDTO{BalanceAfter: user.AvailableBalance}, nil
 }
 
-func (s *Store) userDTO(user *domain.User) map[string]any {
-	return map[string]any{
-		"id":         user.ID,
-		"nickname":   user.Nickname,
-		"user_group": user.UserGroup,
-		"status":     user.Status,
-		"balance":    balanceDTO(user.AvailableBalance, user.FrozenBalance),
-	}
+func (s *Store) userDTO(user *domain.User) domain.UserDTO {
+	return domain.UserDTO{ID: user.ID, Nickname: user.Nickname, UserGroup: user.UserGroup, Status: user.Status, Balance: balanceDTO(user.AvailableBalance, user.FrozenBalance)}
 }
 
-func balanceDTO(available, frozen string) map[string]any {
-	return map[string]any{"available_balance": available, "frozen_balance": frozen}
+func balanceDTO(available, frozen string) domain.BalanceDTO {
+	return domain.BalanceDTO{AvailableBalance: available, FrozenBalance: frozen}
 }
 
-func keyDTO(key *memoryKey) map[string]any {
-	return map[string]any{
-		"id":           key.id,
-		"user_id":      key.userID,
-		"key_name":     key.keyName,
-		"prefix":       key.prefix,
-		"is_active":    key.isActive,
-		"last_used_at": key.lastUsedAt,
-		"expires_at":   key.expiresAt,
-	}
+func keyDTO(key *memoryKey) domain.ClientKeyDTO {
+	return domain.ClientKeyDTO{ID: key.id, UserID: key.userID, KeyName: key.keyName, Prefix: key.prefix, IsActive: key.isActive, LastUsedAt: key.lastUsedAt, ExpiresAt: key.expiresAt}
 }
 
 func (s *Store) sortedKeysLocked(userID int) []*memoryKey {

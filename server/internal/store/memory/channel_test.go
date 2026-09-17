@@ -12,7 +12,7 @@ func strPtr(value string) *string {
 	return &value
 }
 
-func createTestChannel(t *testing.T, st *Store, balance *string) map[string]any {
+func createTestChannel(t *testing.T, st *Store, balance *string) domain.ChannelDTO {
 	t.Helper()
 	created, err := st.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk-secret", Status: 1, Balance: balance})
 	if err != nil {
@@ -25,13 +25,13 @@ func TestCreateChannelNormalizesBalance(t *testing.T) {
 	st := New()
 
 	created := createTestChannel(t, st, strPtr("10.5"))
-	if got := *(created["balance"].(*string)); got != "10.500000" {
+	if got := *created.Balance; got != "10.500000" {
 		t.Fatalf("balance = %q, want 10.500000", got)
 	}
 
 	empty := createTestChannel(t, st, strPtr(""))
-	if balance, ok := empty["balance"].(*string); !ok || balance != nil {
-		t.Fatalf("empty balance should be nil, got %v", empty["balance"])
+	if empty.Balance != nil {
+		t.Fatalf("empty balance should be nil, got %v", empty.Balance)
 	}
 
 	if _, err := st.CreateChannel(domain.ChannelInput{Name: "bad", BaseURL: "https://api.test", APIKey: "sk-secret", Balance: strPtr("abc")}); !errors.Is(err, store.ErrInvalid) {
@@ -47,7 +47,7 @@ func TestUpdateChannelNormalizesBalance(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateChannel: %v", err)
 	}
-	if got := *(updated["balance"].(*string)); got != "10.500000" {
+	if got := *updated.Balance; got != "10.500000" {
 		t.Fatalf("balance = %q, want 10.500000", got)
 	}
 
@@ -79,7 +79,7 @@ func TestUpsertPricingNormalizesAndValidates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertPricing: %v", err)
 	}
-	if dto["input_price_per_1m"] != "0.10000000" || dto["output_price_per_1m"] != "0.20000000" {
+	if dto.InputPricePer1M != "0.10000000" || dto.OutputPricePer1M != "0.20000000" {
 		t.Fatalf("prices not normalized: %+v", dto)
 	}
 

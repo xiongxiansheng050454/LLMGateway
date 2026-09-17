@@ -23,6 +23,16 @@ type ChannelHealth struct {
 	UpdatedAt           string
 }
 
+type ChannelHealthDTO struct {
+	ChannelID           int     `json:"channel_id"`
+	State               string  `json:"state"`
+	ConsecutiveFailures int     `json:"consecutive_failures"`
+	SuccessCount        int64   `json:"success_count"`
+	FailureCount        int64   `json:"failure_count"`
+	OpenedAt            *string `json:"opened_at"`
+	UpdatedAt           string  `json:"updated_at"`
+}
+
 // ChannelBreakerConfig holds the circuit breaker thresholds shared by the
 // memory and PostgreSQL implementations.
 type ChannelBreakerConfig struct {

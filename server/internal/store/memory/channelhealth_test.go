@@ -105,8 +105,8 @@ func TestListChannelHealth(t *testing.T) {
 	if list.Total != 1 {
 		t.Fatalf("total = %d, want 1", list.Total)
 	}
-	entry := list.List[0].(map[string]any)
-	if entry["channel_id"] != 1 || entry["state"] != "closed" {
+	entry := list.List[0]
+	if entry.ChannelID != 1 || entry.State != "closed" {
 		t.Fatalf("unexpected entry: %+v", entry)
 	}
 }
@@ -147,7 +147,7 @@ func TestRouteCandidatesExcludeOpenChannel(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	channelID := created["id"].(int)
+	channelID := created.ID
 	if _, err := st.CreateChannelModel(channelID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}

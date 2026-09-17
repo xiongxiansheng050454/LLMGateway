@@ -11,5 +11,5 @@ type ChannelHealthStore interface {
 	RecordChannelSuccess(channelID int) (domain.ChannelHealth, error)
 	RecordChannelFailure(channelID int, reason domain.FailureReason) (domain.ChannelHealth, error)
 	ResetChannelHealth(channelID int) error
-	ListChannelHealth() (domain.ListResponse, error)
+	ListChannelHealth() (domain.ListResponse[domain.ChannelHealthDTO], error)
 }

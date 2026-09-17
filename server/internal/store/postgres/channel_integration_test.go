@@ -23,11 +23,11 @@ func TestPGChannelCRUDAndSecretEncryption(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateChannel: %v", err)
 	}
-	if created["id"] != 1 || created["name"] != "OpenAI" || created["model_count"] != 0 {
+	if created.ID != 1 || created.Name != "OpenAI" || created.ModelCount != 0 {
 		t.Fatalf("unexpected created channel: %+v", created)
 	}
-	if created["balance"] == nil || *(created["balance"].(*string)) != "100.000000" {
-		t.Fatalf("unexpected balance: %+v", created["balance"])
+	if created.Balance == nil || *created.Balance != "100.000000" {
+		t.Fatalf("unexpected balance: %+v", created.Balance)
 	}
 
 	// api_key must be stored as ciphertext, not plaintext.
@@ -82,8 +82,8 @@ func TestPGChannelCRUDAndSecretEncryption(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateChannelStatus: %v", err)
 	}
-	if statusDTO["status"] != 0 {
-		t.Fatalf("status = %v, want 0", statusDTO["status"])
+	if statusDTO.Status != 0 {
+		t.Fatalf("status = %v, want 0", statusDTO.Status)
 	}
 
 	listed, err := st.ListChannels()
@@ -113,16 +113,16 @@ func TestPGChannelBalanceMathAndInvalidInput(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpdateChannelBalance delta: %v", err)
 	}
-	if dto["balance"] == nil || *(dto["balance"].(*string)) != "12.500000" {
-		t.Fatalf("balance after delta = %+v, want 12.500000", dto["balance"])
+	if dto.Balance == nil || *dto.Balance != "12.500000" {
+		t.Fatalf("balance after delta = %+v, want 12.500000", dto.Balance)
 	}
 
 	dto, err = st.UpdateChannelBalance(1, "1.000000", "-0.250000")
 	if err != nil {
 		t.Fatalf("UpdateChannelBalance set+delta: %v", err)
 	}
-	if *(dto["balance"].(*string)) != "0.750000" {
-		t.Fatalf("balance = %+v, want 0.750000", dto["balance"])
+	if *dto.Balance != "0.750000" {
+		t.Fatalf("balance = %+v, want 0.750000", dto.Balance)
 	}
 
 	if _, err := st.UpdateChannelBalance(1, "", "abc"); !errors.Is(err, store.ErrInvalid) {
@@ -172,12 +172,12 @@ func TestPGModelMappingsCatalogAndCascade(t *testing.T) {
 	if catalog.Total != 1 {
 		t.Fatalf("catalog total = %d, want 1", catalog.Total)
 	}
-	entry := catalog.List[0].(map[string]any)
-	if entry["model_name"] != "gpt-4o-mini" || entry["status"] != 1 {
+	entry := catalog.List[0]
+	if entry.ModelName != "gpt-4o-mini" || entry.Status != 1 {
 		t.Fatalf("unexpected catalog entry: %+v", entry)
 	}
-	channels := entry["channels"].([]any)
-	if len(channels) != 1 || channels[0].(map[string]any)["channel_name"] != "OpenAI" {
+	channels := entry.Channels
+	if len(channels) != 1 || channels[0].ChannelName != "OpenAI" {
 		t.Fatalf("unexpected catalog channels: %+v", channels)
 	}
 
@@ -217,10 +217,10 @@ func TestPGPricingUpsertValidationAndDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertPricing: %v", err)
 	}
-	if dto["channel_name"] != "OpenAI" || dto["upstream_model"] != "gpt-4o-mini-up" {
+	if dto.ChannelName != "OpenAI" || dto.UpstreamModel != "gpt-4o-mini-up" {
 		t.Fatalf("unexpected pricing dto: %+v", dto)
 	}
-	if dto["input_price_per_1m"] != "0.15000000" || dto["cached_input_price_per_1m"] != "0.07500000" {
+	if dto.InputPricePer1M != "0.15000000" || dto.CachedInputPricePer1M != "0.07500000" {
 		t.Fatalf("unexpected price format: %+v", dto)
 	}
 
@@ -229,7 +229,7 @@ func TestPGPricingUpsertValidationAndDelete(t *testing.T) {
 	if err != nil {
 		t.Fatalf("UpsertPricing overwrite: %v", err)
 	}
-	if overwritten["input_price_per_1m"] != "0.20000000" {
+	if overwritten.InputPricePer1M != "0.20000000" {
 		t.Fatalf("upsert did not overwrite: %+v", overwritten)
 	}
 
