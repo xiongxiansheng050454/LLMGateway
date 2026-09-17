@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/money"
@@ -33,14 +34,19 @@ type Store struct {
 	rateLimits      map[int]*domain.RateLimitRule
 	nextUsageLogID  int
 	usageLogs       []domain.UsageLog
+
+	channelHealth map[int]*domain.ChannelHealth
+	breaker       store.ChannelBreakerConfig
+	now           func() time.Time
 }
 
 var (
-	_ store.Store          = (*Store)(nil)
-	_ store.ChannelStore   = (*Store)(nil)
-	_ store.UserStore      = (*Store)(nil)
-	_ store.RateLimitStore = (*Store)(nil)
-	_ store.UsageStore     = (*Store)(nil)
+	_ store.Store              = (*Store)(nil)
+	_ store.ChannelStore       = (*Store)(nil)
+	_ store.UserStore          = (*Store)(nil)
+	_ store.RateLimitStore     = (*Store)(nil)
+	_ store.UsageStore         = (*Store)(nil)
+	_ store.ChannelHealthStore = (*Store)(nil)
 )
 
 // memoryKey is the in-memory gateway key record. Only the hash is retained;
@@ -56,6 +62,16 @@ type memoryKey struct {
 	isActive           bool
 	lastUsedAt         *string
 	expiresAt          *string
+}
+
+// NewWithClock builds a memory store with an injected clock, used by tests to
+// make cooldown behaviour deterministic.
+func NewWithClock(now func() time.Time) *Store {
+	s := New()
+	if now != nil {
+		s.now = now
+	}
+	return s
 }
 
 func New() *Store {
@@ -76,6 +92,9 @@ func New() *Store {
 		nextRateLimitID: 1,
 		rateLimits:      map[int]*domain.RateLimitRule{},
 		nextUsageLogID:  1,
+		channelHealth:   map[int]*domain.ChannelHealth{},
+		breaker:         store.DefaultChannelBreakerConfig(),
+		now:             time.Now,
 	}
 }
 

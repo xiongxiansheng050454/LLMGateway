@@ -380,7 +380,10 @@ func (s *Store) GetPricing(channelID int, modelName string) (map[string]any, err
 }
 
 func (s *Store) RouteCandidates(modelName string) (domain.ListResponse, error) {
-	rows, err := s.queries.ListRouteCandidates(context.Background(), modelName)
+	rows, err := s.queries.ListRouteCandidates(context.Background(), sqlc.ListRouteCandidatesParams{
+		ModelName:       modelName,
+		CooldownSeconds: int32(s.breaker.Cooldown.Seconds()),
+	})
 	if err != nil {
 		return domain.ListResponse{}, mapError(err)
 	}

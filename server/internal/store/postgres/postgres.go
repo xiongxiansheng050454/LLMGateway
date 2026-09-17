@@ -24,15 +24,24 @@ type Store struct {
 	pool    *pgxpool.Pool
 	queries *sqlc.Queries
 	cipher  *crypto.Cipher
+	breaker store.ChannelBreakerConfig
+	now     func() time.Time
 }
 
 var (
-	_ store.Store        = (*Store)(nil)
-	_ store.ChannelStore = (*Store)(nil)
+	_ store.Store              = (*Store)(nil)
+	_ store.ChannelStore       = (*Store)(nil)
+	_ store.ChannelHealthStore = (*Store)(nil)
 )
 
 func New(pool *pgxpool.Pool, cipher *crypto.Cipher) *Store {
-	return &Store{pool: pool, queries: sqlc.New(pool), cipher: cipher}
+	return &Store{
+		pool:    pool,
+		queries: sqlc.New(pool),
+		cipher:  cipher,
+		breaker: store.DefaultChannelBreakerConfig(),
+		now:     time.Now,
+	}
 }
 
 // mapError converts database errors into the store error vocabulary:

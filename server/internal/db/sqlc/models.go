@@ -33,6 +33,16 @@ type Channel struct {
 	UpdatedAt        pgtype.Timestamptz `json:"updated_at"`
 }
 
+type ChannelHealth struct {
+	ChannelID           int64              `json:"channel_id"`
+	State               string             `json:"state"`
+	ConsecutiveFailures int32              `json:"consecutive_failures"`
+	SuccessCount        int64              `json:"success_count"`
+	FailureCount        int64              `json:"failure_count"`
+	OpenedAt            pgtype.Timestamptz `json:"opened_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+}
+
 type ChannelModel struct {
 	ID            int64              `json:"id"`
 	ChannelID     int64              `json:"channel_id"`
