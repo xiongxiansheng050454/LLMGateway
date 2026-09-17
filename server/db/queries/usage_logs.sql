@@ -103,7 +103,9 @@ SELECT count(*)::int
 FROM usage_logs
 WHERE user_id = sqlc.arg(user_id)
   AND created_at >= sqlc.arg(since)::timestamptz
-  AND (sqlc.narg(api_key_id)::bigint IS NULL OR api_key_id = sqlc.narg(api_key_id)::bigint);
+  AND (sqlc.narg(api_key_id)::bigint IS NULL OR api_key_id = sqlc.narg(api_key_id)::bigint)
+  AND (sqlc.narg(model)::text IS NULL OR model = sqlc.narg(model)::text)
+  AND (sqlc.narg(channel_id)::bigint IS NULL OR channel_id = sqlc.narg(channel_id)::bigint);
 
 -- name: StatsOverview :one
 SELECT

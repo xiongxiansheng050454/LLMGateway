@@ -173,14 +173,16 @@ func insertUsageLog(ctx context.Context, queries *sqlc.Queries, in domain.UsageL
 	return int(id), nil
 }
 
-func (s *Store) CountRequestsSince(userID int, apiKeyID *int, since string) (int, error) {
-	if err := domain.ValidateSince(since); err != nil {
+func (s *Store) CountRequestsSince(filter domain.UsageCountFilter) (int, error) {
+	if err := domain.ValidateSince(filter.Since); err != nil {
 		return 0, err
 	}
 	count, err := s.queries.CountRequestsSince(context.Background(), sqlc.CountRequestsSinceParams{
-		UserID:   int8Value(&userID),
-		Since:    timestampValue(since),
-		ApiKeyID: int8Value(apiKeyID),
+		UserID:    int8Value(&filter.UserID),
+		Since:     timestampValue(filter.Since),
+		ApiKeyID:  int8Value(filter.APIKeyID),
+		Model:     textValueParam(filter.Model),
+		ChannelID: int8Value(filter.ChannelID),
 	})
 	if err != nil {
 		return 0, mapError(err)

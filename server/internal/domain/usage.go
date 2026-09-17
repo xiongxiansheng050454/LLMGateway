@@ -132,6 +132,14 @@ type UsageLogFilter struct {
 	PageSize  int
 }
 
+type UsageCountFilter struct {
+	UserID    int
+	APIKeyID  *int
+	Model     string
+	ChannelID *int
+	Since     string
+}
+
 // UsageLogInput is the write model reused by the downstream proxy (#6).
 type UsageLogInput struct {
 	RequestID            string

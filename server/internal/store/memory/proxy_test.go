@@ -197,7 +197,7 @@ func TestCountRequestsSince(t *testing.T) {
 	st.usageLogs[0].APIKeyID = intp(1)
 	st.usageLogs[1].APIKeyID = intp(1)
 
-	count, err := st.CountRequestsSince(1, nil, "2026-09-16T10:00:15Z")
+	count, err := st.CountRequestsSince(domain.UsageCountFilter{UserID: 1, Since: "2026-09-16T10:00:15Z"})
 	if err != nil {
 		t.Fatalf("CountRequestsSince: %v", err)
 	}
@@ -205,7 +205,7 @@ func TestCountRequestsSince(t *testing.T) {
 		t.Fatalf("count = %d, want 1 (all attempts after window start)", count)
 	}
 
-	count, err = st.CountRequestsSince(1, nil, "2026-09-16T09:59:00Z")
+	count, err = st.CountRequestsSince(domain.UsageCountFilter{UserID: 1, Since: "2026-09-16T09:59:00Z"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -214,7 +214,7 @@ func TestCountRequestsSince(t *testing.T) {
 	}
 
 	apiKeyID := 1
-	count, err = st.CountRequestsSince(1, &apiKeyID, "2026-09-16T09:59:00Z")
+	count, err = st.CountRequestsSince(domain.UsageCountFilter{UserID: 1, APIKeyID: &apiKeyID, Since: "2026-09-16T09:59:00Z"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -222,10 +222,10 @@ func TestCountRequestsSince(t *testing.T) {
 		t.Fatalf("key-scoped count = %d, want 2", count)
 	}
 
-	if _, err := st.CountRequestsSince(1, nil, "abc"); !errors.Is(err, store.ErrInvalid) {
+	if _, err := st.CountRequestsSince(domain.UsageCountFilter{UserID: 1, Since: "abc"}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid since err = %v, want ErrInvalid", err)
 	}
-	if _, err := st.CountRequestsSince(1, nil, ""); !errors.Is(err, store.ErrInvalid) {
+	if _, err := st.CountRequestsSince(domain.UsageCountFilter{UserID: 1}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("empty since err = %v, want ErrInvalid", err)
 	}
 }

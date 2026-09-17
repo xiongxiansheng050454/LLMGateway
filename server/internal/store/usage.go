@@ -15,8 +15,8 @@ type UsageStore interface {
 	StatsDaily(dateFrom, dateTo string, page, pageSize int) (domain.ListResponse[domain.StatsDailyDTO], error)
 	StatsChannels(startTime, endTime string) (domain.ListResponse[domain.StatsChannelDTO], error)
 
-	// CountRequestsSince counts request attempts for a user (optionally scoped
-	// to a key) since an RFC3339 timestamp. It counts all attempts, including
-	// failures, for window-based rate limiting.
-	CountRequestsSince(userID int, apiKeyID *int, since string) (int, error)
+	// CountRequestsSince counts request attempts matching the filter since an
+	// RFC3339 timestamp. It counts all attempts, including failures, for
+	// window-based rate limiting.
+	CountRequestsSince(domain.UsageCountFilter) (int, error)
 }
