@@ -11,6 +11,7 @@ func TestVisibleBackendModuleDirectories(t *testing.T) {
 	root := filepath.Join("..", "..")
 	for _, dir := range []string{
 		"internal/httpapi",
+		"internal/proxy",
 		"internal/protocol/openai",
 		"internal/domain",
 		"internal/store",
@@ -24,6 +25,18 @@ func TestVisibleBackendModuleDirectories(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "internal/handler")); !os.IsNotExist(err) {
 		t.Fatalf("internal/handler should not remain as the HTTP catch-all module")
+	}
+}
+
+func TestProxyOrchestrationStaysOutOfHTTPAPI(t *testing.T) {
+	root := filepath.Join("..", "..")
+	for _, name := range []string{"openai_proxy.go", "openai_route.go", "openai_ratelimit.go", "openai_billing.go", "openai_auth.go"} {
+		if _, err := os.Stat(filepath.Join(root, "internal", "proxy", name)); err != nil {
+			t.Fatalf("expected proxy orchestration file %s in internal/proxy: %v", name, err)
+		}
+		if _, err := os.Stat(filepath.Join(root, "internal", "httpapi", name)); !os.IsNotExist(err) {
+			t.Fatalf("proxy orchestration file %s should not live in internal/httpapi", name)
+		}
 	}
 }
 

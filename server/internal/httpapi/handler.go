@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"LLMGateway/server/internal/proxy"
 	"LLMGateway/server/internal/store"
 )
 
@@ -28,6 +29,7 @@ type Server struct {
 	client       *http.Client
 	randIntN     func(int) int
 	now          func() time.Time
+	proxy        *proxy.Service
 	dashboardDir string
 	dashboard    http.Handler
 }
@@ -81,11 +83,13 @@ func NewServer(dashboardDir string, st store.Store, opts ...Option) *Server {
 	for _, opt := range opts {
 		opt(&settings)
 	}
+	client := &http.Client{Timeout: settings.upstreamTimeout}
 	return &Server{
 		store:        st,
-		client:       &http.Client{Timeout: settings.upstreamTimeout},
+		client:       client,
 		randIntN:     settings.randIntN,
 		now:          settings.now,
+		proxy:        proxy.NewService(st, client, settings.randIntN, settings.now),
 		dashboardDir: dashboardDir,
 		dashboard:    http.FileServer(http.Dir(dashboardDir)),
 	}

@@ -1,4 +1,4 @@
-package httpapi
+package proxy
 
 import (
 	"LLMGateway/server/internal/domain"
@@ -9,7 +9,7 @@ import (
 // ordered by priority desc, weight desc, channel id; channels with a non-nil
 // balance of zero or less are excluded. Within the highest priority group the
 // choice is weighted-random using the injected source.
-func (a *Server) selectChannel(model string) (domain.RouteCandidate, error) {
+func (a *Service) selectChannel(model string) (domain.RouteCandidate, error) {
 	result, err := a.store.RouteCandidates(model)
 	if err != nil {
 		return domain.RouteCandidate{}, err

@@ -2,12 +2,13 @@ package httpapi
 
 import (
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
 
 func TestChatCompletionSuccessUsesStoreSettlementPort(t *testing.T) {
-	content, err := os.ReadFile("openai_proxy.go")
+	content, err := os.ReadFile(filepath.Join("..", "proxy", "openai_proxy.go"))
 	if err != nil {
 		t.Fatal(err)
 	}

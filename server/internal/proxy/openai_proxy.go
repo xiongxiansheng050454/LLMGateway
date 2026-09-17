@@ -1,4 +1,4 @@
-package httpapi
+package proxy
 
 import (
 	"bytes"
@@ -20,7 +20,7 @@ import (
 
 // models returns the OpenAI-style model list visible to the key, filtered by
 // its permissions.
-func (a *Server) models(auth *domain.AuthContext) (openaiwire.OpenAIModelList, error) {
+func (a *Service) Models(auth *domain.AuthContext) (openaiwire.OpenAIModelList, error) {
 	result, err := a.store.ListCatalogModels(true)
 	if err != nil {
 		return openaiwire.OpenAIModelList{}, err
@@ -43,7 +43,7 @@ func (a *Server) models(auth *domain.AuthContext) (openaiwire.OpenAIModelList, e
 // chatCompletions proxies a non-streaming chat completion request. It returns
 // the HTTP status and body to send downstream. A non-nil error is a
 // pre-flight/transport failure the handler maps to an OpenAI error.
-func (a *Server) chatCompletions(auth *domain.AuthContext, body []byte, clientIP string) (int, []byte, error) {
+func (a *Service) ChatCompletions(auth *domain.AuthContext, body []byte, clientIP string) (int, []byte, error) {
 	var req openaiwire.ChatCompletionRequest
 	if err := json.Unmarshal(body, &req); err != nil {
 		return 0, nil, ErrInvalidRequest
@@ -187,7 +187,7 @@ func classifyUpstreamResult(statusCode int, err error) (domain.FailureReason, bo
 
 // recordChannelHealth drives the circuit breaker state machine. It is
 // best-effort: a recording failure must never change the response.
-func (a *Server) recordChannelHealth(channelID int, success bool, reason domain.FailureReason) {
+func (a *Service) recordChannelHealth(channelID int, success bool, reason domain.FailureReason) {
 	if success {
 		_, _ = a.store.RecordChannelSuccess(channelID)
 		return
@@ -195,7 +195,7 @@ func (a *Server) recordChannelHealth(channelID int, success bool, reason domain.
 	_, _ = a.store.RecordChannelFailure(channelID, reason)
 }
 
-func (a *Server) priceFor(channelID int, model string, usage *openaiwire.ChatCompletionUsage) (string, string, string, error) {
+func (a *Service) priceFor(channelID int, model string, usage *openaiwire.ChatCompletionUsage) (string, string, string, error) {
 	pricing, err := a.store.GetPricing(channelID, model)
 	if err != nil {
 		if errors.Is(err, store.ErrNotFound) {
@@ -222,11 +222,11 @@ func (a *Server) priceFor(channelID int, model string, usage *openaiwire.ChatCom
 	return cost, inputPrice, outputPrice, nil
 }
 
-func (a *Server) logUsage(requestID string, auth *domain.AuthContext, channelID *int, upstreamModel, model string, usage *openaiwire.ChatCompletionUsage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) {
+func (a *Service) logUsage(requestID string, auth *domain.AuthContext, channelID *int, upstreamModel, model string, usage *openaiwire.ChatCompletionUsage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) {
 	_, _ = a.store.InsertUsageLog(a.usageLogInput(requestID, auth, channelID, upstreamModel, model, usage, cost, inputPrice, outputPrice, durationMs, clientIP, status, errorCode))
 }
 
-func (a *Server) usageLogInput(requestID string, auth *domain.AuthContext, channelID *int, upstreamModel, model string, usage *openaiwire.ChatCompletionUsage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) domain.UsageLogInput {
+func (a *Service) usageLogInput(requestID string, auth *domain.AuthContext, channelID *int, upstreamModel, model string, usage *openaiwire.ChatCompletionUsage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) domain.UsageLogInput {
 	userID := auth.UserID
 	keyID := auth.KeyID
 
