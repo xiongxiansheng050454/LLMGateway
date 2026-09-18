@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
@@ -120,6 +121,144 @@ func TestChatCompletionsPassesThroughUpstreamErrors(t *testing.T) {
 	}
 	if response.Status != http.StatusTooManyRequests || string(response.Body) != `{"error":"busy"}` {
 		t.Fatalf("response = %+v", response)
+	}
+}
+
+func TestChatCompletionsFailsOverAndSettlesOnlyFinalSuccess(t *testing.T) {
+	adapter := ProtocolAdapter{
+		RewriteRequest: func(body []byte, model string) ([]byte, error) { return body, nil },
+		ParseUsage: func(body []byte) *Usage {
+			if string(body) != `{"upstream":true}` {
+				t.Fatalf("unexpected success body: %s", body)
+			}
+			return &Usage{PromptTokens: 1, CompletionTokens: 1, TotalTokens: 2}
+		},
+		RewriteResponse: func(body []byte, model string) []byte { return body },
+		EstimateUsage:   func([]byte, int) (EstimatedUsage, error) { return EstimatedUsage{TotalTokens: 2}, nil },
+	}
+	var calls []string
+	service, st, auth := newProtocolSeamService(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls = append(calls, req.URL.Host)
+		if req.URL.Host == "first.test" {
+			return &http.Response{StatusCode: http.StatusBadGateway, Body: io.NopCloser(strings.NewReader(`busy`)), Header: make(http.Header)}, nil
+		}
+		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"upstream":true}`)), Header: make(http.Header)}, nil
+	}), adapter)
+	secondBalance := "10.000000"
+	second, err := st.CreateChannel(domain.ChannelInput{Name: "second", BaseURL: "http://second.test", APIKey: "secret", AuthType: "bearer", Status: 1, Priority: 1, Weight: 1, Balance: &secondBalance})
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := st.GetChannelSecret(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first.BaseURL = "http://first.test"
+	if _, err := st.UpdateChannel(1, domain.ChannelInput{Name: first.Name, BaseURL: first.BaseURL, APIKey: first.APIKey, AuthType: first.AuthType, Status: 1, Priority: 2, Weight: 1, Balance: first.Balance}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateChannelModel(second.ID, domain.ChannelModel{ModelName: "public-model", UpstreamModel: "configured-model", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UpsertPricing(domain.PricingInput{ChannelID: second.ID, ModelName: "public-model", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
+		t.Fatal(err)
+	}
+	response, err := service.ChatCompletions(context.Background(), auth, ChatRequest{Model: "public-model", Body: []byte(`{"model":"public-model"}`)}, "127.0.0.1")
+	if err != nil || response.Status != http.StatusOK {
+		t.Fatalf("response = %+v, err=%v", response, err)
+	}
+	if len(calls) != 2 || calls[0] != "first.test" || calls[1] != "second.test" {
+		t.Fatalf("calls = %+v, want first then second", calls)
+	}
+	logs, _ := st.ListUsageLogs(domain.UsageLogFilter{Page: 1, PageSize: 10})
+	if logs.Total != 1 || logs.List[0].Status != "success" || logs.List[0].ChannelID == nil || *logs.List[0].ChannelID != second.ID {
+		t.Fatalf("usage logs = %+v, want one final success", logs)
+	}
+}
+
+func TestChatCompletionsDoesNotFailOverCallerHTTPError(t *testing.T) {
+	adapter := ProtocolAdapter{
+		RewriteRequest: func(body []byte, model string) ([]byte, error) { return body, nil },
+		ParseUsage:     func([]byte) *Usage { t.Fatal("ParseUsage called for caller error"); return nil },
+		RewriteResponse: func(body []byte, model string) []byte {
+			return body
+		},
+		EstimateUsage: func([]byte, int) (EstimatedUsage, error) { return EstimatedUsage{TotalTokens: 2}, nil },
+	}
+	calls := 0
+	service, st, auth := newProtocolSeamService(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls++
+		return &http.Response{StatusCode: http.StatusBadRequest, Body: io.NopCloser(strings.NewReader(`bad request`)), Header: make(http.Header)}, nil
+	}), adapter)
+	second, err := st.CreateChannel(domain.ChannelInput{Name: "second", BaseURL: "http://second.test", APIKey: "secret", AuthType: "bearer", Status: 1, Priority: 1, Weight: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateChannelModel(second.ID, domain.ChannelModel{ModelName: "public-model", UpstreamModel: "configured-model", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	response, err := service.ChatCompletions(context.Background(), auth, ChatRequest{Model: "public-model", Body: []byte(`{"model":"public-model"}`)}, "127.0.0.1")
+	if err != nil || response.Status != http.StatusBadRequest || calls != 1 {
+		t.Fatalf("response/calls = %+v/%d, want one 400 attempt", response, calls)
+	}
+}
+
+func TestChatCompletionsPreservesFinalCallerErrorAfterEarlierRetryableFailure(t *testing.T) {
+	adapter := ProtocolAdapter{
+		RewriteRequest:  func(body []byte, model string) ([]byte, error) { return body, nil },
+		ParseUsage:      func([]byte) *Usage { return nil },
+		RewriteResponse: func(body []byte, model string) []byte { return body },
+		EstimateUsage:   func([]byte, int) (EstimatedUsage, error) { return EstimatedUsage{TotalTokens: 2}, nil },
+	}
+	calls := 0
+	service, st, auth := newProtocolSeamService(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls++
+		status, body := http.StatusBadGateway, `retry`
+		if calls == 2 {
+			status, body = http.StatusBadRequest, `caller error`
+		}
+		return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
+	}), adapter)
+	second, err := st.CreateChannel(domain.ChannelInput{Name: "second", BaseURL: "http://second.test", APIKey: "secret", AuthType: "bearer", Status: 1, Priority: 1, Weight: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.CreateChannelModel(second.ID, domain.ChannelModel{ModelName: "public-model", UpstreamModel: "configured-model", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
+	response, err := service.ChatCompletions(context.Background(), auth, ChatRequest{Model: "public-model", Body: []byte(`{"model":"public-model"}`)}, "127.0.0.1")
+	if err != nil || response.Status != http.StatusBadRequest || string(response.Body) != "caller error" || calls != 2 {
+		t.Fatalf("response/calls = %+v/%d, err=%v", response, calls, err)
+	}
+}
+
+func TestChatCompletionsStopsAttemptsWhenRequestContextCanceled(t *testing.T) {
+	adapter := ProtocolAdapter{
+		RewriteRequest: func(body []byte, model string) ([]byte, error) { return body, nil },
+		EstimateUsage:  func([]byte, int) (EstimatedUsage, error) { return EstimatedUsage{TotalTokens: 2}, nil },
+	}
+	started := make(chan struct{})
+	service, _, auth := newProtocolSeamService(t, roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		close(started)
+		<-req.Context().Done()
+		return nil, req.Context().Err()
+	}), adapter)
+	service.ConfigureRequest(time.Second, 3)
+	ctx, cancel := context.WithCancel(context.Background())
+	result := make(chan error, 1)
+	go func() {
+		_, err := service.ChatCompletions(ctx, auth, ChatRequest{Model: "public-model", Body: []byte(`{"model":"public-model"}`)}, "127.0.0.1")
+		result <- err
+	}()
+	<-started
+	cancel()
+	select {
+	case err := <-result:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("error = %v, want context.Canceled", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("ChatCompletions did not stop after cancellation")
 	}
 }
 

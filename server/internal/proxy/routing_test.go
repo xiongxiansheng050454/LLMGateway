@@ -96,3 +96,31 @@ func TestSelectChannelNoCandidates(t *testing.T) {
 		t.Fatalf("err = %v, want ErrNoHealthyChannel", err)
 	}
 }
+
+func TestOrderedCandidatesDeduplicateChannelsAndKeepPriorityFallbacks(t *testing.T) {
+	st := storefake.New()
+	ids := []int{}
+	for _, input := range []domain.ChannelInput{
+		{Name: "preferred", BaseURL: "http://preferred", APIKey: "x", Status: 1, Priority: 10, Weight: 10},
+		{Name: "fallback", BaseURL: "http://fallback", APIKey: "x", Status: 1, Priority: 5, Weight: 1},
+	} {
+		created, err := st.CreateChannel(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ids = append(ids, created.ID)
+	}
+	for _, channelID := range []int{ids[0], ids[1]} {
+		if _, err := st.CreateChannelModel(channelID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "gpt", Enabled: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	service := NewService(st, nil, func(int) int { return 0 }, time.Now)
+	candidates, err := service.orderedCandidates("gpt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 2 || candidates[0].ChannelID != ids[0] || candidates[1].ChannelID != ids[1] {
+		t.Fatalf("candidates = %+v, want channels 1,2 once", candidates)
+	}
+}

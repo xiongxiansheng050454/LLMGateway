@@ -10,24 +10,38 @@ import (
 // balance of zero or less are excluded. Within the highest priority group the
 // choice is weighted-random using the injected source.
 func (a *Service) selectChannel(model string) (domain.RouteCandidate, error) {
-	result, err := a.store.RouteCandidates(model)
+	candidates, err := a.orderedCandidates(model)
 	if err != nil {
 		return domain.RouteCandidate{}, err
 	}
+	if len(candidates) == 0 {
+		return domain.RouteCandidate{}, ErrNoHealthyChannel
+	}
+	return candidates[0], nil
+}
 
+func (a *Service) orderedCandidates(model string) ([]domain.RouteCandidate, error) {
+	result, err := a.store.RouteCandidates(model)
+	if err != nil {
+		return nil, err
+	}
 	candidates := []domain.RouteCandidate{}
+	seen := map[int]bool{}
 	for _, candidate := range result.List {
+		if seen[candidate.ChannelID] {
+			continue
+		}
 		if candidate.Balance != nil {
 			parsed, err := money.Parse6(*candidate.Balance)
 			if err == nil && parsed.Cmp(0) <= 0 {
 				continue
 			}
 		}
+		seen[candidate.ChannelID] = true
 		candidates = append(candidates, candidate)
 	}
 	if len(candidates) == 0 {
-		// No mapping, no enabled channel, or every candidate is tripped open.
-		return domain.RouteCandidate{}, ErrNoHealthyChannel
+		return nil, nil
 	}
 
 	highest := candidates[0].Priority
@@ -45,7 +59,7 @@ func (a *Service) selectChannel(model string) (domain.RouteCandidate, error) {
 		}
 	}
 	if total <= 0 {
-		return group[0], nil
+		return append(group, candidates[len(group):]...), nil
 	}
 
 	pick := a.randIntN(total)
@@ -55,8 +69,19 @@ func (a *Service) selectChannel(model string) (domain.RouteCandidate, error) {
 		}
 		pick -= candidate.Weight
 		if pick < 0 {
-			return candidate, nil
+			ordered := []domain.RouteCandidate{candidate}
+			for _, rest := range group {
+				if rest.ChannelID != candidate.ChannelID {
+					ordered = append(ordered, rest)
+				}
+			}
+			for _, rest := range candidates {
+				if rest.Priority != highest {
+					ordered = append(ordered, rest)
+				}
+			}
+			return ordered, nil
 		}
 	}
-	return group[len(group)-1], nil
+	return candidates, nil
 }

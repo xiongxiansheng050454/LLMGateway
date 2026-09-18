@@ -12,6 +12,11 @@ const EnvDatabaseURL = "DATABASE_URL"
 // configuration layer owns env parsing; crypto validates the key material.
 const EnvChannelKey = "CHANNEL_KEY_ENCRYPTION_KEY"
 
+const (
+	EnvUpstreamRequestTimeout = "UPSTREAM_REQUEST_TIMEOUT"
+	EnvUpstreamMaxAttempts    = "UPSTREAM_MAX_ATTEMPTS"
+)
+
 type Config struct {
 	Addr          string
 	DashboardDir  string
@@ -23,6 +28,7 @@ type Config struct {
 	// UpstreamTimeoutSeconds bounds a downstream proxy call to the upstream
 	// provider. Chat completions need far more than the default admin timeout.
 	UpstreamTimeoutSeconds     int
+	UpstreamMaxAttempts        int
 	QuotaDefaultMaxTokens      int
 	QuotaReservationTTLSeconds int
 	QuotaReaperIntervalSeconds int
@@ -46,7 +52,8 @@ func Load() Config {
 	if cfg.MigrationsDir == "" {
 		cfg.MigrationsDir = "db/migrations"
 	}
-	cfg.UpstreamTimeoutSeconds = parsePositiveInt(os.Getenv("UPSTREAM_TIMEOUT_SECONDS"), 60)
+	cfg.UpstreamTimeoutSeconds = parsePositiveInt(os.Getenv(EnvUpstreamRequestTimeout), parsePositiveInt(os.Getenv("UPSTREAM_TIMEOUT_SECONDS"), 60))
+	cfg.UpstreamMaxAttempts = parsePositiveInt(os.Getenv(EnvUpstreamMaxAttempts), 3)
 	cfg.QuotaDefaultMaxTokens = parsePositiveInt(os.Getenv("QUOTA_DEFAULT_MAX_TOKENS"), 4096)
 	cfg.QuotaReservationTTLSeconds = parsePositiveInt(os.Getenv("QUOTA_RESERVATION_TTL_SECONDS"), cfg.UpstreamTimeoutSeconds+60)
 	if cfg.QuotaReservationTTLSeconds <= cfg.UpstreamTimeoutSeconds {
