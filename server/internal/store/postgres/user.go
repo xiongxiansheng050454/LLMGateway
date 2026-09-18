@@ -106,14 +106,23 @@ func (s *Store) UpdateUserStatus(id int, status string) (domain.UserDTO, error) 
 }
 
 func (s *Store) DeleteUser(id int) error {
-	affected, err := s.queries.DeleteUser(context.Background(), int64(id))
+	ctx := context.Background()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return mapError(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := cleanupQuotaReservationsTx(ctx, tx, id, 0); err != nil {
+		return err
+	}
+	affected, err := sqlc.New(tx).DeleteUser(ctx, int64(id))
 	if err != nil {
 		return mapError(err)
 	}
 	if affected == 0 {
 		return store.ErrNotFound
 	}
-	return nil
+	return mapError(tx.Commit(ctx))
 }
 
 func (s *Store) RechargeUser(id int, in domain.RechargeInput) (domain.BalanceUpdateDTO, error) {
@@ -319,14 +328,23 @@ func (s *Store) UpdateKey(userID, keyID int, in domain.KeyUpdateInput) (domain.C
 }
 
 func (s *Store) DeleteKey(userID, keyID int) error {
-	affected, err := s.queries.DeleteKey(context.Background(), sqlc.DeleteKeyParams{ID: int64(keyID), UserID: int64(userID)})
+	ctx := context.Background()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return mapError(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := cleanupQuotaReservationsTx(ctx, tx, userID, keyID); err != nil {
+		return err
+	}
+	affected, err := sqlc.New(tx).DeleteKey(ctx, sqlc.DeleteKeyParams{ID: int64(keyID), UserID: int64(userID)})
 	if err != nil {
 		return mapError(err)
 	}
 	if affected == 0 {
 		return store.ErrNotFound
 	}
-	return nil
+	return mapError(tx.Commit(ctx))
 }
 
 func (s *Store) ResetKey(userID, keyID int) (domain.KeySecretDTO, error) {

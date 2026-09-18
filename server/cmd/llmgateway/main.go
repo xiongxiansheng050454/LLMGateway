@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -42,8 +43,15 @@ func run() error {
 	server := &http.Server{
 		Addr: cfg.Addr,
 		Handler: newRouter(cfg.DashboardDir, st,
-			httpapi.WithUpstreamTimeout(time.Duration(cfg.UpstreamTimeoutSeconds)*time.Second)),
+			httpapi.WithUpstreamTimeout(time.Duration(cfg.UpstreamTimeoutSeconds)*time.Second),
+			httpapi.WithQuotaConfig(cfg.QuotaDefaultMaxTokens, time.Duration(cfg.QuotaReservationTTLSeconds)*time.Second)),
 	}
+	var workers sync.WaitGroup
+	workers.Add(1)
+	go func() {
+		defer workers.Done()
+		runQuotaReaper(ctx, st, time.Duration(cfg.QuotaReaperIntervalSeconds)*time.Second, cfg.QuotaReaperBatchSize)
+	}()
 
 	serveErr := make(chan error, 1)
 	go func() {
@@ -55,6 +63,8 @@ func run() error {
 
 	select {
 	case err := <-serveErr:
+		stop()
+		workers.Wait()
 		return err
 	case <-ctx.Done():
 		log.Print("shutdown signal received")
@@ -62,7 +72,27 @@ func run() error {
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	return server.Shutdown(shutdownCtx)
+	err = server.Shutdown(shutdownCtx)
+	workers.Wait()
+	return err
+}
+
+func runQuotaReaper(ctx context.Context, st store.Store, interval time.Duration, batchSize int) {
+	if interval <= 0 {
+		interval = 30 * time.Second
+	}
+	ticker := time.NewTicker(interval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			if _, err := st.ReapExpiredQuotaReservations(ctx, batchSize); err != nil && !errors.Is(err, context.Canceled) {
+				log.Printf("reap expired quota reservations: %v", err)
+			}
+		}
+	}
 }
 
 // buildStore constructs the only runtime persistence implementation.

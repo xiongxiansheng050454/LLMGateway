@@ -167,10 +167,12 @@ type UsageLogInput struct {
 // debit, optional channel debit and success usage logging atomically where the
 // backing store supports transactions.
 type ChatSettlementInput struct {
-	UserID       int
-	ChannelID    *int
-	Cost         string
-	DebitChannel bool
-	Description  string
-	UsageLog     UsageLogInput
+	ReservationID int64
+	UserID        int
+	APIKeyID      int
+	ChannelID     *int
+	Cost          string
+	DebitChannel  bool
+	Description   string
+	UsageLog      UsageLogInput
 }

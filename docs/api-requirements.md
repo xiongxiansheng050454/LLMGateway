@@ -929,6 +929,41 @@ Authorization: Bearer <gateway-key>
 - 按 `model_pricing` 计算费用。
 - 更新用户余额和渠道余额。
 - 执行限流规则。
+- 在调用上游前执行用户与 API Key 的 UTC 日/月 token、费用配额预留；任一配额不足返回 `429 insufficient_quota`。
+
+## 周期配额
+
+配额策略与 `rate_limit_rules` 独立。速率规则控制短窗口请求速度，`quota_policies` 控制业务预算。
+
+```text
+GET    /admin/quota-policies
+POST   /admin/quota-policies
+PUT    /admin/quota-policies/:id
+DELETE /admin/quota-policies/:id
+GET    /admin/quota-usage
+```
+
+创建示例：
+
+```json
+{
+  "policy_name": "production key monthly quota",
+  "scope_type": "api_key",
+  "scope_id": 37,
+  "period_type": "month",
+  "token_limit": 10000000,
+  "cost_limit": "200.000000",
+  "enabled": true
+}
+```
+
+要求：
+
+- `scope_type` 为 `user` 或 `api_key`；同一 scope 的日/月策略各最多一条。
+- `period_type` 为 `day` 或 `month`，全部按 UTC 自然周期和 `[start,end)` 边界计算。
+- `token_limit`、`cost_limit` 至少提供一个；金额始终使用字符串。
+- 用户与 Key 的所有启用策略必须同时满足，不存在 Key 覆盖用户配额的语义。
+- `GET /admin/quota-usage` 返回当前 bucket 的 `used_tokens`、`reserved_tokens`、`used_cost`、`reserved_cost` 和周期边界。
 
 ## 前端相关注意事项
 

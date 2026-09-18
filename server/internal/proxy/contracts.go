@@ -17,6 +17,12 @@ type Usage struct {
 	CachedInputTokens int
 }
 
+type EstimatedUsage struct {
+	InputTokens  int
+	OutputTokens int
+	TotalTokens  int
+}
+
 // Model is a public model visible to an authenticated caller.
 type Model struct {
 	ID      string
@@ -60,4 +66,5 @@ type ProtocolAdapter struct {
 	RewriteResponse func([]byte, string) []byte
 	ParseStream     func(io.Reader, string, func(StreamEvent) error) error
 	StreamError     func(string, string) []byte
+	EstimateUsage   func([]byte, int) (EstimatedUsage, error)
 }

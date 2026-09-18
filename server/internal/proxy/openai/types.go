@@ -29,8 +29,11 @@ type OpenAIErrorBody struct {
 // ChatCompletionRequest carries only the fields the gateway needs to inspect.
 // The original body is forwarded upstream so unknown fields are preserved.
 type ChatCompletionRequest struct {
-	Model  string `json:"model"`
-	Stream bool   `json:"stream"`
+	Model               string `json:"model"`
+	Stream              bool   `json:"stream"`
+	MaxTokens           int    `json:"max_tokens"`
+	MaxCompletionTokens int    `json:"max_completion_tokens"`
+	N                   int    `json:"n"`
 }
 
 // ChatCompletionUsage mirrors the OpenAI usage object.

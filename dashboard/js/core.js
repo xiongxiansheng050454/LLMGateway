@@ -14,6 +14,7 @@ const NAV_ITEMS = [
   { key: 'users',     name: '用户与 Key', icon: 'users' },
   { group: '运营' },
   { key: 'limits',    name: '限流规则', icon: 'gauge' },
+  { key: 'quotas',    name: '周期配额', icon: 'wallet' },
   { key: 'pricing',   name: '计费定价', icon: 'wallet' },
   { key: 'settings',  name: '系统设置', icon: 'settings' },
 ];
@@ -113,7 +114,8 @@ const VIEWS = {
   channels:  { title: '渠道管理', subtitle: () => '上游渠道 · 健康 / 权重 / 余额', render: renderChannelsView },
   models:    { title: '模型路由', subtitle: () => '对外模型目录与路由策略', render: renderModelsView },
   users:     { title: '用户与 Key', subtitle: () => '下游用户余额与网关 Key', render: renderUsersView },
-  limits:    { title: '限流规则', subtitle: () => 'rate_limit_rules · 配额水位', render: renderLimitsView },
+  limits:    { title: '限流规则', subtitle: () => 'rate_limit_rules · 短窗口速率控制', render: renderLimitsView },
+  quotas:    { title: '周期配额', subtitle: () => 'UTC 日/月 token 与费用额度', render: renderQuotasView },
   pricing:   { title: '计费定价', subtitle: () => '渠道×模型单价', render: renderPricingView },
   settings:  { title: '系统设置', subtitle: () => '控制台与网关信息', render: renderSettingsView },
 };

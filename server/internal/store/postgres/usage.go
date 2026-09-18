@@ -82,6 +82,9 @@ func (s *Store) SettleChatCompletion(in domain.ChatSettlementInput) (int, error)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
 	queries := sqlc.New(tx)
+	if err := settleQuotaTx(ctx, tx, in, int64(in.UsageLog.TotalTokens), money.Format6(parsedCost), s.now()); err != nil {
+		return 0, err
+	}
 
 	if _, err := queries.LockUserBalance(ctx, int64(in.UserID)); err != nil {
 		return 0, mapError(err)

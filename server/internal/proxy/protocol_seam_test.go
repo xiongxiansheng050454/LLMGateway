@@ -66,6 +66,9 @@ func TestChatCompletionsUsesProtocolNeutralAdapterAndSettles(t *testing.T) {
 			}
 			return []byte(`{"model":"public-model"}`)
 		},
+		EstimateUsage: func([]byte, int) (EstimatedUsage, error) {
+			return EstimatedUsage{InputTokens: 100, OutputTokens: 100, TotalTokens: 200}, nil
+		},
 	}
 	transport := roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		body, _ := io.ReadAll(req.Body)
@@ -102,6 +105,9 @@ func TestChatCompletionsPassesThroughUpstreamErrors(t *testing.T) {
 		RewriteResponse: func([]byte, string) []byte {
 			t.Fatal("RewriteResponse called for upstream error")
 			return nil
+		},
+		EstimateUsage: func([]byte, int) (EstimatedUsage, error) {
+			return EstimatedUsage{InputTokens: 100, OutputTokens: 100, TotalTokens: 200}, nil
 		},
 	}
 	transport := roundTripFunc(func(*http.Request) (*http.Response, error) {

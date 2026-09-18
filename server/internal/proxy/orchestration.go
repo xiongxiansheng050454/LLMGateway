@@ -79,6 +79,19 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *domain.AuthContext,
 		}
 		return ChatResponse{}, err
 	}
+	reservation, err := a.reserveQuota(ctx, requestID, auth, req, candidate.ChannelID)
+	if err != nil {
+		if errors.Is(err, ErrQuotaExceeded) {
+			a.logUsage(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", "quota_exceeded")
+		}
+		return ChatResponse{}, err
+	}
+	releaseReservation := reservation.ID != 0
+	defer func() {
+		if releaseReservation {
+			_ = a.store.ReleaseQuota(context.Background(), reservation.ID)
+		}
+	}()
 
 	secret, err := a.store.GetChannelSecret(candidate.ChannelID)
 	if err != nil {
@@ -120,9 +133,10 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *domain.AuthContext,
 			resp.Body.Close()
 			return ChatResponse{}, ErrInvalidRequest
 		}
+		releaseReservation = false
 		return ChatResponse{Status: resp.StatusCode, Stream: &completionStream{
 			service: a, body: resp.Body, ctx: ctx, requestID: requestID, auth: auth,
-			candidate: candidate, publicModel: req.Model, clientIP: clientIP, start: start,
+			candidate: candidate, publicModel: req.Model, clientIP: clientIP, start: start, reservationID: reservation.ID,
 		}}, nil
 	}
 
@@ -162,12 +176,14 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *domain.AuthContext,
 
 	usageLog := a.usageLogInput(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, usage, cost, inputPrice, outputPrice, durationMs, clientIP, "success", "")
 	_, err = a.store.SettleChatCompletion(domain.ChatSettlementInput{
-		UserID:       auth.UserID,
-		ChannelID:    &candidate.ChannelID,
-		Cost:         cost,
-		DebitChannel: candidate.Balance != nil,
-		Description:  "chat completion " + requestID,
-		UsageLog:     usageLog,
+		ReservationID: reservation.ID,
+		UserID:        auth.UserID,
+		APIKeyID:      auth.KeyID,
+		ChannelID:     &candidate.ChannelID,
+		Cost:          cost,
+		DebitChannel:  candidate.Balance != nil,
+		Description:   "chat completion " + requestID,
+		UsageLog:      usageLog,
 	})
 	if err != nil {
 		if errors.Is(err, store.ErrInvalid) {
@@ -176,6 +192,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *domain.AuthContext,
 		}
 		return ChatResponse{}, err
 	}
+	releaseReservation = false
 
 	// Best-effort: the request already succeeded and was charged, so a
 	// last_used_at update failure must not turn it into an error response.

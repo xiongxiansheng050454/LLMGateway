@@ -15,15 +15,16 @@ import (
 var errDownstreamWrite = errors.New("downstream stream write failed")
 
 type completionStream struct {
-	service     *Service
-	body        io.ReadCloser
-	ctx         context.Context
-	requestID   string
-	auth        *domain.AuthContext
-	candidate   domain.RouteCandidate
-	publicModel string
-	clientIP    string
-	start       time.Time
+	service       *Service
+	body          io.ReadCloser
+	ctx           context.Context
+	requestID     string
+	auth          *domain.AuthContext
+	candidate     domain.RouteCandidate
+	publicModel   string
+	clientIP      string
+	start         time.Time
+	reservationID int64
 
 	mu        sync.Mutex
 	forwarded bool
@@ -42,6 +43,12 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 	s.forwarded = true
 	s.mu.Unlock()
 	defer s.body.Close()
+	settled := false
+	defer func() {
+		if !settled && s.reservationID != 0 {
+			_ = s.service.store.ReleaseQuota(context.Background(), s.reservationID)
+		}
+	}()
 
 	var usage *Usage
 	var ttft *int
@@ -109,7 +116,8 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 	usageLog := s.service.usageLogInput(s.requestID, s.auth, &s.candidate.ChannelID, s.candidate.UpstreamModel, s.publicModel, usage, cost, inputPrice, outputPrice, durationMs, s.clientIP, "success", "")
 	usageLog.TTFTMs = ttft
 	_, err = s.service.store.SettleChatCompletion(domain.ChatSettlementInput{
-		UserID: s.auth.UserID, ChannelID: &s.candidate.ChannelID, Cost: cost,
+		ReservationID: s.reservationID,
+		UserID:        s.auth.UserID, APIKeyID: s.auth.KeyID, ChannelID: &s.candidate.ChannelID, Cost: cost,
 		DebitChannel: s.candidate.Balance != nil, Description: "chat completion " + s.requestID, UsageLog: usageLog,
 	})
 	if err != nil {
@@ -123,6 +131,7 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 		s.emitError(emit, code, message)
 		return err
 	}
+	settled = true
 	_ = s.service.store.UpdateKeyLastUsed(s.auth.KeyID)
 	if err := emit([]byte("data: [DONE]\n\n")); err != nil {
 		return fmt.Errorf("%w: %v", errDownstreamWrite, err)

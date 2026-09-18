@@ -103,6 +103,8 @@ func writeProxyError(w http.ResponseWriter, err error) {
 		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "invalid request")
 	case errors.Is(err, proxy.ErrRateLimited):
 		writeOpenAIError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "rate limit exceeded")
+	case errors.Is(err, proxy.ErrQuotaExceeded):
+		writeOpenAIError(w, http.StatusTooManyRequests, "insufficient_quota", "period quota exceeded")
 	case errors.Is(err, proxy.ErrInsufficientBalance):
 		writeOpenAIError(w, http.StatusPaymentRequired, "insufficient_quota", "insufficient balance")
 	case errors.Is(err, proxy.ErrNoHealthyChannel):
