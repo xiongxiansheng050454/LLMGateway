@@ -66,12 +66,31 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *domain.AuthContext,
 
 	requestID := newRequestID()
 	start := a.now()
-	if err := a.checkRateLimit(auth, req.Model); err != nil {
+	estimate, estimateErr := a.adapter.EstimateUsage(req.Body, a.defaultMaxTokens)
+	var estimatedTokens *int64
+	if estimateErr == nil {
+		value := int64(estimate.TotalTokens)
+		estimatedTokens = &value
+	}
+	if err := a.checkRateLimit(auth, req.Model, estimatedTokens); err != nil {
 		if errors.Is(err, ErrRateLimited) {
 			a.logUsage(requestID, auth, nil, "", req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", "rate_limited")
 		}
 		return ChatResponse{}, err
 	}
+	if estimateErr != nil {
+		return ChatResponse{}, ErrRateLimited
+	}
+	rateReservation, rateErr := a.store.ReserveRateLimit(ctx, domain.RateLimitReservationInput{RequestID: requestID, UserID: auth.UserID, APIKeyID: auth.KeyID, Model: req.Model, EstimatedTokens: int64(estimate.TotalTokens), ExpiresAt: a.now().Add(a.requestTimeout)})
+	if rateErr != nil {
+		return ChatResponse{}, ErrRateLimited
+	}
+	rateReservationOpen := true
+	defer func() {
+		if rateReservationOpen {
+			_ = a.store.ReleaseRateLimit(context.Background(), rateReservation.ID)
+		}
+	}()
 
 	candidates, err := a.orderedCandidates(req.Model)
 	if err != nil {
@@ -115,7 +134,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *domain.AuthContext,
 			return ChatResponse{}, ctx.Err()
 		}
 		candidate = next
-		if err := a.checkChannelRateLimit(auth, req.Model, candidate.ChannelID); err != nil {
+		if err := a.checkChannelRateLimit(auth, req.Model, candidate.ChannelID, *estimatedTokens); err != nil {
 			if errors.Is(err, ErrRateLimited) {
 				a.recordChannelHealth(candidate.ChannelID, false, domain.FailureUpstreamUnreachable)
 				if attempt+1 < len(candidates) {
@@ -204,9 +223,10 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *domain.AuthContext,
 		}
 		releaseReservation = false
 		streamOwnsCancel = true
+		rateReservationOpen = false
 		return ChatResponse{Status: resp.StatusCode, Stream: &completionStream{
 			service: a, body: resp.Body, ctx: ctx, requestID: requestID, auth: auth,
-			candidate: candidate, publicModel: req.Model, clientIP: clientIP, start: start, reservationID: reservation.ID, cancel: cancel,
+			candidate: candidate, publicModel: req.Model, clientIP: clientIP, start: start, reservationID: reservation.ID, rateReservationID: rateReservation.ID, cancel: cancel,
 		}}, nil
 	}
 
@@ -265,6 +285,8 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *domain.AuthContext,
 		return ChatResponse{}, err
 	}
 	releaseReservation = false
+	_ = a.store.FinalizeRateLimit(context.Background(), rateReservation.ID, int64(usage.TotalTokens))
+	rateReservationOpen = false
 
 	// Best-effort: the request already succeeded and was charged, so a
 	// last_used_at update failure must not turn it into an error response.

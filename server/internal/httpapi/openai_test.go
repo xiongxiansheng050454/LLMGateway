@@ -468,6 +468,19 @@ func TestChatCompletionsInsufficientBalance(t *testing.T) {
 	}
 }
 
+func TestChatCompletionsTokenRateLimitRejectsConservatively(t *testing.T) {
+	f := newProxyFixture(t, upstreamSuccess())
+	metric, target, action := "tpm", "user", "reject"
+	limit, window, priority := int64(1), 60, 1
+	if _, err := f.store.CreateRateLimit(domain.RateLimitInput{RuleName: stringPointer("token limit"), TargetType: &target, TargetValue: stringPointer("1"), Metric: &metric, LimitValue: &limit, WindowSeconds: &window, Action: &action, Priority: &priority}); err != nil {
+		t.Fatal(err)
+	}
+	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","messages":[]}`)
+	if res.Code != http.StatusTooManyRequests || !strings.Contains(res.Body.String(), "rate_limit_exceeded") {
+		t.Fatalf("status/body = %d %s", res.Code, res.Body.String())
+	}
+}
+
 func TestChatCompletionsNoChannel(t *testing.T) {
 	f := newProxyFixture(t, upstreamSuccess())
 	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"unknown-model","messages":[]}`)

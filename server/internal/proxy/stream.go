@@ -15,17 +15,18 @@ import (
 var errDownstreamWrite = errors.New("downstream stream write failed")
 
 type completionStream struct {
-	service       *Service
-	body          io.ReadCloser
-	ctx           context.Context
-	requestID     string
-	auth          *domain.AuthContext
-	candidate     domain.RouteCandidate
-	publicModel   string
-	clientIP      string
-	start         time.Time
-	reservationID int64
-	cancel        context.CancelFunc
+	service           *Service
+	body              io.ReadCloser
+	ctx               context.Context
+	requestID         string
+	auth              *domain.AuthContext
+	candidate         domain.RouteCandidate
+	publicModel       string
+	clientIP          string
+	start             time.Time
+	reservationID     int64
+	rateReservationID int64
+	cancel            context.CancelFunc
 
 	mu        sync.Mutex
 	forwarded bool
@@ -34,6 +35,9 @@ type completionStream struct {
 func (s *completionStream) Close() error {
 	if s.cancel != nil {
 		s.cancel()
+	}
+	if s.rateReservationID != 0 {
+		_ = s.service.store.ReleaseRateLimit(context.Background(), s.rateReservationID)
 	}
 	return s.body.Close()
 }
@@ -139,6 +143,10 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 		return err
 	}
 	settled = true
+	if s.rateReservationID != 0 {
+		_ = s.service.store.FinalizeRateLimit(context.Background(), s.rateReservationID, int64(usage.TotalTokens))
+		s.rateReservationID = 0
+	}
 	_ = s.service.store.UpdateKeyLastUsed(s.auth.KeyID)
 	if err := emit([]byte("data: [DONE]\n\n")); err != nil {
 		return fmt.Errorf("%w: %v", errDownstreamWrite, err)

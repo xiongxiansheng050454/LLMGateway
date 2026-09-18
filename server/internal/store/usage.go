@@ -21,4 +21,5 @@ type UsageStore interface {
 	// RFC3339 timestamp. It counts all attempts, including failures, for
 	// window-based rate limiting.
 	CountRequestsSince(domain.UsageCountFilter) (int, error)
+	CountTokensSince(domain.TokenCountFilter) (int64, error)
 }
