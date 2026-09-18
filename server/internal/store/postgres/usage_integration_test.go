@@ -165,6 +165,49 @@ func TestPGCountRequestsSinceFiltersByModelAndChannel(t *testing.T) {
 	}
 }
 
+func TestPGAggregateUsageFiltersByAPIKey(t *testing.T) {
+	st := testStore(t)
+	if _, err := st.CreateUser(domain.UserInput{Nickname: "A"}); err != nil {
+		t.Fatal(err)
+	}
+	keyA, err := st.CreateKey(1, domain.KeyInput{KeyName: "A"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	keyB, err := st.CreateKey(1, domain.KeyInput{KeyName: "B"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, input := range []domain.UsageLogInput{
+		{RequestID: "aggregate-a-gpt-1", UserID: intp(1), APIKeyID: intp(keyA.ID), Model: "gpt", Status: "success", TotalTokens: 10, TotalCost: "0.001000", DurationMs: 20},
+		{RequestID: "aggregate-a-gpt-2", UserID: intp(1), APIKeyID: intp(keyA.ID), Model: "gpt", Status: "error", TotalTokens: 20, TotalCost: "0.002000", DurationMs: 30},
+		{RequestID: "aggregate-a-other", UserID: intp(1), APIKeyID: intp(keyA.ID), Model: "other", Status: "success", TotalTokens: 5, TotalCost: "0.003000", DurationMs: 10},
+		{RequestID: "aggregate-b-gpt", UserID: intp(1), APIKeyID: intp(keyB.ID), Model: "gpt", Status: "success", TotalTokens: 999, TotalCost: "9.000000", DurationMs: 99},
+	} {
+		if _, err := st.InsertUsageLog(input); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	logs, err := st.ListUsageLogs(domain.UsageLogFilter{APIKeyID: intp(keyA.ID), Page: 1, PageSize: 20})
+	if err != nil || logs.Total != 3 {
+		t.Fatalf("key-filtered logs = %+v, %v", logs, err)
+	}
+	aggregates, err := st.AggregateUsage(domain.UsageAggregateFilter{GroupBy: "model", APIKeyID: intp(keyA.ID), StartTime: "1970-01-01T00:00:00Z", EndTime: "2100-01-01T00:00:00Z", Page: 1, PageSize: 20})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if aggregates.Total != 2 || aggregates.List[0].Model != "gpt" || aggregates.List[0].RequestCount != 2 || aggregates.List[0].SuccessCount != 1 || aggregates.List[0].ErrorCount != 1 || aggregates.List[0].TotalTokens != 30 || aggregates.List[0].TotalCost != "0.003000" || aggregates.List[0].DurationMs != 50 {
+		t.Fatalf("aggregates = %+v", aggregates)
+	}
+	for _, groupBy := range []string{"user", "api_key", "channel"} {
+		result, err := st.AggregateUsage(domain.UsageAggregateFilter{GroupBy: groupBy, APIKeyID: intp(keyA.ID), StartTime: "1970-01-01T00:00:00Z", EndTime: "2100-01-01T00:00:00Z", Page: 1, PageSize: 20})
+		if err != nil || result.Total != 1 || result.List[0].RequestCount != 3 || result.List[0].TotalTokens != 35 || result.List[0].TotalCost != "0.006000" {
+			t.Fatalf("%s aggregate = %+v, %v", groupBy, result, err)
+		}
+	}
+}
+
 func TestPGUsageInvalidTimeParams(t *testing.T) {
 	st := testStore(t)
 

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -31,6 +32,7 @@ func (a *Server) testChannel(r *http.Request, channelID int) (any, bool, int, st
 	if err != nil {
 		return httpcommon.Result(nil, err)
 	}
+	sort.Slice(models.List, func(i, j int) bool { return models.List[i].ID < models.List[j].ID })
 	items := []domain.ChannelTestItemDTO{}
 	for _, model := range models.List {
 		if !model.Enabled {

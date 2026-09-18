@@ -140,8 +140,35 @@ type StatsChannelDTO struct {
 	TotalCost    string `json:"total_cost"`
 }
 
+type UsageAggregateFilter struct {
+	GroupBy   string
+	UserID    *int
+	APIKeyID  *int
+	ChannelID *int
+	Model     string
+	Status    string
+	StartTime string
+	EndTime   string
+	Page      int
+	PageSize  int
+}
+
+type UsageAggregateDTO struct {
+	UserID       *int   `json:"user_id"`
+	APIKeyID     *int   `json:"api_key_id"`
+	ChannelID    *int   `json:"channel_id"`
+	Model        string `json:"model"`
+	RequestCount int64  `json:"request_count"`
+	SuccessCount int64  `json:"success_count"`
+	ErrorCount   int64  `json:"error_count"`
+	TotalTokens  int64  `json:"total_tokens"`
+	TotalCost    string `json:"total_cost"`
+	DurationMs   int64  `json:"duration_ms"`
+}
+
 type UsageLogFilter struct {
 	UserID    *int
+	APIKeyID  *int
 	ChannelID *int
 	Model     string
 	Status    string

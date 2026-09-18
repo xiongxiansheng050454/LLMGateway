@@ -24,6 +24,7 @@ SELECT
 FROM usage_logs l
 LEFT JOIN channels c ON c.id = l.channel_id
 WHERE (sqlc.narg(user_id)::bigint IS NULL OR l.user_id = sqlc.narg(user_id)::bigint)
+  AND (sqlc.narg(api_key_id)::bigint IS NULL OR l.api_key_id = sqlc.narg(api_key_id)::bigint)
   AND (sqlc.narg(channel_id)::bigint IS NULL OR l.channel_id = sqlc.narg(channel_id)::bigint)
   AND (sqlc.narg(model)::text IS NULL OR l.model = sqlc.narg(model)::text)
   AND (sqlc.narg(status)::text IS NULL OR l.status = sqlc.narg(status)::text)
@@ -36,6 +37,7 @@ LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
 SELECT count(*)::int
 FROM usage_logs l
 WHERE (sqlc.narg(user_id)::bigint IS NULL OR l.user_id = sqlc.narg(user_id)::bigint)
+  AND (sqlc.narg(api_key_id)::bigint IS NULL OR l.api_key_id = sqlc.narg(api_key_id)::bigint)
   AND (sqlc.narg(channel_id)::bigint IS NULL OR l.channel_id = sqlc.narg(channel_id)::bigint)
   AND (sqlc.narg(model)::text IS NULL OR l.model = sqlc.narg(model)::text)
   AND (sqlc.narg(status)::text IS NULL OR l.status = sqlc.narg(status)::text)
@@ -172,3 +174,31 @@ WHERE ttft_ms IS NOT NULL
   AND (sqlc.narg(model)::text IS NULL OR model = sqlc.narg(model)::text)
   AND created_at >= sqlc.arg(start_time)::timestamptz
   AND created_at <= sqlc.arg(end_time)::timestamptz;
+
+-- name: AggregateUsageByUser :many
+SELECT user_id, count(*)::bigint AS request_count, count(*) FILTER (WHERE status = 'success')::bigint AS success_count, count(*) FILTER (WHERE status <> 'success')::bigint AS error_count, coalesce(sum(total_tokens), 0)::bigint AS total_tokens, coalesce(sum(total_cost), 0)::numeric(20, 6)::text AS total_cost, coalesce(sum(duration_ms), 0)::bigint AS duration_ms, count(*) OVER()::bigint AS aggregate_total
+FROM usage_logs
+WHERE created_at >= sqlc.arg(start_time)::timestamptz AND created_at < sqlc.arg(end_time)::timestamptz
+  AND (sqlc.narg(user_id)::bigint IS NULL OR user_id = sqlc.narg(user_id)::bigint) AND (sqlc.narg(api_key_id)::bigint IS NULL OR api_key_id = sqlc.narg(api_key_id)::bigint) AND (sqlc.narg(channel_id)::bigint IS NULL OR channel_id = sqlc.narg(channel_id)::bigint) AND (sqlc.narg(model)::text IS NULL OR model = sqlc.narg(model)::text) AND (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status)::text)
+GROUP BY user_id ORDER BY request_count DESC, user_id NULLS LAST LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
+
+-- name: AggregateUsageByAPIKey :many
+SELECT api_key_id, count(*)::bigint AS request_count, count(*) FILTER (WHERE status = 'success')::bigint AS success_count, count(*) FILTER (WHERE status <> 'success')::bigint AS error_count, coalesce(sum(total_tokens), 0)::bigint AS total_tokens, coalesce(sum(total_cost), 0)::numeric(20, 6)::text AS total_cost, coalesce(sum(duration_ms), 0)::bigint AS duration_ms, count(*) OVER()::bigint AS aggregate_total
+FROM usage_logs
+WHERE created_at >= sqlc.arg(start_time)::timestamptz AND created_at < sqlc.arg(end_time)::timestamptz
+  AND (sqlc.narg(user_id)::bigint IS NULL OR user_id = sqlc.narg(user_id)::bigint) AND (sqlc.narg(api_key_id)::bigint IS NULL OR api_key_id = sqlc.narg(api_key_id)::bigint) AND (sqlc.narg(channel_id)::bigint IS NULL OR channel_id = sqlc.narg(channel_id)::bigint) AND (sqlc.narg(model)::text IS NULL OR model = sqlc.narg(model)::text) AND (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status)::text)
+GROUP BY api_key_id ORDER BY request_count DESC, api_key_id NULLS LAST LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
+
+-- name: AggregateUsageByModel :many
+SELECT model, count(*)::bigint AS request_count, count(*) FILTER (WHERE status = 'success')::bigint AS success_count, count(*) FILTER (WHERE status <> 'success')::bigint AS error_count, coalesce(sum(total_tokens), 0)::bigint AS total_tokens, coalesce(sum(total_cost), 0)::numeric(20, 6)::text AS total_cost, coalesce(sum(duration_ms), 0)::bigint AS duration_ms, count(*) OVER()::bigint AS aggregate_total
+FROM usage_logs
+WHERE created_at >= sqlc.arg(start_time)::timestamptz AND created_at < sqlc.arg(end_time)::timestamptz
+  AND (sqlc.narg(user_id)::bigint IS NULL OR user_id = sqlc.narg(user_id)::bigint) AND (sqlc.narg(api_key_id)::bigint IS NULL OR api_key_id = sqlc.narg(api_key_id)::bigint) AND (sqlc.narg(channel_id)::bigint IS NULL OR channel_id = sqlc.narg(channel_id)::bigint) AND (sqlc.narg(model)::text IS NULL OR model = sqlc.narg(model)::text) AND (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status)::text)
+GROUP BY model ORDER BY request_count DESC, model LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);
+
+-- name: AggregateUsageByChannel :many
+SELECT channel_id, count(*)::bigint AS request_count, count(*) FILTER (WHERE status = 'success')::bigint AS success_count, count(*) FILTER (WHERE status <> 'success')::bigint AS error_count, coalesce(sum(total_tokens), 0)::bigint AS total_tokens, coalesce(sum(total_cost), 0)::numeric(20, 6)::text AS total_cost, coalesce(sum(duration_ms), 0)::bigint AS duration_ms, count(*) OVER()::bigint AS aggregate_total
+FROM usage_logs
+WHERE created_at >= sqlc.arg(start_time)::timestamptz AND created_at < sqlc.arg(end_time)::timestamptz
+  AND (sqlc.narg(user_id)::bigint IS NULL OR user_id = sqlc.narg(user_id)::bigint) AND (sqlc.narg(api_key_id)::bigint IS NULL OR api_key_id = sqlc.narg(api_key_id)::bigint) AND (sqlc.narg(channel_id)::bigint IS NULL OR channel_id = sqlc.narg(channel_id)::bigint) AND (sqlc.narg(model)::text IS NULL OR model = sqlc.narg(model)::text) AND (sqlc.narg(status)::text IS NULL OR status = sqlc.narg(status)::text)
+GROUP BY channel_id ORDER BY request_count DESC, channel_id NULLS LAST LIMIT sqlc.arg(page_limit) OFFSET sqlc.arg(page_offset);

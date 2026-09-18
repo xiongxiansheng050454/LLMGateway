@@ -4,6 +4,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/httpcommon"
@@ -46,6 +47,8 @@ func (a *Server) Data(r *http.Request) (any, bool, int, string) {
 			return a.statsChannels(r)
 		case "ttft":
 			return a.statsTTFT(r)
+		case "usage":
+			return a.aggregateUsage(r)
 		}
 	}
 	return nil, false, 0, ""
@@ -76,6 +79,13 @@ func (a *Server) listUsageLogs(r *http.Request) (any, bool, int, string) {
 			return nil, true, http.StatusBadRequest, "invalid channel_id"
 		}
 		filter.ChannelID = &id
+	}
+	if value := query.Get("api_key_id"); value != "" {
+		id, err := strconv.Atoi(value)
+		if err != nil || id <= 0 {
+			return nil, true, http.StatusBadRequest, "invalid api_key_id"
+		}
+		filter.APIKeyID = &id
 	}
 	return httpcommon.Result(a.store.ListUsageLogs(filter))
 }
@@ -109,6 +119,42 @@ func (a *Server) statsTTFT(r *http.Request) (any, bool, int, string) {
 		}
 	}
 	return httpcommon.Result(a.store.StatsTTFT(filter))
+}
+
+func (a *Server) aggregateUsage(r *http.Request) (any, bool, int, string) {
+	query := r.URL.Query()
+	groupBy := query.Get("group_by")
+	if groupBy != "user" && groupBy != "api_key" && groupBy != "model" && groupBy != "channel" {
+		return nil, true, http.StatusBadRequest, "invalid group_by"
+	}
+	if (query.Get("start_time") != "" || query.Get("end_time") != "") && (query.Get("date_from") != "" || query.Get("date_to") != "") {
+		return nil, true, http.StatusBadRequest, "time and date ranges cannot be combined"
+	}
+	startTime, endTime := query.Get("start_time"), query.Get("end_time")
+	if query.Get("date_from") != "" || query.Get("date_to") != "" {
+		if err := domain.ValidateDateRange(query.Get("date_from"), query.Get("date_to")); err != nil {
+			return nil, true, http.StatusBadRequest, "invalid date range"
+		}
+		startTime = orDefault(query.Get("date_from"), defaultDateFrom) + "T00:00:00Z"
+		if query.Get("date_to") == "" {
+			endTime = defaultEndTime
+		} else {
+			end, _ := time.Parse("2006-01-02", query.Get("date_to"))
+			endTime = end.AddDate(0, 0, 1).Format(time.RFC3339)
+		}
+	}
+	filter := domain.UsageAggregateFilter{GroupBy: groupBy, Model: query.Get("model"), Status: query.Get("status"), StartTime: orDefault(startTime, defaultStartTime), EndTime: orDefault(endTime, defaultEndTime)}
+	filter.Page, filter.PageSize = httpcommon.ParsePagination(r)
+	for name, target := range map[string]**int{"user_id": &filter.UserID, "api_key_id": &filter.APIKeyID, "channel_id": &filter.ChannelID} {
+		if value := query.Get(name); value != "" {
+			id, err := strconv.Atoi(value)
+			if err != nil || id <= 0 {
+				return nil, true, http.StatusBadRequest, "invalid " + name
+			}
+			*target = &id
+		}
+	}
+	return httpcommon.Result(a.store.AggregateUsage(filter))
 }
 
 func orDefault(value, fallback string) string {

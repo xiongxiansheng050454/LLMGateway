@@ -362,6 +362,95 @@ func (s *Store) StatsTTFT(filter domain.TTFTStatsFilter) (domain.TTFTStatsDTO, e
 	return domain.TTFTStatsDTO{SampleCount: int64(len(values)), AverageMs: sum / int64(len(values)), P50Ms: percentile(values, 50), P95Ms: percentile(values, 95), P99Ms: percentile(values, 99)}, nil
 }
 
+func (s *Store) AggregateUsage(filter domain.UsageAggregateFilter) (domain.ListResponse[domain.UsageAggregateDTO], error) {
+	start, end, err := parseRange(filter.StartTime, filter.EndTime)
+	if err != nil {
+		return domain.ListResponse[domain.UsageAggregateDTO]{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	byGroup := map[string]*domain.UsageAggregateDTO{}
+	for _, log := range s.usageLogs {
+		created, err := time.Parse(time.RFC3339, log.CreatedAt)
+		if err != nil || (!start.IsZero() && created.Before(start)) || (!end.IsZero() && !created.Before(end)) || (filter.UserID != nil && (log.UserID == nil || *log.UserID != *filter.UserID)) || (filter.APIKeyID != nil && (log.APIKeyID == nil || *log.APIKeyID != *filter.APIKeyID)) || (filter.ChannelID != nil && (log.ChannelID == nil || *log.ChannelID != *filter.ChannelID)) || (filter.Model != "" && log.Model != filter.Model) || (filter.Status != "" && log.Status != filter.Status) {
+			continue
+		}
+		key := ""
+		item := domain.UsageAggregateDTO{}
+		switch filter.GroupBy {
+		case "user":
+			item.UserID = log.UserID
+			if log.UserID != nil {
+				key = fmt.Sprintf("%d", *log.UserID)
+			}
+		case "api_key":
+			item.APIKeyID = log.APIKeyID
+			if log.APIKeyID != nil {
+				key = fmt.Sprintf("%d", *log.APIKeyID)
+			}
+		case "model":
+			item.Model = log.Model
+			key = log.Model
+		case "channel":
+			item.ChannelID = log.ChannelID
+			if log.ChannelID != nil {
+				key = fmt.Sprintf("%d", *log.ChannelID)
+			}
+		default:
+			return domain.ListResponse[domain.UsageAggregateDTO]{}, store.ErrInvalid
+		}
+		entry := byGroup[key]
+		if entry == nil {
+			entry = &item
+			byGroup[key] = entry
+		}
+		entry.RequestCount++
+		if log.Status == "success" {
+			entry.SuccessCount++
+		} else {
+			entry.ErrorCount++
+		}
+		entry.TotalTokens += int64(log.TotalTokens)
+		entry.DurationMs += int64(log.DurationMs)
+		if cost, err := money.Parse6(log.TotalCost); err == nil {
+			current, _ := money.Parse6(entry.TotalCost)
+			entry.TotalCost = money.Format6(current.Add(cost))
+		}
+	}
+	list := make([]domain.UsageAggregateDTO, 0, len(byGroup))
+	for _, item := range byGroup {
+		list = append(list, *item)
+	}
+	sort.Slice(list, func(i, j int) bool {
+		if list[i].RequestCount != list[j].RequestCount {
+			return list[i].RequestCount > list[j].RequestCount
+		}
+		return aggregateKey(list[i], filter.GroupBy) < aggregateKey(list[j], filter.GroupBy)
+	})
+	startIndex, endIndex := pageBounds(len(list), filter.Page, filter.PageSize)
+	return domain.ListResponse[domain.UsageAggregateDTO]{List: list[startIndex:endIndex], Total: len(list)}, nil
+}
+
+func aggregateKey(item domain.UsageAggregateDTO, groupBy string) string {
+	switch groupBy {
+	case "user":
+		if item.UserID != nil {
+			return fmt.Sprintf("%d", *item.UserID)
+		}
+	case "api_key":
+		if item.APIKeyID != nil {
+			return fmt.Sprintf("%d", *item.APIKeyID)
+		}
+	case "model":
+		return item.Model
+	case "channel":
+		if item.ChannelID != nil {
+			return fmt.Sprintf("%d", *item.ChannelID)
+		}
+	}
+	return ""
+}
+
 func percentile(values []int, percentile int) int64 {
 	index := (len(values)*percentile + 99) / 100
 	return int64(values[index-1])
@@ -400,6 +489,9 @@ func (s *Store) filterUsageLogsLocked(filter domain.UsageLogFilter) ([]domain.Us
 			continue
 		}
 		if filter.ChannelID != nil && (log.ChannelID == nil || *log.ChannelID != *filter.ChannelID) {
+			continue
+		}
+		if filter.APIKeyID != nil && (log.APIKeyID == nil || *log.APIKeyID != *filter.APIKeyID) {
 			continue
 		}
 		if filter.Model != "" && log.Model != filter.Model {

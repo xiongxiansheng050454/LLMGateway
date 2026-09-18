@@ -21,6 +21,7 @@ func (s *Store) ListUsageLogs(filter domain.UsageLogFilter) (domain.ListResponse
 	limit, offset := limitOffset(filter.Page, filter.PageSize)
 	params := sqlc.ListUsageLogsParams{
 		UserID:     int8Value(filter.UserID),
+		ApiKeyID:   int8Value(filter.APIKeyID),
 		ChannelID:  int8Value(filter.ChannelID),
 		Model:      textValueParam(filter.Model),
 		Status:     textValueParam(filter.Status),
@@ -36,6 +37,7 @@ func (s *Store) ListUsageLogs(filter domain.UsageLogFilter) (domain.ListResponse
 	}
 	total, err := s.queries.CountUsageLogs(ctx, sqlc.CountUsageLogsParams{
 		UserID:    params.UserID,
+		ApiKeyID:  params.ApiKeyID,
 		ChannelID: params.ChannelID,
 		Model:     params.Model,
 		Status:    params.Status,
@@ -269,6 +271,58 @@ func (s *Store) StatsTTFT(filter domain.TTFTStatsFilter) (domain.TTFTStatsDTO, e
 		return domain.TTFTStatsDTO{}, mapError(err)
 	}
 	return domain.TTFTStatsDTO{SampleCount: row.SampleCount, AverageMs: row.AverageMs, P50Ms: row.P50Ms, P95Ms: row.P95Ms, P99Ms: row.P99Ms}, nil
+}
+
+func (s *Store) AggregateUsage(filter domain.UsageAggregateFilter) (domain.ListResponse[domain.UsageAggregateDTO], error) {
+	if err := domain.ValidateTimeRange(filter.StartTime, filter.EndTime); err != nil {
+		return domain.ListResponse[domain.UsageAggregateDTO]{}, err
+	}
+	limit, offset := limitOffset(filter.Page, filter.PageSize)
+	params := sqlc.AggregateUsageByModelParams{StartTime: timestampValue(filter.StartTime), EndTime: timestampValue(filter.EndTime), UserID: int8Value(filter.UserID), ApiKeyID: int8Value(filter.APIKeyID), ChannelID: int8Value(filter.ChannelID), Model: textValueParam(filter.Model), Status: textValueParam(filter.Status), PageOffset: offset, PageLimit: limit}
+	ctx := context.Background()
+	list := []domain.UsageAggregateDTO{}
+	total := 0
+	switch filter.GroupBy {
+	case "user":
+		rows, err := s.queries.AggregateUsageByUser(ctx, sqlc.AggregateUsageByUserParams(params))
+		if err != nil {
+			return domain.ListResponse[domain.UsageAggregateDTO]{}, mapError(err)
+		}
+		for _, row := range rows {
+			list = append(list, domain.UsageAggregateDTO{UserID: optionalInt(row.UserID), RequestCount: row.RequestCount, SuccessCount: row.SuccessCount, ErrorCount: row.ErrorCount, TotalTokens: row.TotalTokens, TotalCost: row.TotalCost, DurationMs: row.DurationMs})
+			total = int(row.AggregateTotal)
+		}
+	case "api_key":
+		rows, err := s.queries.AggregateUsageByAPIKey(ctx, sqlc.AggregateUsageByAPIKeyParams(params))
+		if err != nil {
+			return domain.ListResponse[domain.UsageAggregateDTO]{}, mapError(err)
+		}
+		for _, row := range rows {
+			list = append(list, domain.UsageAggregateDTO{APIKeyID: optionalInt(row.ApiKeyID), RequestCount: row.RequestCount, SuccessCount: row.SuccessCount, ErrorCount: row.ErrorCount, TotalTokens: row.TotalTokens, TotalCost: row.TotalCost, DurationMs: row.DurationMs})
+			total = int(row.AggregateTotal)
+		}
+	case "model":
+		rows, err := s.queries.AggregateUsageByModel(ctx, params)
+		if err != nil {
+			return domain.ListResponse[domain.UsageAggregateDTO]{}, mapError(err)
+		}
+		for _, row := range rows {
+			list = append(list, domain.UsageAggregateDTO{Model: row.Model, RequestCount: row.RequestCount, SuccessCount: row.SuccessCount, ErrorCount: row.ErrorCount, TotalTokens: row.TotalTokens, TotalCost: row.TotalCost, DurationMs: row.DurationMs})
+			total = int(row.AggregateTotal)
+		}
+	case "channel":
+		rows, err := s.queries.AggregateUsageByChannel(ctx, sqlc.AggregateUsageByChannelParams(params))
+		if err != nil {
+			return domain.ListResponse[domain.UsageAggregateDTO]{}, mapError(err)
+		}
+		for _, row := range rows {
+			list = append(list, domain.UsageAggregateDTO{ChannelID: optionalInt(row.ChannelID), RequestCount: row.RequestCount, SuccessCount: row.SuccessCount, ErrorCount: row.ErrorCount, TotalTokens: row.TotalTokens, TotalCost: row.TotalCost, DurationMs: row.DurationMs})
+			total = int(row.AggregateTotal)
+		}
+	default:
+		return domain.ListResponse[domain.UsageAggregateDTO]{}, store.ErrInvalid
+	}
+	return domain.ListResponse[domain.UsageAggregateDTO]{List: list, Total: total}, nil
 }
 
 func usageLogDTO(id int64, requestID string, userID, apiKeyID, channelID pgtype.Int8, channelName pgtype.Text, model, upstreamModel string, inputTokens, outputTokens, cachedInputTokens, totalTokens int64, unitPriceInput, unitPriceOutput, totalCost string, durationMs int64, ttftMs pgtype.Int8, status, errorCode, clientIP string, createdAt pgtype.Timestamptz) domain.UsageLogDTO {
