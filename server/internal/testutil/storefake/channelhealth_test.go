@@ -1,6 +1,7 @@
 package storefake
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -138,6 +139,18 @@ func TestChannelHealthConcurrentFailures(t *testing.T) {
 	}
 	if health.ConsecutiveFailures != workers {
 		t.Fatalf("consecutive_failures = %d, want %d", health.ConsecutiveFailures, workers)
+	}
+}
+
+func TestChannelProbeLeaseAllowsOnlyOneConcurrentProbe(t *testing.T) {
+	st := NewWithClock(func() time.Time { return time.Unix(100, 0).UTC() })
+	first, err := st.AcquireChannelProbe(context.Background(), 1, time.Minute)
+	if err != nil || !first {
+		t.Fatalf("first probe = %v,%v", first, err)
+	}
+	second, err := st.AcquireChannelProbe(context.Background(), 1, time.Minute)
+	if err != nil || second {
+		t.Fatalf("second probe = %v,%v, want denied", second, err)
 	}
 }
 

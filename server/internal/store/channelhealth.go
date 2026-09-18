@@ -1,6 +1,10 @@
 package store
 
-import "LLMGateway/server/internal/domain"
+import (
+	"LLMGateway/server/internal/domain"
+	"context"
+	"time"
+)
 
 // ChannelHealthStore persists per-channel circuit breaker state. Reading health
 // lazily evaluates the open -> half-open transition; the transition is only
@@ -12,4 +16,6 @@ type ChannelHealthStore interface {
 	RecordChannelFailure(channelID int, reason domain.FailureReason) (domain.ChannelHealth, error)
 	ResetChannelHealth(channelID int) error
 	ListChannelHealth() (domain.ListResponse[domain.ChannelHealthDTO], error)
+	RecordChannelAttempt(context.Context, int, bool, domain.FailureReason) (domain.ChannelHealth, error)
+	AcquireChannelProbe(context.Context, int, time.Duration) (bool, error)
 }

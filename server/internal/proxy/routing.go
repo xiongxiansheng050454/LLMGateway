@@ -3,6 +3,7 @@ package proxy
 import (
 	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/money"
+	"context"
 )
 
 // selectChannel returns the channel to use for a public model. Candidates come
@@ -30,6 +31,13 @@ func (a *Service) orderedCandidates(model string) ([]domain.RouteCandidate, erro
 	for _, candidate := range result.List {
 		if seen[candidate.ChannelID] {
 			continue
+		}
+		health, healthErr := a.store.GetChannelHealth(candidate.ChannelID)
+		if healthErr == nil && health.State == domain.HealthHalfOpen {
+			allowed, probeErr := a.store.AcquireChannelProbe(context.Background(), candidate.ChannelID, a.requestTimeout)
+			if probeErr != nil || !allowed {
+				continue
+			}
 		}
 		if candidate.Balance != nil {
 			parsed, err := money.Parse6(*candidate.Balance)

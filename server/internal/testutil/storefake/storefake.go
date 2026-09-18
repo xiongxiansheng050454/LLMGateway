@@ -46,6 +46,7 @@ type Store struct {
 	rateLimitReservations      map[int64]domain.RateLimitReservationInput
 	breaker                    domain.ChannelBreakerConfig
 	now                        func() time.Time
+	probes                     map[int]time.Time
 }
 
 var (
@@ -110,6 +111,7 @@ func New() *Store {
 		channelHealth:              map[int]*domain.ChannelHealth{},
 		breaker:                    domain.DefaultChannelBreakerConfig(),
 		now:                        time.Now,
+		probes:                     map[int]time.Time{},
 	}
 }
 

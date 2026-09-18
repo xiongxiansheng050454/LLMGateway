@@ -36,12 +36,34 @@ type ChannelHealthDTO struct {
 // ChannelBreakerConfig holds the circuit breaker thresholds shared by the
 // persistence implementations and test fakes.
 type ChannelBreakerConfig struct {
-	FailureThreshold int
-	Cooldown         time.Duration
+	FailureThreshold   int
+	Cooldown           time.Duration
+	WindowSeconds      int
+	MinimumSamples     int
+	ErrorRatePercent   int
+	TimeoutRatePercent int
+}
+
+type ChannelBreakerConfigDTO struct {
+	ChannelID          int `json:"channel_id"`
+	WindowSeconds      int `json:"window_seconds"`
+	MinimumSamples     int `json:"minimum_samples"`
+	ErrorRatePercent   int `json:"error_rate_percent"`
+	TimeoutRatePercent int `json:"timeout_rate_percent"`
+	CooldownSeconds    int `json:"cooldown_seconds"`
 }
 
 func DefaultChannelBreakerConfig() ChannelBreakerConfig {
-	return ChannelBreakerConfig{FailureThreshold: 5, Cooldown: 30 * time.Second}
+	return ChannelBreakerConfig{FailureThreshold: 5, Cooldown: 30 * time.Second, WindowSeconds: 60, MinimumSamples: 10, ErrorRatePercent: 50, TimeoutRatePercent: 50}
+}
+
+type ChannelHealthWindow struct{ Requests, Errors, Timeouts int64 }
+
+func ShouldOpenChannelBreaker(window ChannelHealthWindow, cfg ChannelBreakerConfig) bool {
+	if window.Requests < int64(cfg.MinimumSamples) || window.Requests <= 0 {
+		return false
+	}
+	return (cfg.ErrorRatePercent > 0 && window.Errors*100 >= window.Requests*int64(cfg.ErrorRatePercent)) || (cfg.TimeoutRatePercent > 0 && window.Timeouts*100 >= window.Requests*int64(cfg.TimeoutRatePercent))
 }
 
 // NewChannelHealth returns the default closed state for a channel.

@@ -30,9 +30,27 @@ func (s *Store) RecordChannelSuccess(channelID int) (domain.ChannelHealth, error
 }
 
 func (s *Store) RecordChannelFailure(channelID int, reason domain.FailureReason) (domain.ChannelHealth, error) {
+	if !reason.CountsAsChannelFailure() {
+		return s.GetChannelHealth(channelID)
+	}
 	return s.recordChannelHealth(channelID, func(current domain.ChannelHealth) domain.ChannelHealth {
 		return domain.ApplyChannelFailure(current, reason, s.now(), s.breaker)
 	})
+}
+
+func (s *Store) RecordChannelAttempt(_ context.Context, channelID int, success bool, reason domain.FailureReason) (domain.ChannelHealth, error) {
+	if success {
+		return s.RecordChannelSuccess(channelID)
+	}
+	return s.RecordChannelFailure(channelID, reason)
+}
+
+func (s *Store) AcquireChannelProbe(ctx context.Context, channelID int, lease time.Duration) (bool, error) {
+	result, err := s.pool.Exec(ctx, `INSERT INTO channel_breaker_probes(channel_id, lease_id, leased_until) VALUES($1, gen_random_uuid(), now()+$2::int*interval '1 second') ON CONFLICT(channel_id) DO UPDATE SET lease_id=gen_random_uuid(), leased_until=EXCLUDED.leased_until WHERE channel_breaker_probes.leased_until <= now()`, channelID, int(lease.Seconds()))
+	if err != nil {
+		return false, mapError(err)
+	}
+	return result.RowsAffected() == 1, nil
 }
 
 // recordChannelHealth applies a state transition inside a transaction, holding

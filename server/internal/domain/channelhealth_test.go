@@ -68,3 +68,30 @@ func TestHalfOpenSuccessClosesAndFailureReopens(t *testing.T) {
 		t.Fatalf("half-open failure state = %s, want open", reopened.State)
 	}
 }
+
+func TestBreakerWindowOpensOnlyAfterMinimumSamplesAndIntegerThreshold(t *testing.T) {
+	cfg := ChannelBreakerConfig{FailureThreshold: 99, Cooldown: 30 * time.Second, WindowSeconds: 60, MinimumSamples: 4, ErrorRatePercent: 50, TimeoutRatePercent: 75}
+	window := ChannelHealthWindow{Requests: 3, Errors: 3, Timeouts: 0}
+	if ShouldOpenChannelBreaker(window, cfg) {
+		t.Fatal("opened with insufficient samples")
+	}
+	window.Requests = 4
+	if !ShouldOpenChannelBreaker(window, cfg) {
+		t.Fatal("did not open at exact integer error threshold")
+	}
+	window = ChannelHealthWindow{Requests: 4, Errors: 0, Timeouts: 3}
+	if !ShouldOpenChannelBreaker(window, cfg) {
+		t.Fatal("did not open at exact integer timeout threshold")
+	}
+}
+
+func TestCallerErrorsDoNotCountAsChannelFailures(t *testing.T) {
+	for _, reason := range []FailureReason{FailureCaller400, FailureCaller404, FailureCaller422, FailureClientCanceled} {
+		if reason.CountsAsChannelFailure() {
+			t.Fatalf("%s counted as channel failure", reason)
+		}
+	}
+	if !FailureUpstreamTimeout.CountsAsChannelFailure() {
+		t.Fatal("timeout must count as channel failure")
+	}
+}

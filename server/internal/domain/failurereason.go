@@ -15,6 +15,11 @@ const (
 	FailureUpstream5xx         FailureReason = "upstream_5xx"
 	FailureUpstreamProtocol    FailureReason = "upstream_protocol_error"
 	FailureInvalidChannelKey   FailureReason = "invalid_channel_key"
+	FailureUpstreamTimeout     FailureReason = "upstream_timeout"
+	FailureCaller400           FailureReason = "caller_400"
+	FailureCaller404           FailureReason = "caller_404"
+	FailureCaller422           FailureReason = "caller_422"
+	FailureClientCanceled      FailureReason = "client_canceled"
 )
 
 // IsDeterministic reports whether the failure will not recover on retry, so the
@@ -25,5 +30,14 @@ func (r FailureReason) IsDeterministic() bool {
 		return true
 	default:
 		return false
+	}
+}
+
+func (r FailureReason) CountsAsChannelFailure() bool {
+	switch r {
+	case FailureCaller400, FailureCaller404, FailureCaller422, FailureClientCanceled:
+		return false
+	default:
+		return true
 	}
 }

@@ -1,10 +1,33 @@
 package storefake
 
 import (
+	"context"
 	"sort"
+	"time"
 
 	"LLMGateway/server/internal/domain"
 )
+
+func (s *Store) RecordChannelAttempt(_ context.Context, channelID int, success bool, reason domain.FailureReason) (domain.ChannelHealth, error) {
+	if !success && !reason.CountsAsChannelFailure() {
+		return s.GetChannelHealth(channelID)
+	}
+	if success {
+		return s.RecordChannelSuccess(channelID)
+	}
+	return s.RecordChannelFailure(channelID, reason)
+}
+
+func (s *Store) AcquireChannelProbe(_ context.Context, channelID int, lease time.Duration) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	now := s.now()
+	if until, ok := s.probes[channelID]; ok && until.After(now) {
+		return false, nil
+	}
+	s.probes[channelID] = now.Add(lease)
+	return true, nil
+}
 
 func (s *Store) GetChannelHealth(channelID int) (domain.ChannelHealth, error) {
 	s.mu.Lock()
