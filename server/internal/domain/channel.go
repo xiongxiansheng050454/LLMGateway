@@ -6,7 +6,7 @@ type Channel struct {
 	BaseURL string
 	// APIKey is the upstream secret. It is never serialized into responses.
 	// Persistence layers must store it encrypted (see internal/crypto) and
-	// expose only ciphertext; the in-memory MVP keeps it in-process only.
+	// expose only ciphertext; test fakes keep placeholder values in-process.
 	APIKey   string
 	AuthType string
 	Status   int

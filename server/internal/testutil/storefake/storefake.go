@@ -1,4 +1,6 @@
-package memory
+// Package storefake provides a test-only in-process implementation of the
+// persistence ports. Production code must use store/postgres.
+package storefake
 
 import (
 	"encoding/json"
@@ -11,8 +13,7 @@ import (
 	"LLMGateway/server/internal/store"
 )
 
-// Store is the in-memory implementation of store.Store. It is the default for
-// local runs, tests and feature work before PostgreSQL is wired up.
+// Store is the in-process test implementation of store.Store.
 type Store struct {
 	mu            sync.Mutex
 	nextChannelID int
@@ -49,7 +50,7 @@ var (
 	_ store.ChannelHealthStore = (*Store)(nil)
 )
 
-// memoryKey is the in-memory gateway key record. Only the hash is retained;
+// memoryKey is the fake gateway key record. Only the hash is retained;
 // the plaintext is returned once at creation/reset and never stored.
 type memoryKey struct {
 	id                 int
@@ -64,7 +65,7 @@ type memoryKey struct {
 	expiresAt          *string
 }
 
-// NewWithClock builds a memory store with an injected clock, used by tests to
+// NewWithClock builds a fake store with an injected clock, used by tests to
 // make cooldown behaviour deterministic.
 func NewWithClock(now func() time.Time) *Store {
 	s := New()

@@ -1,4 +1,4 @@
-package memory
+package storefake
 
 import (
 	"encoding/json"
@@ -396,7 +396,7 @@ func normalizeJSON(value json.RawMessage, fallback string) json.RawMessage {
 }
 
 // normalizeTimestampPtr parses an RFC3339 timestamp and returns it in UTC so
-// the in-memory store matches the PostgreSQL timestamptz output. Unparseable
+// the fake store matches the PostgreSQL timestamptz output. Unparseable
 // values are preserved as-is.
 func normalizeTimestampPtr(value string) *string {
 	if value == "" {

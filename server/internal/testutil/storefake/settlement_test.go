@@ -1,4 +1,4 @@
-package memory
+package storefake
 
 import (
 	"errors"
@@ -105,7 +105,7 @@ func TestSettleChatCompletionCostZeroWritesUsageWithoutDebit(t *testing.T) {
 	}
 }
 
-func TestSettleChatCompletionDuplicateUsageRollsBackMemory(t *testing.T) {
+func TestSettleChatCompletionDuplicateUsageRollsBack(t *testing.T) {
 	st := New()
 	if _, err := st.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)

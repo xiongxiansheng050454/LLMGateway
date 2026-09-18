@@ -41,8 +41,8 @@ var (
 )
 
 // NormalizeRateLimit merges a partial input over an existing rule (or defaults
-// for a new rule) and validates the result. It is shared by the memory and
-// PostgreSQL implementations so both accept and reject the same values.
+// for a new rule) and validates the result. It is shared by persistence code
+// and test fakes so both accept and reject the same values.
 func NormalizeRateLimit(in RateLimitInput, existing *RateLimitRule) (RateLimitRule, error) {
 	rule := RateLimitRule{TargetValue: "*", Priority: 100, Enabled: true, Extras: json.RawMessage(`{}`)}
 	if existing != nil {

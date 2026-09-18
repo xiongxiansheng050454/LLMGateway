@@ -8,7 +8,6 @@ import (
 
 	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/store"
-	"LLMGateway/server/internal/store/memory"
 )
 
 func createHealthTestChannel(t *testing.T, st interface {
@@ -211,18 +210,18 @@ func runHealthScenario(t *testing.T, st store.Store, clock *time.Time) healthSna
 	return snapshot
 }
 
-func TestMemoryVsPGChannelHealthConsistency(t *testing.T) {
+func TestPGChannelHealthScenario(t *testing.T) {
 	fixed := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
-	memClock := fixed
-	mem := memory.NewWithClock(func() time.Time { return memClock })
-	memSnapshot := runHealthScenario(t, mem, &memClock)
-
 	pg := testStore(t)
 	pgClock := fixed
 	pg.now = func() time.Time { return pgClock }
-	pgSnapshot := runHealthScenario(t, pg, &pgClock)
+	got := runHealthScenario(t, pg, &pgClock)
 
-	if memSnapshot != pgSnapshot {
-		t.Fatalf("memory and PG differ:\nmem = %+v\npg  = %+v", memSnapshot, pgSnapshot)
+	want := healthSnapshot{
+		state: "open", consecutive: 5, successCount: 0, failureCount: 5,
+		openedAtSet: true, stateAfterCool: "half-open", deterministicOpen: "open",
+	}
+	if got != want {
+		t.Fatalf("health snapshot = %+v, want %+v", got, want)
 	}
 }

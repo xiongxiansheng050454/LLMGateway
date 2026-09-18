@@ -6,13 +6,13 @@ import (
 	"path/filepath"
 	"testing"
 
-	"LLMGateway/server/internal/store/memory"
+	"LLMGateway/server/internal/testutil/storefake"
 )
 
 // TestNewRouterPaths exercises the production route table directly so drift
 // between cmd/llmgateway/router.go and the handler entry points is caught.
 func TestNewRouterPaths(t *testing.T) {
-	router := newRouter(filepath.Join("..", "..", "..", "dashboard"), memory.New())
+	router := newRouter(filepath.Join("..", "..", "..", "dashboard"), storefake.New())
 
 	tests := []struct {
 		name   string
