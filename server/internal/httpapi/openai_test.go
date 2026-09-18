@@ -398,6 +398,10 @@ func TestChatCompletionsStreamingCancellationReachesUpstream(t *testing.T) {
 		<-r.Context().Done()
 		close(upstreamCanceled)
 	}))
+	name, scope, period, scopeID, limit := "stream daily", "user", "day", 1, int64(10000)
+	if _, err := f.store.CreateQuotaPolicy(domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
+		t.Fatal(err)
+	}
 	gateway := httptest.NewServer(http.HandlerFunc(f.server.OpenAI))
 	t.Cleanup(gateway.Close)
 
@@ -424,6 +428,20 @@ func TestChatCompletionsStreamingCancellationReachesUpstream(t *testing.T) {
 	case <-upstreamCanceled:
 	case <-time.After(2 * time.Second):
 		t.Fatal("upstream request was not canceled")
+	}
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		usage, err := f.store.ListQuotaUsage(context.Background(), domain.QuotaPolicyFilter{Page: 1, PageSize: 10})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if usage.Total == 1 && usage.List[0].ReservedTokens == 0 && usage.List[0].UsedTokens == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("quota reservation was not released after cancellation: %+v", usage)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -492,6 +510,67 @@ func TestChatCompletionsRateLimited(t *testing.T) {
 	second := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, body)
 	if second.Code != http.StatusTooManyRequests {
 		t.Fatalf("second status = %d, want 429; body=%s", second.Code, second.Body.String())
+	}
+}
+
+func TestChatCompletionsQuotaExceededBeforeUpstream(t *testing.T) {
+	var calls atomic.Int32
+	f := newProxyFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls.Add(1)
+		upstreamSuccess().ServeHTTP(w, r)
+	}))
+	name, scope, period, scopeID := "key daily", "api_key", "day", 1
+	limit := int64(10)
+	if _, err := f.store.CreateQuotaPolicy(domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
+		t.Fatal(err)
+	}
+
+	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","max_tokens":20,"messages":[{"role":"user","content":"hello"}]}`)
+	if res.Code != http.StatusTooManyRequests || !strings.Contains(res.Body.String(), "insufficient_quota") {
+		t.Fatalf("status/body = %d %s, want 429 insufficient_quota", res.Code, res.Body.String())
+	}
+	if calls.Load() != 0 {
+		t.Fatalf("upstream calls = %d, want 0", calls.Load())
+	}
+}
+
+func TestChatCompletionsQuotaSettlementUsesActualUsage(t *testing.T) {
+	f := newProxyFixture(t, upstreamSuccess())
+	name, scope, period, scopeID := "user daily", "user", "day", 1
+	limit := int64(10000)
+	if _, err := f.store.CreateQuotaPolicy(domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
+		t.Fatal(err)
+	}
+
+	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","max_tokens":2000,"messages":[{"role":"user","content":"hello"}]}`)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d; body=%s", res.Code, res.Body.String())
+	}
+	usage, err := f.store.ListQuotaUsage(context.Background(), domain.QuotaPolicyFilter{Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if usage.Total != 1 || usage.List[0].ReservedTokens != 0 || usage.List[0].UsedTokens != 1500 || usage.List[0].UsedCost != "0.000450" {
+		t.Fatalf("quota usage = %+v", usage)
+	}
+}
+
+func TestChatCompletionsUpstreamFailureReleasesQuota(t *testing.T) {
+	f := newProxyFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusInternalServerError, map[string]any{"error": "boom"})
+	}))
+	name, scope, period, scopeID := "user daily", "user", "day", 1
+	limit := int64(10000)
+	if _, err := f.store.CreateQuotaPolicy(domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
+		t.Fatal(err)
+	}
+	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","max_tokens":100,"messages":[]}`)
+	if res.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d", res.Code)
+	}
+	usage, _ := f.store.ListQuotaUsage(context.Background(), domain.QuotaPolicyFilter{Page: 1, PageSize: 10})
+	if usage.Total != 1 || usage.List[0].ReservedTokens != 0 || usage.List[0].UsedTokens != 0 {
+		t.Fatalf("quota usage = %+v", usage)
 	}
 }
 

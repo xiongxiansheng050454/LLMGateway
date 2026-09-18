@@ -14,6 +14,7 @@ import (
 	"LLMGateway/server/internal/httpcommon"
 	"LLMGateway/server/internal/proxy"
 	openaiwire "LLMGateway/server/internal/proxy/openai"
+	"LLMGateway/server/internal/quota"
 	"LLMGateway/server/internal/ratelimit"
 	"LLMGateway/server/internal/store"
 	"LLMGateway/server/internal/usage"
@@ -36,14 +37,24 @@ type Server struct {
 	accounts     *accounts.Server
 	usage        *usage.Server
 	ratelimit    *ratelimit.Server
+	quota        *quota.Server
 	dashboardDir string
 	dashboard    http.Handler
 }
 
 type options struct {
-	upstreamTimeout time.Duration
-	randIntN        func(int) int
-	now             func() time.Time
+	upstreamTimeout       time.Duration
+	randIntN              func(int) int
+	now                   func() time.Time
+	quotaDefaultMaxTokens int
+	quotaReservationTTL   time.Duration
+}
+
+func WithQuotaConfig(defaultMaxTokens int, reservationTTL time.Duration) Option {
+	return func(o *options) {
+		o.quotaDefaultMaxTokens = defaultMaxTokens
+		o.quotaReservationTTL = reservationTTL
+	}
 }
 
 // Option customizes handler assembly.
@@ -82,22 +93,27 @@ func WithClock(fn func() time.Time) Option {
 // registration is done by cmd/llmgateway/router.go.
 func NewServer(dashboardDir string, st store.Store, opts ...Option) *Server {
 	settings := options{
-		upstreamTimeout: 60 * time.Second,
-		randIntN:        rand.Intn,
-		now:             time.Now,
+		upstreamTimeout:       60 * time.Second,
+		randIntN:              rand.Intn,
+		now:                   time.Now,
+		quotaDefaultMaxTokens: 4096,
+		quotaReservationTTL:   2 * time.Minute,
 	}
 	for _, opt := range opts {
 		opt(&settings)
 	}
 	client := &http.Client{Timeout: settings.upstreamTimeout}
+	proxyService := proxy.NewService(st, client, settings.randIntN, settings.now, openaiwire.Adapter())
+	proxyService.ConfigureQuota(settings.quotaDefaultMaxTokens, settings.quotaReservationTTL)
 	return &Server{
 		store:        st,
 		client:       client,
-		proxy:        proxy.NewService(st, client, settings.randIntN, settings.now, openaiwire.Adapter()),
+		proxy:        proxyService,
 		catalog:      catalog.New(st, client),
 		accounts:     accounts.New(st),
 		usage:        usage.New(st),
 		ratelimit:    ratelimit.New(st),
+		quota:        quota.New(st),
 		dashboardDir: dashboardDir,
 		dashboard:    http.FileServer(http.Dir(dashboardDir)),
 	}
@@ -168,6 +184,9 @@ func (a *Server) adminData(r *http.Request) (any, bool, int, string) {
 		return data, ok, status, msg
 	}
 	if data, ok, status, msg := a.ratelimit.Data(r); ok || status != 0 {
+		return data, ok, status, msg
+	}
+	if data, ok, status, msg := a.quota.Data(r); ok || status != 0 {
 		return data, ok, status, msg
 	}
 	if data, ok, status, msg := a.usage.Data(r); ok || status != 0 {

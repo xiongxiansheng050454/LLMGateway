@@ -80,6 +80,60 @@ type ModelPricing struct {
 	UpdatedAt             pgtype.Timestamptz `json:"updated_at"`
 }
 
+type QuotaBucket struct {
+	PolicyID       int64              `json:"policy_id"`
+	PeriodStart    pgtype.Timestamptz `json:"period_start"`
+	PeriodEnd      pgtype.Timestamptz `json:"period_end"`
+	UsedTokens     int64              `json:"used_tokens"`
+	ReservedTokens int64              `json:"reserved_tokens"`
+	UsedCost       pgtype.Numeric     `json:"used_cost"`
+	ReservedCost   pgtype.Numeric     `json:"reserved_cost"`
+	UpdatedAt      pgtype.Timestamptz `json:"updated_at"`
+}
+
+type QuotaPolicy struct {
+	ID         int64              `json:"id"`
+	PolicyName string             `json:"policy_name"`
+	ScopeType  string             `json:"scope_type"`
+	UserID     pgtype.Int8        `json:"user_id"`
+	ApiKeyID   pgtype.Int8        `json:"api_key_id"`
+	PeriodType string             `json:"period_type"`
+	TokenLimit pgtype.Int8        `json:"token_limit"`
+	CostLimit  pgtype.Numeric     `json:"cost_limit"`
+	Enabled    bool               `json:"enabled"`
+	DeletedAt  pgtype.Timestamptz `json:"deleted_at"`
+	CreatedAt  pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt  pgtype.Timestamptz `json:"updated_at"`
+}
+
+type QuotaReservation struct {
+	ID              int64              `json:"id"`
+	RequestID       string             `json:"request_id"`
+	UserID          int64              `json:"user_id"`
+	ApiKeyID        int64              `json:"api_key_id"`
+	Model           string             `json:"model"`
+	EstimatedTokens int64              `json:"estimated_tokens"`
+	EstimatedCost   pgtype.Numeric     `json:"estimated_cost"`
+	ActualTokens    pgtype.Int8        `json:"actual_tokens"`
+	ActualCost      pgtype.Numeric     `json:"actual_cost"`
+	Status          string             `json:"status"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	SettledAt       pgtype.Timestamptz `json:"settled_at"`
+	ReleasedAt      pgtype.Timestamptz `json:"released_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+}
+
+type QuotaReservationItem struct {
+	ReservationID  int64              `json:"reservation_id"`
+	PolicyID       int64              `json:"policy_id"`
+	PeriodStart    pgtype.Timestamptz `json:"period_start"`
+	ReservedTokens int64              `json:"reserved_tokens"`
+	ReservedCost   pgtype.Numeric     `json:"reserved_cost"`
+	ActualTokens   pgtype.Int8        `json:"actual_tokens"`
+	ActualCost     pgtype.Numeric     `json:"actual_cost"`
+}
+
 type RateLimitRule struct {
 	ID            int64              `json:"id"`
 	RuleName      string             `json:"rule_name"`

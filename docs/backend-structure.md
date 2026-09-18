@@ -10,6 +10,7 @@ server/internal/catalog/            目录、渠道、模型映射、定价、�
 server/internal/accounts/           用户、余额、网关 Key、认证上下文及权限能力
 server/internal/usage/              用量日志、审计查询和统计能力
 server/internal/ratelimit/          限流规则管理和运行时限流能力
+server/internal/quota/              UTC 日/月 token/费用业务配额策略与管理能力
 server/internal/httpapi/            顶层 HTTP 装配、响应 envelope、Dashboard 和业务入口委托
 server/internal/httpcommon/         共享 HTTP 请求解析、路径、分页、存储错误映射和删除响应 helper 的唯一归属
 server/internal/proxy/              下游代理业务：OpenAI 适配、路由、计费、限流、熔断、结算和上游调用
@@ -39,7 +40,8 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
 
 ## 约定
 
-- 业务模块按能力纵向组织：`catalog`、`accounts`、`usage`、`ratelimit`、`proxy` 各自聚合规则、端口使用和 HTTP 入口契约；这不是按 HTTP/store/protocol 的横向分层。
+- 业务模块按能力纵向组织：`catalog`、`accounts`、`usage`、`ratelimit`、`quota`、`proxy` 各自聚合规则、端口使用和 HTTP 入口契约；这不是按 HTTP/store/protocol 的横向分层。
+- `rate_limit_rules` 只表达短窗口速率控制；`quota_policies` 独立表达用户/Key 的 UTC 自然日/月 token 与费用预算，两者在 proxy 准入阶段统一执行但不共用持久化模型。
 - `server/internal/httpapi` 只负责顶层 HTTP 装配、通用响应和委托，不作为跨业务 admin 文件集中地。
 - 业务模块只依赖 `server/internal/store.Store` 接口，不直接访问 PostgreSQL 或 sqlc。
 - 代理编排位于 `server/internal/proxy`，依赖 `store.Store` 端口、`domain`、`money`、`crypto` 和协议中立的代理 contract，不直接访问 PostgreSQL 或 sqlc；OpenAI wire 转换只在 `server/internal/proxy/openai` 完成。
@@ -107,6 +109,8 @@ var _ store.ChannelStore = (*postgres.Store)(nil)
 - 计费：缓存 token 已包含在 `prompt_tokens` 中，仅按 `(prompt_tokens - cached_tokens)` 计输入价，缓存部分计缓存价，避免重复计费。
 - 成功结算：非流式 chat completion 成功后通过 store 级 `SettleChatCompletion` 端口统一处理用户扣费、可扣费渠道余额扣减与 success usage log。PostgreSQL 实现在单一事务中提交；`last_used_at` 仍为成功响应后的 best-effort 更新。
 - 流式结算：`stream=true` 时网关强制向上游请求 `stream_options.include_usage=true`，逐事件重写 public model 并 flush；首个合法 JSON data 帧记录 TTFT。只有同时收到 usage 与 `[DONE]` 后才执行一次原子结算并下发终止帧。缺 usage、缺 `[DONE]`、畸形帧或中途断流均不扣费，写明确 error usage log，并通过流内 OpenAI error 帧结束；客户端取消会传播到上游且不计渠道失败。
+- 周期配额：所有边界使用 UTC，日桶为 `[00:00, 次日 00:00)`，月桶为 `[当月 1 日, 下月 1 日)`。请求选定最终渠道后，使用内嵌 tokenizer 估算输入 token，并按 `max_completion_tokens > max_tokens > QUOTA_DEFAULT_MAX_TOKENS` 预留最大输出 token；费用按最终渠道价格预留。用户 policy 与 Key policy 必须全部满足。
+- 配额持久化：`quota_buckets` 原子维护 `used_*` 与 `reserved_*`，`quota_reservations`/`quota_reservation_items` 保存请求级占用。正常失败主动释放，申请新额度时小批回收相关过期占用，进程后台 reaper 使用 `FOR UPDATE SKIP LOCKED` 兜底。成功结算在同一 PostgreSQL 事务中将 reserved 转为实际 used，并同时完成余额、渠道余额和 usage log。
 - 限流：`rpm` + `reject` 规则基于 `usage_logs` 统计最近 1 分钟请求次数。`global`/`user`/`api_key` 保持按当前用户/Key 计数；`model` 规则额外按 public model 精确过滤；`channel` 规则在路由选中最终渠道后、调用上游前评估，超限直接返回 429 且写入 `error_code=rate_limited` 的 error usage log，不自动改选其他渠道。
 - 熔断：每个渠道有 `channel_health` 状态（closed/open/half-open）。连续失败达阈值（默认 5）或确定性失败（上游 401/403/402）立即 open；冷却（默认 30s）后惰性转为 half-open 允许探测，探测成功回 closed、失败回 open。`ListRouteCandidates` 排除 open 渠道；当无可用渠道（无映射或全部 open）时返回 `503 no_healthy_channel`（错误码由 `no_available_channel` 变更而来，同时覆盖这两种情况）。失败分类仅计入传输错误、上游 429/401/403/402 与 5xx，其余 4xx 透传且不计渠道失败。健康记录为 best-effort。
 - 已知限制（后续 issue 处理）：
@@ -133,6 +137,10 @@ DASHBOARD_DIR=../dashboard
 DATABASE_URL=postgres://llmgateway:llmgateway_dev@localhost:5432/llmgateway?sslmode=disable
 CHANNEL_KEY_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef
 MIGRATIONS_DIR=db/migrations
+QUOTA_DEFAULT_MAX_TOKENS=4096
+QUOTA_RESERVATION_TTL_SECONDS=120
+QUOTA_REAPER_INTERVAL_SECONDS=30
+QUOTA_REAPER_BATCH_SIZE=100
 ```
 
 路径均相对于运行目录 `server/`：`DASHBOARD_DIR` 默认 `../dashboard`，`MIGRATIONS_DIR` 默认 `db/migrations`。

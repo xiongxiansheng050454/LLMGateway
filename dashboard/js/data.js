@@ -12,6 +12,8 @@ let MODEL_DIST = [];
 let RECENT_LOGS = [];
 let TOP_USERS = [];
 let RATE_LIMITS = [];
+let QUOTA_POLICIES = [];
+let QUOTA_USAGE = [];
 let NOTIFICATIONS = [];
 let API_DOCS = docsLinks();
 let ROUTING_OVERVIEW = [];
@@ -122,7 +124,7 @@ async function loadDashboardData() {
   const dateFrom = toDateParam(start);
   const dateTo = toDateParam(end);
 
-  const [overview, daily, channels, channelStats, logs, users, rateLimits, models] = await Promise.all([
+  const [overview, daily, channels, channelStats, logs, users, rateLimits, models, quotaPolicies, quotaUsage] = await Promise.all([
     adminGet('/stats/overview', { start_time: startTime, end_time: endTime }),
     adminGet('/stats/daily', { date_from: dateFrom, date_to: dateTo, page: 1, page_size: 100 }),
     adminGet('/channels', { page: 1, page_size: 100 }),
@@ -131,6 +133,8 @@ async function loadDashboardData() {
     adminGet('/users', { page: 1, page_size: 100 }),
     adminGet('/rate-limits', { page: 1, page_size: 100, enabled: true }),
     adminGet('/models', { status: 1 }),
+    adminGet('/quota-policies', { page: 1, page_size: 100 }),
+    adminGet('/quota-usage', { page: 1, page_size: 100 }),
   ]);
 
   OVERVIEW = normalizeOverview(overview);
@@ -140,6 +144,8 @@ async function loadDashboardData() {
   RECENT_LOGS = normalizeLogs(logs?.list || [], users?.list || []);
   TOP_USERS = normalizeUsers(users?.list || [], DAILY_STATS);
   RATE_LIMITS = normalizeRateLimits(rateLimits?.list || []);
+  QUOTA_POLICIES = quotaPolicies?.list || [];
+  QUOTA_USAGE = quotaUsage?.list || [];
   ERROR_MIX = normalizeErrors(logs?.list || []);
   ROUTING_OVERVIEW = normalizeRouting(CHANNELS, models?.list || []);
   NOTIFICATIONS = buildNotifications(CHANNELS, ERROR_MIX, OVERVIEW);

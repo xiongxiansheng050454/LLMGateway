@@ -19,7 +19,8 @@ func Adapter() proxy.ProtocolAdapter {
 				return emit(proxy.StreamEvent{Frame: event.Frame, Data: event.Data, Done: event.Done, Usage: event.Usage})
 			})
 		},
-		StreamError: streamError,
+		StreamError:   streamError,
+		EstimateUsage: estimateRequestUsage,
 	}
 }
 

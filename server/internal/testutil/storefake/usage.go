@@ -101,6 +101,9 @@ func (s *Store) SettleChatCompletion(in domain.ChatSettlementInput) (int, error)
 		formatted := money.Format6(base.Sub(parsedCost))
 		nextChannelBalance = &formatted
 	}
+	if err := s.settleQuotaLocked(in, int64(in.UsageLog.TotalTokens), parsedCost); err != nil {
+		return 0, err
+	}
 
 	if parsedCost.Cmp(0) > 0 {
 		next := money.Format6(currentUserBalance.Sub(parsedCost))

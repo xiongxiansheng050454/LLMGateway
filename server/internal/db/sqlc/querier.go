@@ -23,6 +23,7 @@ type Querier interface {
 	CreateChannel(ctx context.Context, arg CreateChannelParams) (int64, error)
 	CreateChannelModel(ctx context.Context, arg CreateChannelModelParams) (CreateChannelModelRow, error)
 	CreateKey(ctx context.Context, arg CreateKeyParams) (int64, error)
+	CreateQuotaPolicy(ctx context.Context, arg CreateQuotaPolicyParams) (int64, error)
 	CreateRateLimitRule(ctx context.Context, arg CreateRateLimitRuleParams) (int64, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (int64, error)
 	CreateUserBalance(ctx context.Context, userID int64) error
@@ -31,6 +32,7 @@ type Querier interface {
 	DeleteChannelModel(ctx context.Context, arg DeleteChannelModelParams) (int64, error)
 	DeleteKey(ctx context.Context, arg DeleteKeyParams) (int64, error)
 	DeletePricing(ctx context.Context, arg DeletePricingParams) error
+	DeleteQuotaPolicy(ctx context.Context, id int64) (int64, error)
 	DeleteRateLimitRule(ctx context.Context, id int64) (int64, error)
 	DeleteUser(ctx context.Context, id int64) (int64, error)
 	EnsureChannelHealth(ctx context.Context, channelID int64) error
@@ -43,6 +45,7 @@ type Querier interface {
 	GetChannelSecret(ctx context.Context, id int64) (GetChannelSecretRow, error)
 	GetKey(ctx context.Context, arg GetKeyParams) (GetKeyRow, error)
 	GetPricing(ctx context.Context, arg GetPricingParams) (GetPricingRow, error)
+	GetQuotaPolicy(ctx context.Context, id int64) (GetQuotaPolicyRow, error)
 	GetRateLimitRule(ctx context.Context, id int64) (GetRateLimitRuleRow, error)
 	GetUsageLog(ctx context.Context, id int64) (GetUsageLogRow, error)
 	GetUser(ctx context.Context, id int64) (GetUserRow, error)
@@ -73,6 +76,7 @@ type Querier interface {
 	UpdateKeyActive(ctx context.Context, arg UpdateKeyActiveParams) (int64, error)
 	UpdateKeyLastUsed(ctx context.Context, id int64) (int64, error)
 	UpdateKeySecret(ctx context.Context, arg UpdateKeySecretParams) (int64, error)
+	UpdateQuotaPolicy(ctx context.Context, arg UpdateQuotaPolicyParams) (int64, error)
 	UpdateRateLimitRule(ctx context.Context, arg UpdateRateLimitRuleParams) (int64, error)
 	UpdateRateLimitRuleEnabled(ctx context.Context, arg UpdateRateLimitRuleEnabledParams) (int64, error)
 	UpdateUser(ctx context.Context, arg UpdateUserParams) (int64, error)

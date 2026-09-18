@@ -17,14 +17,17 @@ var (
 	ErrNoHealthyChannel    = errors.New("no healthy channel available")
 	ErrUpstream            = errors.New("upstream error")
 	ErrInvalidStream       = errors.New("invalid upstream stream")
+	ErrQuotaExceeded       = errors.New("period quota exceeded")
 )
 
 type Service struct {
-	store    store.Store
-	client   *http.Client
-	randIntN func(int) int
-	now      func() time.Time
-	adapter  ProtocolAdapter
+	store            store.Store
+	client           *http.Client
+	randIntN         func(int) int
+	now              func() time.Time
+	adapter          ProtocolAdapter
+	defaultMaxTokens int
+	reservationTTL   time.Duration
 }
 
 func NewService(st store.Store, client *http.Client, randIntN func(int) int, now func() time.Time, adapters ...ProtocolAdapter) *Service {
@@ -32,5 +35,14 @@ func NewService(st store.Store, client *http.Client, randIntN func(int) int, now
 	if len(adapters) > 0 {
 		adapter = adapters[0]
 	}
-	return &Service{store: st, client: client, randIntN: randIntN, now: now, adapter: adapter}
+	return &Service{store: st, client: client, randIntN: randIntN, now: now, adapter: adapter, defaultMaxTokens: 4096, reservationTTL: 2 * time.Minute}
+}
+
+func (a *Service) ConfigureQuota(defaultMaxTokens int, reservationTTL time.Duration) {
+	if defaultMaxTokens > 0 {
+		a.defaultMaxTokens = defaultMaxTokens
+	}
+	if reservationTTL > 0 {
+		a.reservationTTL = reservationTTL
+	}
 }

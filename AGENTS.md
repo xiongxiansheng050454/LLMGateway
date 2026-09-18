@@ -10,6 +10,7 @@
 - `server/internal/accounts/` 放用户、余额、网关 Key、认证上下文和权限能力。
 - `server/internal/usage/` 放用量日志、审计查询和统计能力。
 - `server/internal/ratelimit/` 放限流规则管理；与代理请求执行强相关的限流编排放在 `server/internal/proxy/`。
+- `server/internal/quota/` 放 UTC 日/月业务配额策略和管理端入口；`rate_limit_rules` 只做速率控制，配额策略不得复用其持久化模型。
 - `server/internal/proxy/` 放下游代理业务编排，包括认证、选路、计费、限流、熔断、结算和上游调用。
 - `server/internal/proxy/openai/` 只放 OpenAI 兼容 wire DTO、请求解析和响应适配。
 - `server/internal/httpapi/` 只放顶层 HTTP 入口、统一响应、错误映射、静态 Dashboard 托管和对业务模块的委托，不集中放具体业务实现。
@@ -27,7 +28,7 @@
 
 ## 边界规则
 
-- 后端按业务能力纵向组织。`catalog`、`accounts`、`usage`、`ratelimit`、`proxy` 各自持有本领域入口和规则，不把业务重新集中到通用 handler 或 service 包。
+- 后端按业务能力纵向组织。`catalog`、`accounts`、`usage`、`ratelimit`、`quota`、`proxy` 各自持有本领域入口和规则，不把业务重新集中到通用 handler 或 service 包。
 - 业务模块通过 `server/internal/store` 中的窄端口访问持久化，不直接依赖 PostgreSQL、pgx 或 sqlc。Store 实现不得反向依赖 HTTP 层。
 - `server/internal/httpapi` 负责协议入口和委托，不负责选路、计费、认证、限流、熔断或结算等代理业务。
 - OpenAI JSON wire type 只能出现在 `server/internal/proxy/openai` 和必要的 HTTP 适配边界。`domain`、`store`、`catalog`、`accounts`、`usage`、`ratelimit` 不能依赖 OpenAI 协议 DTO。
@@ -39,7 +40,7 @@
 - 渠道 API Key 必须加密存储；网关 Key 只存哈希，明文只在创建或重置时返回一次。响应、日志和错误信息不得泄露密钥、Token、数据库密码或其他敏感配置。
 - 修改 SQL 查询或 schema 后运行 `sqlc generate`；迁移只能新增，不修改已发布迁移的既有语义。
 - Dashboard 默认请求同源 `/admin`，也支持 `?api_base=http://host:port/admin`。如增加管理端认证、修改响应结构或接口路径，必须同步修改前端数据层。
-- Dashboard 启动会并发请求多个管理端接口，任一失败都会进入错误页。修改启动接口时必须同时验证 `/admin/stats/overview`、`/admin/stats/daily`、`/admin/channels`、`/admin/stats/channels`、`/admin/usage-logs`、`/admin/users`、`/admin/rate-limits` 和 `/admin/models`。
+- Dashboard 启动会并发请求多个管理端接口，任一失败都会进入错误页。修改启动接口时必须同时验证 `/admin/stats/overview`、`/admin/stats/daily`、`/admin/channels`、`/admin/stats/channels`、`/admin/usage-logs`、`/admin/users`、`/admin/rate-limits`、`/admin/models`、`/admin/quota-policies` 和 `/admin/quota-usage`。
 - 前端当前使用带 JSON 请求体的 `DELETE /admin/pricing`；除非同步修改前端，否则后端必须保持兼容。
 - 修改前检查工作区状态，不覆盖或回退他人改动，不做无关的大范围重排或格式化。提交应聚焦一个目标，不得提交 `communication/`、本地密钥或其他敏感文件。
 - 后端变更至少执行 `go test ./...`、`go build ./...`、`go vet ./...` 和 `gofmt -l cmd internal`。PostgreSQL 集成测试使用 `TEST_DATABASE_URL`；未设置时测试会跳过，不能据此宣称 PostgreSQL 路径已验证。

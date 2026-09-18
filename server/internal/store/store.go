@@ -8,6 +8,7 @@ var (
 	ErrNotFound       = domain.ErrNotFound
 	ErrInvalid        = domain.ErrInvalid
 	ErrNotImplemented = domain.ErrNotImplemented
+	ErrQuotaExceeded  = domain.ErrQuotaExceeded
 )
 
 // Store is the persistence port used by the HTTP handler layer.
@@ -22,4 +23,5 @@ type Store interface {
 	RateLimitStore
 	UsageStore
 	ChannelHealthStore
+	QuotaStore
 }

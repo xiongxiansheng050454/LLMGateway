@@ -22,7 +22,11 @@ type Config struct {
 	ChannelKeyEncryptionKey string
 	// UpstreamTimeoutSeconds bounds a downstream proxy call to the upstream
 	// provider. Chat completions need far more than the default admin timeout.
-	UpstreamTimeoutSeconds int
+	UpstreamTimeoutSeconds     int
+	QuotaDefaultMaxTokens      int
+	QuotaReservationTTLSeconds int
+	QuotaReaperIntervalSeconds int
+	QuotaReaperBatchSize       int
 }
 
 func Load() Config {
@@ -43,6 +47,13 @@ func Load() Config {
 		cfg.MigrationsDir = "db/migrations"
 	}
 	cfg.UpstreamTimeoutSeconds = parsePositiveInt(os.Getenv("UPSTREAM_TIMEOUT_SECONDS"), 60)
+	cfg.QuotaDefaultMaxTokens = parsePositiveInt(os.Getenv("QUOTA_DEFAULT_MAX_TOKENS"), 4096)
+	cfg.QuotaReservationTTLSeconds = parsePositiveInt(os.Getenv("QUOTA_RESERVATION_TTL_SECONDS"), cfg.UpstreamTimeoutSeconds+60)
+	if cfg.QuotaReservationTTLSeconds <= cfg.UpstreamTimeoutSeconds {
+		cfg.QuotaReservationTTLSeconds = cfg.UpstreamTimeoutSeconds + 60
+	}
+	cfg.QuotaReaperIntervalSeconds = parsePositiveInt(os.Getenv("QUOTA_REAPER_INTERVAL_SECONDS"), 30)
+	cfg.QuotaReaperBatchSize = parsePositiveInt(os.Getenv("QUOTA_REAPER_BATCH_SIZE"), 100)
 	return cfg
 }
 

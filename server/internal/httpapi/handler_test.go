@@ -44,6 +44,8 @@ func TestDashboardStartupEndpoints(t *testing.T) {
 		{"/admin/users?page=1&page_size=100", nil, true},
 		{"/admin/rate-limits?page=1&page_size=100&enabled=true", nil, true},
 		{"/admin/models?status=1", nil, true},
+		{"/admin/quota-policies?page=1&page_size=100", nil, true},
+		{"/admin/quota-usage?page=1&page_size=100", nil, true},
 	}
 
 	server := newTestServer()

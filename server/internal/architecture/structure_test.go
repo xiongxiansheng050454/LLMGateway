@@ -16,6 +16,7 @@ func TestVisibleBackendModuleDirectories(t *testing.T) {
 		"internal/accounts",
 		"internal/usage",
 		"internal/ratelimit",
+		"internal/quota",
 		"internal/httpapi",
 		"internal/httpcommon",
 		"internal/proxy",
@@ -44,6 +45,7 @@ func TestBusinessModulesDependOnlyOnStorePorts(t *testing.T) {
 		"internal/accounts",
 		"internal/usage",
 		"internal/ratelimit",
+		"internal/quota",
 		"internal/proxy",
 		"internal/httpapi",
 	} {
@@ -108,7 +110,7 @@ func assertNoImports(t *testing.T, root string, forbidden []string) {
 
 func TestBusinessModuleDocumentationExists(t *testing.T) {
 	root := filepath.Join("..", "..")
-	for _, module := range []string{"catalog", "accounts", "usage", "ratelimit"} {
+	for _, module := range []string{"catalog", "accounts", "usage", "ratelimit", "quota"} {
 		path := filepath.Join(root, "internal", module, "doc.go")
 		content, err := os.ReadFile(path)
 		if err != nil {

@@ -89,6 +89,7 @@ func (s *Store) DeleteUser(id int) error {
 	if _, ok := s.users[id]; !ok {
 		return store.ErrNotFound
 	}
+	s.cleanupQuotaLocked(id, 0)
 	delete(s.users, id)
 	delete(s.transactions, id)
 	for keyID, key := range s.keys {
@@ -263,6 +264,7 @@ func (s *Store) DeleteKey(userID, keyID int) error {
 	if !ok || key.userID != userID {
 		return store.ErrNotFound
 	}
+	s.cleanupQuotaLocked(userID, keyID)
 	delete(s.keys, keyID)
 	return nil
 }
