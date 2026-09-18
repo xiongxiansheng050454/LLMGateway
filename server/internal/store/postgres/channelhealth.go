@@ -103,8 +103,17 @@ func (s *Store) recordChannelHealth(channelID int, apply func(domain.ChannelHeal
 
 func (s *Store) ResetChannelHealth(channelID int) error {
 	ctx := context.Background()
-	_, err := s.pool.Exec(ctx, `DELETE FROM channel_breaker_probes WHERE channel_id=$1; DELETE FROM channel_breaker_configs WHERE channel_id=$1; DELETE FROM channel_health_buckets WHERE channel_id=$1; DELETE FROM channel_health WHERE channel_id=$1`, channelID)
-	return mapError(err)
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
+		return mapError(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	for _, table := range []string{"channel_breaker_probes", "channel_breaker_configs", "channel_health_buckets", "channel_health"} {
+		if _, err := tx.Exec(ctx, "DELETE FROM "+table+" WHERE channel_id=$1", channelID); err != nil {
+			return mapError(err)
+		}
+	}
+	return mapError(tx.Commit(ctx))
 }
 
 func (s *Store) ListChannelHealth() (domain.ListResponse[domain.ChannelHealthDTO], error) {
