@@ -200,7 +200,7 @@ func (s *Store) CountTokensSince(filter domain.TokenCountFilter) (int64, error) 
 		return 0, err
 	}
 	var total int64
-	err := s.pool.QueryRow(context.Background(), `SELECT COALESCE(SUM(total_tokens),0) FROM usage_logs WHERE user_id=$1 AND created_at >= $2::timestamptz AND ($3=0 OR api_key_id=$3) AND ($4='' OR model=$4) AND ($5=0 OR channel_id=$5)`, filter.UserID, filter.Since, optionalID(filter.APIKeyID), filter.Model, optionalID(filter.ChannelID)).Scan(&total)
+	err := s.pool.QueryRow(context.Background(), `SELECT COALESCE(SUM(total_tokens),0) FROM usage_logs WHERE ($1=0 OR user_id=$1) AND created_at >= $2::timestamptz AND ($3=0 OR api_key_id=$3) AND ($4='' OR model=$4) AND ($5=0 OR channel_id=$5)`, filter.UserID, filter.Since, optionalID(filter.APIKeyID), filter.Model, optionalID(filter.ChannelID)).Scan(&total)
 	if err != nil {
 		return 0, mapError(err)
 	}

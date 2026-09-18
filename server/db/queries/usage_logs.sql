@@ -103,7 +103,7 @@ RETURNING id;
 -- name: CountRequestsSince :one
 SELECT count(*)::int
 FROM usage_logs
-WHERE user_id = sqlc.arg(user_id)
+WHERE (sqlc.arg(user_id) = 0 OR user_id = sqlc.arg(user_id))
   AND created_at >= sqlc.arg(since)::timestamptz
   AND (sqlc.narg(api_key_id)::bigint IS NULL OR api_key_id = sqlc.narg(api_key_id)::bigint)
   AND (sqlc.narg(model)::text IS NULL OR model = sqlc.narg(model)::text)
