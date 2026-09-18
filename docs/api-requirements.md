@@ -326,6 +326,18 @@ page_size=20
 
 也可返回单个结果对象，前端兼容。
 
+测试会读取渠道的 Base URL、认证配置和已启用模型映射，并对每个待检查模型真实发起 OpenAI 兼容请求：
+
+```json
+{
+  "model": "<upstream_model>",
+  "messages": [{"role": "user", "content": "hi"}],
+  "max_tokens": 1
+}
+```
+
+`check_all=true`（默认）检查全部启用模型；`false` 只检查第一个启用模型。每项使用 10 秒超时，网络错误、超时和非 2xx 响应均返回该项的 `ok=false`，不会泄露上游 Key 或响应正文。管理员手工探测不更新渠道健康状态或熔断状态。
+
 ## 渠道模型映射
 
 ### GET /admin/channels/:id/models

@@ -19,8 +19,6 @@ type ChannelStore interface {
 	ListPricing() (domain.ListResponse[domain.PricingDTO], error)
 	UpsertPricing(domain.PricingInput) (domain.PricingDTO, error)
 	DeletePricing(domain.DeletePricingInput) error
-	TestChannel(int) (domain.ChannelTestResultDTO, error)
-
 	// GetPricing returns the single pricing row for a channel + public model.
 	// Missing rows return ErrNotFound.
 	GetPricing(channelID int, modelName string) (domain.PricingDTO, error)

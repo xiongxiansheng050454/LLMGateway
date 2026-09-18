@@ -1,8 +1,10 @@
 package httpapi
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -105,6 +107,75 @@ func TestRemoteModelsUsesFakeUpstream(t *testing.T) {
 	data := remote["data"].(map[string]any)
 	if data["ok"] != true || len(data["models"].([]any)) != 1 {
 		t.Fatalf("unexpected remote models: %+v", remote)
+	}
+}
+
+func TestChannelTestCallsChatCompletionsForEveryEnabledModel(t *testing.T) {
+	var requests int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		if r.Method != http.MethodPost || r.URL.Path != "/v1/chat/completions" {
+			t.Fatalf("upstream request = %s %s", r.Method, r.URL.Path)
+		}
+		if r.Header.Get("Authorization") != "Bearer sk-secret" {
+			t.Fatalf("Authorization = %q", r.Header.Get("Authorization"))
+		}
+		var body struct {
+			Model     string `json:"model"`
+			MaxTokens int    `json:"max_tokens"`
+			Messages  []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body.Model == "" || body.MaxTokens != 1 || len(body.Messages) != 1 || body.Messages[0].Role != "user" || body.Messages[0].Content != "hi" {
+			t.Fatalf("unexpected test request: %+v", body)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"id": "chatcmpl-test"})
+	}))
+	defer upstream.Close()
+
+	handler := newTestServer()
+	adminDo(t, handler, http.MethodPost, "/admin/channels", map[string]any{"name": "Fake", "base_url": upstream.URL, "api_key": "sk-secret", "auth_type": "bearer", "status": 1})
+	adminDo(t, handler, http.MethodPost, "/admin/channels/1/models", map[string]any{"model_name": "public-a", "upstream_model": "upstream-a", "enabled": true})
+	adminDo(t, handler, http.MethodPost, "/admin/channels/1/models", map[string]any{"model_name": "public-b", "upstream_model": "upstream-b", "enabled": true})
+	adminDo(t, handler, http.MethodPost, "/admin/channels/1/models", map[string]any{"model_name": "disabled", "upstream_model": "disabled", "enabled": false})
+
+	result := adminDo(t, handler, http.MethodPost, "/admin/channels/1/test", map[string]any{"check_all": true})
+	items := result["data"].(map[string]any)["list"].([]any)
+	if requests != 2 || len(items) != 2 {
+		t.Fatalf("requests/items = %d/%d, want 2/2; result=%+v", requests, len(items), result)
+	}
+	for _, raw := range items {
+		item := raw.(map[string]any)
+		if item["http_status"].(float64) != http.StatusOK || item["ok"] != true || item["error"] != "" {
+			t.Fatalf("unexpected success item: %+v", item)
+		}
+	}
+}
+
+func TestChannelTestReportsUpstreamFailuresWithoutLeakingKey(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusTooManyRequests, http.StatusInternalServerError} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte("upstream rejected sk-secret"))
+			}))
+			defer upstream.Close()
+
+			handler := newTestServer()
+			adminDo(t, handler, http.MethodPost, "/admin/channels", map[string]any{"name": "Fake", "base_url": upstream.URL, "api_key": "sk-secret", "auth_type": "bearer", "status": 1})
+			adminDo(t, handler, http.MethodPost, "/admin/channels/1/models", map[string]any{"model_name": "public", "upstream_model": "upstream", "enabled": true})
+			result := adminDo(t, handler, http.MethodPost, "/admin/channels/1/test", map[string]any{"check_all": true})
+			item := result["data"].(map[string]any)["list"].([]any)[0].(map[string]any)
+			if item["http_status"].(float64) != float64(status) || item["ok"] != false || !strings.Contains(item["error"].(string), "upstream status") {
+				t.Fatalf("unexpected failure item: %+v", item)
+			}
+			assertNoSecret(t, result, "sk-secret")
+		})
 	}
 }
 
