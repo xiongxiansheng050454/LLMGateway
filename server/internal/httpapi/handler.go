@@ -48,6 +48,7 @@ type options struct {
 	now                   func() time.Time
 	quotaDefaultMaxTokens int
 	quotaReservationTTL   time.Duration
+	upstreamMaxAttempts   int
 }
 
 func WithQuotaConfig(defaultMaxTokens int, reservationTTL time.Duration) Option {
@@ -66,6 +67,14 @@ func WithUpstreamTimeout(timeout time.Duration) Option {
 	return func(o *options) {
 		if timeout > 0 {
 			o.upstreamTimeout = timeout
+		}
+	}
+}
+
+func WithUpstreamMaxAttempts(attempts int) Option {
+	return func(o *options) {
+		if attempts > 0 {
+			o.upstreamMaxAttempts = attempts
 		}
 	}
 }
@@ -98,6 +107,7 @@ func NewServer(dashboardDir string, st store.Store, opts ...Option) *Server {
 		now:                   time.Now,
 		quotaDefaultMaxTokens: 4096,
 		quotaReservationTTL:   2 * time.Minute,
+		upstreamMaxAttempts:   3,
 	}
 	for _, opt := range opts {
 		opt(&settings)
@@ -105,6 +115,7 @@ func NewServer(dashboardDir string, st store.Store, opts ...Option) *Server {
 	client := &http.Client{Timeout: settings.upstreamTimeout}
 	proxyService := proxy.NewService(st, client, settings.randIntN, settings.now, openaiwire.Adapter())
 	proxyService.ConfigureQuota(settings.quotaDefaultMaxTokens, settings.quotaReservationTTL)
+	proxyService.ConfigureRequest(settings.upstreamTimeout, settings.upstreamMaxAttempts)
 	return &Server{
 		store:        st,
 		client:       client,

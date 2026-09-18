@@ -25,16 +25,23 @@ type completionStream struct {
 	clientIP      string
 	start         time.Time
 	reservationID int64
+	cancel        context.CancelFunc
 
 	mu        sync.Mutex
 	forwarded bool
 }
 
 func (s *completionStream) Close() error {
+	if s.cancel != nil {
+		s.cancel()
+	}
 	return s.body.Close()
 }
 
 func (s *completionStream) Forward(emit func([]byte) error) error {
+	if s.cancel != nil {
+		defer s.cancel()
+	}
 	s.mu.Lock()
 	if s.forwarded {
 		s.mu.Unlock()

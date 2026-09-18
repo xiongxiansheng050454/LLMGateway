@@ -28,6 +28,8 @@ type Service struct {
 	adapter          ProtocolAdapter
 	defaultMaxTokens int
 	reservationTTL   time.Duration
+	requestTimeout   time.Duration
+	maxAttempts      int
 }
 
 func NewService(st store.Store, client *http.Client, randIntN func(int) int, now func() time.Time, adapters ...ProtocolAdapter) *Service {
@@ -35,7 +37,16 @@ func NewService(st store.Store, client *http.Client, randIntN func(int) int, now
 	if len(adapters) > 0 {
 		adapter = adapters[0]
 	}
-	return &Service{store: st, client: client, randIntN: randIntN, now: now, adapter: adapter, defaultMaxTokens: 4096, reservationTTL: 2 * time.Minute}
+	return &Service{store: st, client: client, randIntN: randIntN, now: now, adapter: adapter, defaultMaxTokens: 4096, reservationTTL: 2 * time.Minute, requestTimeout: 60 * time.Second, maxAttempts: 3}
+}
+
+func (a *Service) ConfigureRequest(timeout time.Duration, maxAttempts int) {
+	if timeout > 0 {
+		a.requestTimeout = timeout
+	}
+	if maxAttempts > 0 {
+		a.maxAttempts = maxAttempts
+	}
 }
 
 func (a *Service) ConfigureQuota(defaultMaxTokens int, reservationTTL time.Duration) {

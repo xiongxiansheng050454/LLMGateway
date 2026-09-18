@@ -11,6 +11,8 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("MIGRATIONS_DIR", "")
 	t.Setenv(EnvChannelKey, "")
 	t.Setenv("UPSTREAM_TIMEOUT_SECONDS", "")
+	t.Setenv(EnvUpstreamRequestTimeout, "")
+	t.Setenv(EnvUpstreamMaxAttempts, "")
 	t.Setenv("QUOTA_DEFAULT_MAX_TOKENS", "")
 	t.Setenv("QUOTA_RESERVATION_TTL_SECONDS", "")
 	t.Setenv("QUOTA_REAPER_INTERVAL_SECONDS", "")
@@ -32,7 +34,7 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.ChannelKeyEncryptionKey != "" {
 		t.Fatalf("ChannelKeyEncryptionKey = %q, want empty", cfg.ChannelKeyEncryptionKey)
 	}
-	if cfg.QuotaDefaultMaxTokens != 4096 || cfg.QuotaReservationTTLSeconds != 120 || cfg.QuotaReaperIntervalSeconds != 30 || cfg.QuotaReaperBatchSize != 100 {
+	if cfg.UpstreamTimeoutSeconds != 60 || cfg.UpstreamMaxAttempts != 3 || cfg.QuotaDefaultMaxTokens != 4096 || cfg.QuotaReservationTTLSeconds != 120 || cfg.QuotaReaperIntervalSeconds != 30 || cfg.QuotaReaperBatchSize != 100 {
 		t.Fatalf("quota defaults = %+v", cfg)
 	}
 }
@@ -44,6 +46,8 @@ func TestLoadOverrides(t *testing.T) {
 	t.Setenv("MIGRATIONS_DIR", "/srv/migrations")
 	t.Setenv(EnvChannelKey, "0123456789abcdef0123456789abcdef")
 	t.Setenv("UPSTREAM_TIMEOUT_SECONDS", "90")
+	t.Setenv(EnvUpstreamRequestTimeout, "90")
+	t.Setenv(EnvUpstreamMaxAttempts, "5")
 	t.Setenv("QUOTA_DEFAULT_MAX_TOKENS", "8192")
 	t.Setenv("QUOTA_RESERVATION_TTL_SECONDS", "180")
 	t.Setenv("QUOTA_REAPER_INTERVAL_SECONDS", "15")
@@ -65,7 +69,7 @@ func TestLoadOverrides(t *testing.T) {
 	if cfg.ChannelKeyEncryptionKey != "0123456789abcdef0123456789abcdef" {
 		t.Fatalf("ChannelKeyEncryptionKey = %q, want override", cfg.ChannelKeyEncryptionKey)
 	}
-	if cfg.QuotaDefaultMaxTokens != 8192 || cfg.QuotaReservationTTLSeconds != 180 || cfg.QuotaReaperIntervalSeconds != 15 || cfg.QuotaReaperBatchSize != 50 {
+	if cfg.UpstreamTimeoutSeconds != 90 || cfg.UpstreamMaxAttempts != 5 || cfg.QuotaDefaultMaxTokens != 8192 || cfg.QuotaReservationTTLSeconds != 180 || cfg.QuotaReaperIntervalSeconds != 15 || cfg.QuotaReaperBatchSize != 50 {
 		t.Fatalf("quota overrides = %+v", cfg)
 	}
 }
