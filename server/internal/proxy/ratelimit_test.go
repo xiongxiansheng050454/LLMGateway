@@ -1,0 +1,29 @@
+package proxy
+
+import (
+	"encoding/json"
+	"testing"
+	"time"
+
+	"LLMGateway/server/internal/domain"
+)
+
+func TestRateLimitOverrideParsesAllMetricsAndOnlyKeyScope(t *testing.T) {
+	overrides := parseRateLimitOverrides(json.RawMessage(`{"rpm":2,"tpm":100,"rpd":3,"tpd":400,"concurrency":1}`))
+	if overrides.RPM != 2 || overrides.TPM != 100 || overrides.RPD != 3 || overrides.TPD != 400 || overrides.Concurrency != 1 {
+		t.Fatalf("overrides = %+v", overrides)
+	}
+	if _, ok := applicableOverride(overrides, domain.RateLimitRuleDTO{TargetType: "user", Metric: "rpm"}); ok {
+		t.Fatal("user rule incorrectly accepted key override")
+	}
+	if value, ok := applicableOverride(overrides, domain.RateLimitRuleDTO{TargetType: "api_key", Metric: "tpm"}); !ok || value != 100 {
+		t.Fatalf("api key override = %d,%v", value, ok)
+	}
+}
+
+func TestSlidingWindowCounterUsesIntegerWeightedPreviousBucket(t *testing.T) {
+	now := time.Unix(125, 0).UTC()
+	if got := slidingWindowCount(10, 20, 10, now, time.Unix(120, 0).UTC()); got != 15 {
+		t.Fatalf("sliding count = %d, want 15", got)
+	}
+}

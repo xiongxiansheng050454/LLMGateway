@@ -36,14 +36,16 @@ type Store struct {
 	nextUsageLogID  int
 	usageLogs       []domain.UsageLog
 
-	channelHealth          map[int]*domain.ChannelHealth
-	nextQuotaPolicyID      int
-	nextQuotaReservationID int64
-	quotaPolicies          map[int]*domain.QuotaPolicy
-	quotaBuckets           map[string]*fakeQuotaBucket
-	quotaReservations      map[int64]*fakeQuotaReservation
-	breaker                domain.ChannelBreakerConfig
-	now                    func() time.Time
+	channelHealth              map[int]*domain.ChannelHealth
+	nextQuotaPolicyID          int
+	nextQuotaReservationID     int64
+	quotaPolicies              map[int]*domain.QuotaPolicy
+	quotaBuckets               map[string]*fakeQuotaBucket
+	quotaReservations          map[int64]*fakeQuotaReservation
+	nextRateLimitReservationID int64
+	rateLimitReservations      map[int64]domain.RateLimitReservationInput
+	breaker                    domain.ChannelBreakerConfig
+	now                        func() time.Time
 }
 
 var (
@@ -82,30 +84,32 @@ func NewWithClock(now func() time.Time) *Store {
 
 func New() *Store {
 	return &Store{
-		nextChannelID:          1,
-		nextModelID:            1,
-		nextPricingID:          1,
-		channels:               map[int]*domain.Channel{},
-		models:                 map[int]map[int]*domain.ChannelModel{},
-		pricing:                map[string]*domain.Pricing{},
-		nextUserID:             1,
-		nextKeyID:              1,
-		nextTxID:               1,
-		users:                  map[int]*domain.User{},
-		transactions:           map[int][]domain.BalanceTransaction{},
-		keys:                   map[int]*memoryKey{},
-		orders:                 map[string]domain.BalanceTransaction{},
-		nextRateLimitID:        1,
-		rateLimits:             map[int]*domain.RateLimitRule{},
-		nextUsageLogID:         1,
-		nextQuotaPolicyID:      1,
-		nextQuotaReservationID: 1,
-		quotaPolicies:          map[int]*domain.QuotaPolicy{},
-		quotaBuckets:           map[string]*fakeQuotaBucket{},
-		quotaReservations:      map[int64]*fakeQuotaReservation{},
-		channelHealth:          map[int]*domain.ChannelHealth{},
-		breaker:                domain.DefaultChannelBreakerConfig(),
-		now:                    time.Now,
+		nextChannelID:              1,
+		nextModelID:                1,
+		nextPricingID:              1,
+		channels:                   map[int]*domain.Channel{},
+		models:                     map[int]map[int]*domain.ChannelModel{},
+		pricing:                    map[string]*domain.Pricing{},
+		nextUserID:                 1,
+		nextKeyID:                  1,
+		nextTxID:                   1,
+		users:                      map[int]*domain.User{},
+		transactions:               map[int][]domain.BalanceTransaction{},
+		keys:                       map[int]*memoryKey{},
+		orders:                     map[string]domain.BalanceTransaction{},
+		nextRateLimitID:            1,
+		rateLimits:                 map[int]*domain.RateLimitRule{},
+		nextUsageLogID:             1,
+		nextQuotaPolicyID:          1,
+		nextQuotaReservationID:     1,
+		nextRateLimitReservationID: 1,
+		rateLimitReservations:      map[int64]domain.RateLimitReservationInput{},
+		quotaPolicies:              map[int]*domain.QuotaPolicy{},
+		quotaBuckets:               map[string]*fakeQuotaBucket{},
+		quotaReservations:          map[int64]*fakeQuotaReservation{},
+		channelHealth:              map[int]*domain.ChannelHealth{},
+		breaker:                    domain.DefaultChannelBreakerConfig(),
+		now:                        time.Now,
 	}
 }
 

@@ -89,6 +89,9 @@ func runQuotaReaper(ctx context.Context, st store.Store, interval time.Duration,
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			if _, err := st.ReapRateLimitReservations(ctx, batchSize); err != nil && !errors.Is(err, context.Canceled) {
+				log.Printf("reap rate limit reservations: %v", err)
+			}
 			if _, err := st.ReapExpiredQuotaReservations(ctx, batchSize); err != nil && !errors.Is(err, context.Canceled) {
 				log.Printf("reap expired quota reservations: %v", err)
 			}

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 type RateLimitRule struct {
@@ -117,4 +118,18 @@ type RateLimitInput struct {
 	Priority      *int            `json:"priority"`
 	Enabled       *bool           `json:"enabled"`
 	Extras        json.RawMessage `json:"extras"`
+}
+
+type RateLimitReservationInput struct {
+	RequestID       string
+	UserID          int
+	APIKeyID        int
+	Model           string
+	ChannelID       *int
+	EstimatedTokens int64
+	ExpiresAt       time.Time
+}
+
+type RateLimitReservation struct {
+	ID int64
 }
