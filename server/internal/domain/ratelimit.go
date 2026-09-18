@@ -41,6 +41,8 @@ var (
 	validActions     = map[string]bool{"reject": true, "queue": true}
 )
 
+const MaxRateLimitWindowSeconds = 7 * 24 * 60 * 60
+
 // NormalizeRateLimit merges a partial input over an existing rule (or defaults
 // for a new rule) and validates the result. It is shared by persistence code
 // and test fakes so both accept and reject the same values.
@@ -101,6 +103,8 @@ func NormalizeRateLimit(in RateLimitInput, existing *RateLimitRule) (RateLimitRu
 		return rule, fmt.Errorf("%w: limit_value must be positive", ErrInvalid)
 	case rule.WindowSeconds <= 0:
 		return rule, fmt.Errorf("%w: window_seconds must be positive", ErrInvalid)
+	case rule.WindowSeconds > MaxRateLimitWindowSeconds:
+		return rule, fmt.Errorf("%w: window_seconds exceeds maximum", ErrInvalid)
 	}
 	return rule, nil
 }

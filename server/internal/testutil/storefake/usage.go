@@ -167,7 +167,7 @@ func (s *Store) CountRequestsSince(filter domain.UsageCountFilter) (int, error) 
 
 	count := 0
 	for _, log := range s.usageLogs {
-		if log.UserID == nil || *log.UserID != filter.UserID {
+		if filter.UserID > 0 && (log.UserID == nil || *log.UserID != filter.UserID) {
 			continue
 		}
 		if filter.APIKeyID != nil {
@@ -201,7 +201,7 @@ func (s *Store) CountTokensSince(filter domain.TokenCountFilter) (int64, error) 
 	defer s.mu.Unlock()
 	var total int64
 	for _, log := range s.usageLogs {
-		if log.UserID == nil || *log.UserID != filter.UserID || (filter.APIKeyID != nil && (log.APIKeyID == nil || *log.APIKeyID != *filter.APIKeyID)) || (filter.Model != "" && log.Model != filter.Model) || (filter.ChannelID != nil && (log.ChannelID == nil || *log.ChannelID != *filter.ChannelID)) {
+		if (filter.UserID > 0 && (log.UserID == nil || *log.UserID != filter.UserID)) || (filter.APIKeyID != nil && (log.APIKeyID == nil || *log.APIKeyID != *filter.APIKeyID)) || (filter.Model != "" && log.Model != filter.Model) || (filter.ChannelID != nil && (log.ChannelID == nil || *log.ChannelID != *filter.ChannelID)) {
 			continue
 		}
 		created, err := time.Parse(time.RFC3339, log.CreatedAt)

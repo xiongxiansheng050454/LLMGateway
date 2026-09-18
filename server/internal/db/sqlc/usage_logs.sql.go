@@ -294,7 +294,7 @@ func (q *Queries) AggregateUsageByUser(ctx context.Context, arg AggregateUsageBy
 const countRequestsSince = `-- name: CountRequestsSince :one
 SELECT count(*)::int
 FROM usage_logs
-WHERE user_id = $1
+WHERE ($1 = 0 OR user_id = $1)
   AND created_at >= $2::timestamptz
   AND ($3::bigint IS NULL OR api_key_id = $3::bigint)
   AND ($4::text IS NULL OR model = $4::text)
@@ -302,7 +302,7 @@ WHERE user_id = $1
 `
 
 type CountRequestsSinceParams struct {
-	UserID    pgtype.Int8        `json:"user_id"`
+	UserID    interface{}        `json:"user_id"`
 	Since     pgtype.Timestamptz `json:"since"`
 	ApiKeyID  pgtype.Int8        `json:"api_key_id"`
 	Model     pgtype.Text        `json:"model"`
