@@ -134,6 +134,29 @@ type QuotaReservationItem struct {
 	ActualCost     pgtype.Numeric     `json:"actual_cost"`
 }
 
+type RateLimitCounter struct {
+	RuleID        int64              `json:"rule_id"`
+	BucketStart   pgtype.Timestamptz `json:"bucket_start"`
+	CurrentCount  int64              `json:"current_count"`
+	PreviousCount int64              `json:"previous_count"`
+	UpdatedAt     pgtype.Timestamptz `json:"updated_at"`
+}
+
+type RateLimitReservation struct {
+	ID              int64              `json:"id"`
+	RequestID       string             `json:"request_id"`
+	UserID          int64              `json:"user_id"`
+	ApiKeyID        int64              `json:"api_key_id"`
+	Model           string             `json:"model"`
+	ChannelID       pgtype.Int8        `json:"channel_id"`
+	EstimatedTokens int64              `json:"estimated_tokens"`
+	BucketStarts    []byte             `json:"bucket_starts"`
+	Status          string             `json:"status"`
+	ExpiresAt       pgtype.Timestamptz `json:"expires_at"`
+	CreatedAt       pgtype.Timestamptz `json:"created_at"`
+	ReleasedAt      pgtype.Timestamptz `json:"released_at"`
+}
+
 type RateLimitRule struct {
 	ID            int64              `json:"id"`
 	RuleName      string             `json:"rule_name"`
