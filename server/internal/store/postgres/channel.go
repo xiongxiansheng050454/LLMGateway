@@ -389,22 +389,6 @@ func (s *Store) RouteCandidates(modelName string) (domain.ListResponse[domain.Ro
 	return domain.ListResponse[domain.RouteCandidate]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) TestChannel(channelID int) (domain.ChannelTestResultDTO, error) {
-	ctx := context.Background()
-	if _, err := s.queries.GetChannel(ctx, int64(channelID)); err != nil {
-		return domain.ChannelTestResultDTO{}, mapError(err)
-	}
-	rows, err := s.queries.ListChannelModels(ctx, int64(channelID))
-	if err != nil {
-		return domain.ChannelTestResultDTO{}, mapError(err)
-	}
-	items := []domain.ChannelTestItemDTO{}
-	for _, row := range rows {
-		items = append(items, domain.ChannelTestItemDTO{ModelAlias: row.ModelName, UpstreamModel: row.UpstreamModel, Error: "not tested in MVP"})
-	}
-	return domain.ChannelTestResultDTO{List: items}, nil
-}
-
 func (s *Store) getChannelDTO(id int64) (domain.ChannelDTO, error) {
 	row, err := s.queries.GetChannel(context.Background(), id)
 	if err != nil {

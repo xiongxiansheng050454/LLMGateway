@@ -294,7 +294,4 @@ func TestPGMissingResourcesReturnNotFound(t *testing.T) {
 	if err := st.DeleteChannelModel(1, 1); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("DeleteChannelModel err = %v, want ErrNotFound", err)
 	}
-	if _, err := st.TestChannel(404); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("TestChannel err = %v, want ErrNotFound", err)
-	}
 }

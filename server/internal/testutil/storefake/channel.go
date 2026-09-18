@@ -323,16 +323,3 @@ func (s *Store) RouteCandidates(modelName string) (domain.ListResponse[domain.Ro
 	})
 	return domain.ListResponse[domain.RouteCandidate]{List: candidates, Total: len(candidates)}, nil
 }
-
-func (s *Store) TestChannel(channelID int) (domain.ChannelTestResultDTO, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, ok := s.channels[channelID]; !ok {
-		return domain.ChannelTestResultDTO{}, store.ErrNotFound
-	}
-	items := []domain.ChannelTestItemDTO{}
-	for _, m := range s.models[channelID] {
-		items = append(items, domain.ChannelTestItemDTO{ModelAlias: m.ModelName, UpstreamModel: m.UpstreamModel, Error: "not tested in MVP"})
-	}
-	return domain.ChannelTestResultDTO{List: items}, nil
-}

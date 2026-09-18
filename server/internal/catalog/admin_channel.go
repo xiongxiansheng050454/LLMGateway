@@ -39,7 +39,7 @@ func (a *Server) channelData(r *http.Request, parts []string) (any, bool, int, s
 		return a.updateChannelBalance(r, channelID)
 	}
 	if len(parts) == 4 && parts[3] == "test" && r.Method == http.MethodPost {
-		return httpcommon.Result(a.store.TestChannel(channelID))
+		return a.testChannel(r, channelID)
 	}
 	if len(parts) == 4 && parts[3] == "remote-models" && r.Method == http.MethodPost {
 		return a.remoteModels(channelID)
