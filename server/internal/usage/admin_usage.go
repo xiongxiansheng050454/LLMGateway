@@ -44,6 +44,8 @@ func (a *Server) Data(r *http.Request) (any, bool, int, string) {
 			return a.statsDaily(r)
 		case "channels":
 			return a.statsChannels(r)
+		case "ttft":
+			return a.statsTTFT(r)
 		}
 	}
 	return nil, false, 0, ""
@@ -92,6 +94,21 @@ func (a *Server) statsDaily(r *http.Request) (any, bool, int, string) {
 func (a *Server) statsChannels(r *http.Request) (any, bool, int, string) {
 	query := r.URL.Query()
 	return httpcommon.Result(a.store.StatsChannels(orDefault(query.Get("start_time"), defaultStartTime), orDefault(query.Get("end_time"), defaultEndTime)))
+}
+
+func (a *Server) statsTTFT(r *http.Request) (any, bool, int, string) {
+	query := r.URL.Query()
+	filter := domain.TTFTStatsFilter{Model: query.Get("model"), StartTime: orDefault(query.Get("start_time"), defaultStartTime), EndTime: orDefault(query.Get("end_time"), defaultEndTime)}
+	for name, target := range map[string]**int{"user_id": &filter.UserID, "api_key_id": &filter.APIKeyID, "channel_id": &filter.ChannelID} {
+		if value := query.Get(name); value != "" {
+			id, err := strconv.Atoi(value)
+			if err != nil {
+				return nil, true, http.StatusBadRequest, "invalid " + name
+			}
+			*target = &id
+		}
+	}
+	return httpcommon.Result(a.store.StatsTTFT(filter))
 }
 
 func orDefault(value, fallback string) string {

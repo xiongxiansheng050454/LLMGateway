@@ -156,3 +156,19 @@ LEFT JOIN channels c ON c.id = l.channel_id
 WHERE l.created_at >= $1 AND l.created_at <= $2
 GROUP BY l.channel_id, c.name
 ORDER BY request_count DESC, l.channel_id;
+
+-- name: StatsTTFT :one
+SELECT
+    count(*)::bigint AS sample_count,
+    coalesce(floor(avg(ttft_ms))::bigint, 0)::bigint AS average_ms,
+    coalesce(percentile_disc(0.50) WITHIN GROUP (ORDER BY ttft_ms), 0)::bigint AS p50_ms,
+    coalesce(percentile_disc(0.95) WITHIN GROUP (ORDER BY ttft_ms), 0)::bigint AS p95_ms,
+    coalesce(percentile_disc(0.99) WITHIN GROUP (ORDER BY ttft_ms), 0)::bigint AS p99_ms
+FROM usage_logs
+WHERE ttft_ms IS NOT NULL
+  AND (sqlc.narg(user_id)::bigint IS NULL OR user_id = sqlc.narg(user_id)::bigint)
+  AND (sqlc.narg(api_key_id)::bigint IS NULL OR api_key_id = sqlc.narg(api_key_id)::bigint)
+  AND (sqlc.narg(channel_id)::bigint IS NULL OR channel_id = sqlc.narg(channel_id)::bigint)
+  AND (sqlc.narg(model)::text IS NULL OR model = sqlc.narg(model)::text)
+  AND created_at >= sqlc.arg(start_time)::timestamptz
+  AND created_at <= sqlc.arg(end_time)::timestamptz;

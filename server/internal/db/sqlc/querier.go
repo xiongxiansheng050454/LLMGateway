@@ -68,6 +68,7 @@ type Querier interface {
 	StatsChannels(ctx context.Context, arg StatsChannelsParams) ([]StatsChannelsRow, error)
 	StatsDaily(ctx context.Context, arg StatsDailyParams) ([]StatsDailyRow, error)
 	StatsOverview(ctx context.Context, arg StatsOverviewParams) (StatsOverviewRow, error)
+	StatsTTFT(ctx context.Context, arg StatsTTFTParams) (StatsTTFTRow, error)
 	UpdateChannel(ctx context.Context, arg UpdateChannelParams) (int64, error)
 	UpdateChannelBalance(ctx context.Context, arg UpdateChannelBalanceParams) (int64, error)
 	UpdateChannelHealth(ctx context.Context, arg UpdateChannelHealthParams) (int64, error)

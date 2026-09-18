@@ -898,6 +898,24 @@ end_time=RFC3339
 
 返回单条日志对象，字段同列表项。
 
+### GET /admin/stats/ttft
+
+按流式请求的首个有效 JSON `data:` 帧聚合首 Token 延迟。非流式请求的 `ttft_ms` 固定为 `null`，不伪造延迟且不参与本接口统计。即使流式请求最终取消、超时或上游中断，已经收到有效数据帧时仍会记录其 TTFT。
+
+可选查询参数：`user_id`、`api_key_id`、`channel_id`、`model`、`start_time`（RFC3339）和 `end_time`（RFC3339）。
+
+`sample_count` 是有 TTFT 的流式样本数；`average_ms` 为向下取整的算术平均值；`p50_ms`、`p95_ms`、`p99_ms` 采用 nearest-rank（`ceil(n * p / 100)`）口径。无样本时所有字段为 `0`。
+
+```json
+{
+  "sample_count": 100,
+  "average_ms": 245,
+  "p50_ms": 200,
+  "p95_ms": 600,
+  "p99_ms": 900
+}
+```
+
 ## 下游 OpenAI 兼容接口
 
 当前 Dashboard 主要依赖 `/admin`，但产品语义中要求后端提供 OpenAI 兼容下游接口。
@@ -923,7 +941,7 @@ Authorization: Bearer <gateway-key>
 - 按渠道 `priority`、`weight`、余额、状态进行路由。
 - 请求上游并透传 OpenAI 风格响应。
 - `stream=true` 返回 `text/event-stream`，按 SSE 事件持续 flush，并保持 OpenAI `data:` 与 `[DONE]` 语义。
-- 流式请求会强制向上游设置 `stream_options.include_usage=true`；首个合法 JSON data 帧记录 `ttft_ms`。
+- 流式请求会强制向上游设置 `stream_options.include_usage=true`；首个合法 JSON `data:` 帧记录 `ttft_ms`。SSE 空帧、心跳和注释不会被计为首个 token；非流式请求保持 `ttft_ms=null`。
 - 流式成功必须同时收到 usage 与 `[DONE]`，随后只执行一次原子结算。缺 usage、缺 `[DONE]`、畸形帧或中途断流不扣费，并返回 OpenAI 风格流内错误；客户端取消会及时取消上游请求。
 - 记录 `usage_logs`。
 - 按 `model_pricing` 计算费用。

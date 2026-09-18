@@ -357,6 +357,10 @@ func TestChatCompletionsStreamingWithoutDoneFailsAndTripsBreaker(t *testing.T) {
 	if balance.AvailableBalance != "10.000000" {
 		t.Fatalf("balance changed after interrupted stream: %s", balance.AvailableBalance)
 	}
+	logs, _ := f.store.ListUsageLogs(domain.UsageLogFilter{Page: 1, PageSize: 10})
+	if logs.Total != 1 || logs.List[0].TTFTMs == nil {
+		t.Fatalf("interrupted stream must retain observed TTFT: %+v", logs)
+	}
 }
 
 func TestChatCompletionsStreamingMalformedDataTripsBreaker(t *testing.T) {
@@ -442,6 +446,13 @@ func TestChatCompletionsStreamingCancellationReachesUpstream(t *testing.T) {
 			t.Fatalf("quota reservation was not released after cancellation: %+v", usage)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+	logs, err := f.store.ListUsageLogs(domain.UsageLogFilter{Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if logs.Total != 1 || logs.List[0].ErrorCode != "client_canceled" || logs.List[0].TTFTMs == nil {
+		t.Fatalf("canceled stream must retain observed TTFT: %+v", logs)
 	}
 }
 
