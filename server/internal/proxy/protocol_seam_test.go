@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"io"
 	"net/http"
 	"strings"
@@ -72,7 +73,7 @@ func TestChatCompletionsUsesProtocolNeutralAdapterAndSettles(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"upstream":true}`)), Header: make(http.Header)}, nil
 	})
 	service, st, auth := newProtocolSeamService(t, transport, adapter)
-	response, err := service.ChatCompletions(auth, ChatRequest{Model: "public-model", Body: []byte(`{"model":"public-model"}`)}, "127.0.0.1")
+	response, err := service.ChatCompletions(context.Background(), auth, ChatRequest{Model: "public-model", Body: []byte(`{"model":"public-model"}`)}, "127.0.0.1")
 	if err != nil {
 		t.Fatalf("ChatCompletions: %v", err)
 	}
@@ -107,7 +108,7 @@ func TestChatCompletionsPassesThroughUpstreamErrors(t *testing.T) {
 		return &http.Response{StatusCode: http.StatusTooManyRequests, Body: io.NopCloser(strings.NewReader(`{"error":"busy"}`)), Header: make(http.Header)}, nil
 	})
 	service, _, auth := newProtocolSeamService(t, transport, adapter)
-	response, err := service.ChatCompletions(auth, ChatRequest{Model: "public-model", Body: []byte(`{"model":"public-model"}`)}, "127.0.0.1")
+	response, err := service.ChatCompletions(context.Background(), auth, ChatRequest{Model: "public-model", Body: []byte(`{"model":"public-model"}`)}, "127.0.0.1")
 	if err != nil {
 		t.Fatalf("ChatCompletions: %v", err)
 	}

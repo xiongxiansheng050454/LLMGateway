@@ -2,6 +2,8 @@ package openai
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 
 	"LLMGateway/server/internal/proxy"
 )
@@ -12,6 +14,12 @@ func Adapter() proxy.ProtocolAdapter {
 		RewriteRequest:  rewriteRequest,
 		ParseUsage:      parseUsage,
 		RewriteResponse: rewriteResponse,
+		ParseStream: func(reader io.Reader, publicModel string, emit func(proxy.StreamEvent) error) error {
+			return parseStream(reader, publicModel, func(event streamEvent) error {
+				return emit(proxy.StreamEvent{Frame: event.Frame, Data: event.Data, Done: event.Done, Usage: event.Usage})
+			})
+		},
+		StreamError: streamError,
 	}
 }
 
@@ -29,6 +37,18 @@ func rewriteRequest(body []byte, upstreamModel string) ([]byte, error) {
 		return nil, err
 	}
 	payload["model"] = upstreamModel
+	if stream, _ := payload["stream"].(bool); stream {
+		options, ok := payload["stream_options"]
+		if !ok {
+			options = map[string]any{}
+		}
+		streamOptions, ok := options.(map[string]any)
+		if !ok {
+			return nil, fmt.Errorf("stream_options must be an object")
+		}
+		streamOptions["include_usage"] = true
+		payload["stream_options"] = streamOptions
+	}
 	return json.Marshal(payload)
 }
 

@@ -67,9 +67,24 @@ func (a *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		writeProxyError(w, proxy.ErrInvalidRequest)
 		return
 	}
-	response, err := a.proxy.ChatCompletions(auth, req, clientIP(r))
+	response, err := a.proxy.ChatCompletions(r.Context(), auth, req, clientIP(r))
 	if err != nil {
 		writeProxyError(w, err)
+		return
+	}
+	if response.Stream != nil {
+		defer response.Stream.Close()
+		w.Header().Set("Content-Type", "text/event-stream; charset=utf-8")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("X-Accel-Buffering", "no")
+		w.WriteHeader(response.Status)
+		controller := http.NewResponseController(w)
+		_ = response.Stream.Forward(func(frame []byte) error {
+			if _, err := w.Write(frame); err != nil {
+				return err
+			}
+			return controller.Flush()
+		})
 		return
 	}
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
@@ -86,8 +101,6 @@ func writeProxyError(w http.ResponseWriter, err error) {
 		writeOpenAIError(w, http.StatusForbidden, "permission_error", "user or key is not allowed to perform this request")
 	case errors.Is(err, proxy.ErrInvalidRequest):
 		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "invalid request")
-	case errors.Is(err, proxy.ErrStreamingUnsupported):
-		writeOpenAIError(w, http.StatusBadRequest, "invalid_request_error", "streaming responses are not supported")
 	case errors.Is(err, proxy.ErrRateLimited):
 		writeOpenAIError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "rate limit exceeded")
 	case errors.Is(err, proxy.ErrInsufficientBalance):
