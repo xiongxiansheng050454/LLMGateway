@@ -301,6 +301,9 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *domain.AuthContext,
 // tripping the breaker, so a bad caller cannot open a healthy channel.
 func classifyUpstreamResult(statusCode int, err error) (domain.FailureReason, bool) {
 	if err != nil {
+		if errors.Is(err, context.DeadlineExceeded) {
+			return domain.FailureUpstreamTimeout, true
+		}
 		return domain.FailureUpstreamUnreachable, true
 	}
 	switch statusCode {
@@ -322,11 +325,7 @@ func classifyUpstreamResult(statusCode int, err error) (domain.FailureReason, bo
 // recordChannelHealth drives the circuit breaker state machine. It is
 // best-effort: a recording failure must never change the response.
 func (a *Service) recordChannelHealth(channelID int, success bool, reason domain.FailureReason) {
-	if success {
-		_, _ = a.store.RecordChannelSuccess(channelID)
-		return
-	}
-	_, _ = a.store.RecordChannelFailure(channelID, reason)
+	_, _ = a.store.RecordChannelAttempt(context.Background(), channelID, success, reason)
 }
 
 func (a *Service) priceFor(channelID int, model string, usage *Usage) (string, string, string, error) {
