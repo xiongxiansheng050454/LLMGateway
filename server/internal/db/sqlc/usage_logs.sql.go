@@ -539,3 +539,57 @@ func (q *Queries) StatsOverview(ctx context.Context, arg StatsOverviewParams) (S
 	)
 	return i, err
 }
+
+const statsTTFT = `-- name: StatsTTFT :one
+SELECT
+    count(*)::bigint AS sample_count,
+    coalesce(floor(avg(ttft_ms))::bigint, 0)::bigint AS average_ms,
+    coalesce(percentile_disc(0.50) WITHIN GROUP (ORDER BY ttft_ms), 0)::bigint AS p50_ms,
+    coalesce(percentile_disc(0.95) WITHIN GROUP (ORDER BY ttft_ms), 0)::bigint AS p95_ms,
+    coalesce(percentile_disc(0.99) WITHIN GROUP (ORDER BY ttft_ms), 0)::bigint AS p99_ms
+FROM usage_logs
+WHERE ttft_ms IS NOT NULL
+  AND ($1::bigint IS NULL OR user_id = $1::bigint)
+  AND ($2::bigint IS NULL OR api_key_id = $2::bigint)
+  AND ($3::bigint IS NULL OR channel_id = $3::bigint)
+  AND ($4::text IS NULL OR model = $4::text)
+  AND created_at >= $5::timestamptz
+  AND created_at <= $6::timestamptz
+`
+
+type StatsTTFTParams struct {
+	UserID    pgtype.Int8        `json:"user_id"`
+	ApiKeyID  pgtype.Int8        `json:"api_key_id"`
+	ChannelID pgtype.Int8        `json:"channel_id"`
+	Model     pgtype.Text        `json:"model"`
+	StartTime pgtype.Timestamptz `json:"start_time"`
+	EndTime   pgtype.Timestamptz `json:"end_time"`
+}
+
+type StatsTTFTRow struct {
+	SampleCount int64 `json:"sample_count"`
+	AverageMs   int64 `json:"average_ms"`
+	P50Ms       int64 `json:"p50_ms"`
+	P95Ms       int64 `json:"p95_ms"`
+	P99Ms       int64 `json:"p99_ms"`
+}
+
+func (q *Queries) StatsTTFT(ctx context.Context, arg StatsTTFTParams) (StatsTTFTRow, error) {
+	row := q.db.QueryRow(ctx, statsTTFT,
+		arg.UserID,
+		arg.ApiKeyID,
+		arg.ChannelID,
+		arg.Model,
+		arg.StartTime,
+		arg.EndTime,
+	)
+	var i StatsTTFTRow
+	err := row.Scan(
+		&i.SampleCount,
+		&i.AverageMs,
+		&i.P50Ms,
+		&i.P95Ms,
+		&i.P99Ms,
+	)
+	return i, err
+}

@@ -333,6 +333,40 @@ func (s *Store) StatsChannels(startTime, endTime string) (domain.ListResponse[do
 	return domain.ListResponse[domain.StatsChannelDTO]{List: list}, nil
 }
 
+func (s *Store) StatsTTFT(filter domain.TTFTStatsFilter) (domain.TTFTStatsDTO, error) {
+	start, end, err := parseRange(filter.StartTime, filter.EndTime)
+	if err != nil {
+		return domain.TTFTStatsDTO{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var values []int
+	for _, log := range s.usageLogs {
+		if log.TTFTMs == nil || !withinRange(log.CreatedAt, start, end) ||
+			(filter.UserID != nil && (log.UserID == nil || *log.UserID != *filter.UserID)) ||
+			(filter.APIKeyID != nil && (log.APIKeyID == nil || *log.APIKeyID != *filter.APIKeyID)) ||
+			(filter.ChannelID != nil && (log.ChannelID == nil || *log.ChannelID != *filter.ChannelID)) ||
+			(filter.Model != "" && log.Model != filter.Model) {
+			continue
+		}
+		values = append(values, *log.TTFTMs)
+	}
+	if len(values) == 0 {
+		return domain.TTFTStatsDTO{}, nil
+	}
+	sort.Ints(values)
+	var sum int64
+	for _, value := range values {
+		sum += int64(value)
+	}
+	return domain.TTFTStatsDTO{SampleCount: int64(len(values)), AverageMs: sum / int64(len(values)), P50Ms: percentile(values, 50), P95Ms: percentile(values, 95), P99Ms: percentile(values, 99)}, nil
+}
+
+func percentile(values []int, percentile int) int64 {
+	index := (len(values)*percentile + 99) / 100
+	return int64(values[index-1])
+}
+
 // orZero6/orZero8 mirror the PostgreSQL NOT NULL DEFAULT 0 columns so both
 // stores return the same canonical strings for missing amounts.
 func orZero6(value string) string {

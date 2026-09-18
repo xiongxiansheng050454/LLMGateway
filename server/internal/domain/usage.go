@@ -102,6 +102,25 @@ type StatsOverviewDTO struct {
 	ActiveUserCount int64  `json:"active_user_count"`
 }
 
+// TTFTStatsFilter narrows stream first-token latency samples. Non-streaming
+// requests have no TTFT and are deliberately excluded from this metric.
+type TTFTStatsFilter struct {
+	UserID    *int
+	APIKeyID  *int
+	ChannelID *int
+	Model     string
+	StartTime string
+	EndTime   string
+}
+
+type TTFTStatsDTO struct {
+	SampleCount int64 `json:"sample_count"`
+	AverageMs   int64 `json:"average_ms"`
+	P50Ms       int64 `json:"p50_ms"`
+	P95Ms       int64 `json:"p95_ms"`
+	P99Ms       int64 `json:"p99_ms"`
+}
+
 type StatsDailyDTO struct {
 	StatDate     string `json:"stat_date"`
 	RequestCount int64  `json:"request_count"`

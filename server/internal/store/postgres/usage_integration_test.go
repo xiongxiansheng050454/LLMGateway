@@ -114,6 +114,19 @@ func TestPGUsageLogsAndStats(t *testing.T) {
 	if channel.ChannelName != "OpenAI" || channel.RequestCount != int64(2) {
 		t.Fatalf("unexpected channel stat: %+v", channel)
 	}
+
+	for index, ttft := range []int{100, 200, 500} {
+		if _, err := st.InsertUsageLog(domain.UsageLogInput{RequestID: "ttft-" + string(rune('a'+index)), UserID: intp(1), ChannelID: intp(1), Model: "gpt", Status: "success", TTFTMs: &ttft}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ttft, err := st.StatsTTFT(domain.TTFTStatsFilter{UserID: intp(1), ChannelID: intp(1), Model: "gpt", StartTime: "1970-01-01T00:00:00Z", EndTime: "2100-01-01T00:00:00Z"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ttft.SampleCount != 3 || ttft.AverageMs != 266 || ttft.P50Ms != 200 || ttft.P95Ms != 500 || ttft.P99Ms != 500 {
+		t.Fatalf("unexpected TTFT stats: %+v", ttft)
+	}
 }
 
 func TestPGCountRequestsSinceFiltersByModelAndChannel(t *testing.T) {

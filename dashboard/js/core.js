@@ -72,7 +72,8 @@ function renderChrome(view, key) {
 }
 
 function renderGatewayStatus() {
-  const p95 = 1820, uptime = '99.98%';
+  const p95 = TTFT_STATS?.sample_count ? TTFT_STATS.p95_ms : null;
+  const uptime = '99.98%';
   document.getElementById('gateway-status').innerHTML = `
     <div class="flex items-center gap-2">
       <span class="dot-live inline-block h-2 w-2 rounded-full bg-emerald-400 text-emerald-400"></span>
@@ -80,8 +81,8 @@ function renderGatewayStatus() {
     </div>
     <div class="mt-2 grid grid-cols-2 gap-2 text-center">
       <div class="rounded-lg bg-zinc-950/60 py-1.5">
-        <div class="font-mono text-xs font-bold text-cyan-400">${p95}ms</div>
-        <div class="text-[10px] text-zinc-500">P95 延迟</div>
+        <div class="font-mono text-xs font-bold text-cyan-400">${p95 == null ? '—' : p95 + 'ms'}</div>
+        <div class="text-[10px] text-zinc-500">P95 TTFT</div>
       </div>
       <div class="rounded-lg bg-zinc-950/60 py-1.5">
         <div class="font-mono text-xs font-bold text-emerald-400">${uptime}</div>

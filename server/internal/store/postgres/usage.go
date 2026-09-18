@@ -253,6 +253,24 @@ func (s *Store) StatsChannels(startTime, endTime string) (domain.ListResponse[do
 	return domain.ListResponse[domain.StatsChannelDTO]{List: list}, nil
 }
 
+func (s *Store) StatsTTFT(filter domain.TTFTStatsFilter) (domain.TTFTStatsDTO, error) {
+	if err := domain.ValidateTimeRange(filter.StartTime, filter.EndTime); err != nil {
+		return domain.TTFTStatsDTO{}, err
+	}
+	row, err := s.queries.StatsTTFT(context.Background(), sqlc.StatsTTFTParams{
+		UserID:    int8Value(filter.UserID),
+		ApiKeyID:  int8Value(filter.APIKeyID),
+		ChannelID: int8Value(filter.ChannelID),
+		Model:     textValueParam(filter.Model),
+		StartTime: timestampValue(filter.StartTime),
+		EndTime:   timestampValue(filter.EndTime),
+	})
+	if err != nil {
+		return domain.TTFTStatsDTO{}, mapError(err)
+	}
+	return domain.TTFTStatsDTO{SampleCount: row.SampleCount, AverageMs: row.AverageMs, P50Ms: row.P50Ms, P95Ms: row.P95Ms, P99Ms: row.P99Ms}, nil
+}
+
 func usageLogDTO(id int64, requestID string, userID, apiKeyID, channelID pgtype.Int8, channelName pgtype.Text, model, upstreamModel string, inputTokens, outputTokens, cachedInputTokens, totalTokens int64, unitPriceInput, unitPriceOutput, totalCost string, durationMs int64, ttftMs pgtype.Int8, status, errorCode, clientIP string, createdAt pgtype.Timestamptz) domain.UsageLogDTO {
 	return domain.UsageLogDTO{ID: int(id), RequestID: requestID, UserID: optionalInt(userID), APIKeyID: optionalInt(apiKeyID), ChannelID: optionalInt(channelID), ChannelName: textOrEmpty(channelName), Model: model, UpstreamModel: upstreamModel, InputTokens: inputTokens, OutputTokens: outputTokens, CachedInputTokens: cachedInputTokens, TotalTokens: totalTokens, UnitPriceInputPer1M: unitPriceInput, UnitPriceOutputPer1M: unitPriceOutput, TotalCost: totalCost, DurationMs: durationMs, TTFTMs: optionalInt(ttftMs), Status: status, ErrorCode: errorCode, ClientIP: clientIP, CreatedAt: createdAt.Time.UTC().Format(time.RFC3339)}
 }

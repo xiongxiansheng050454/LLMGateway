@@ -14,6 +14,7 @@ type UsageStore interface {
 	StatsOverview(startTime, endTime string) (domain.StatsOverviewDTO, error)
 	StatsDaily(dateFrom, dateTo string, page, pageSize int) (domain.ListResponse[domain.StatsDailyDTO], error)
 	StatsChannels(startTime, endTime string) (domain.ListResponse[domain.StatsChannelDTO], error)
+	StatsTTFT(domain.TTFTStatsFilter) (domain.TTFTStatsDTO, error)
 
 	// CountRequestsSince counts request attempts matching the filter since an
 	// RFC3339 timestamp. It counts all attempts, including failures, for

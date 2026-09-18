@@ -6,6 +6,7 @@
    ============================================================ */
 
 let OVERVIEW = emptyOverview();
+let TTFT_STATS = emptyTTFTStats();
 let DAILY_STATS = [];
 let CHANNELS = [];
 let MODEL_DIST = [];
@@ -36,6 +37,10 @@ function emptyOverview() {
     total_cost: '0.000000',
     active_user_count: 0,
   };
+}
+
+function emptyTTFTStats() {
+  return { sample_count: 0, average_ms: 0, p50_ms: 0, p95_ms: 0, p99_ms: 0 };
 }
 
 function docsLinks() {
@@ -124,8 +129,9 @@ async function loadDashboardData() {
   const dateFrom = toDateParam(start);
   const dateTo = toDateParam(end);
 
-  const [overview, daily, channels, channelStats, logs, users, rateLimits, models, quotaPolicies, quotaUsage] = await Promise.all([
+  const [overview, ttftStats, daily, channels, channelStats, logs, users, rateLimits, models, quotaPolicies, quotaUsage] = await Promise.all([
     adminGet('/stats/overview', { start_time: startTime, end_time: endTime }),
+    adminGet('/stats/ttft', { start_time: startTime, end_time: endTime }),
     adminGet('/stats/daily', { date_from: dateFrom, date_to: dateTo, page: 1, page_size: 100 }),
     adminGet('/channels', { page: 1, page_size: 100 }),
     adminGet('/stats/channels', { start_time: startTime, end_time: endTime }),
@@ -138,6 +144,13 @@ async function loadDashboardData() {
   ]);
 
   OVERVIEW = normalizeOverview(overview);
+  TTFT_STATS = {
+    sample_count: Number(ttftStats?.sample_count || 0),
+    average_ms: Number(ttftStats?.average_ms || 0),
+    p50_ms: Number(ttftStats?.p50_ms || 0),
+    p95_ms: Number(ttftStats?.p95_ms || 0),
+    p99_ms: Number(ttftStats?.p99_ms || 0),
+  };
   DAILY_STATS = normalizeDaily(daily?.list || [], start, end);
   CHANNELS = normalizeChannels(channels?.list || [], channelStats?.list || [], logs?.list || [], models?.list || []);
   MODEL_DIST = normalizeModelDist(logs?.list || []);

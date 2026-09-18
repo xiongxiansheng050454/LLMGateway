@@ -112,3 +112,43 @@ func TestUsageLogsAndStats(t *testing.T) {
 		t.Fatalf("unexpected channel stat: %+v", channel)
 	}
 }
+
+func TestTTFTStatsFiltersAndPercentiles(t *testing.T) {
+	handler, st := newUsageTestHandler(t)
+	userID, keyID, channelID := 7, 9, 11
+	for _, input := range []domain.UsageLogInput{
+		{RequestID: "ttft-1", UserID: &userID, APIKeyID: &keyID, ChannelID: &channelID, Model: "gpt", Status: "success", TTFTMs: intPtr(100)},
+		{RequestID: "ttft-2", UserID: &userID, APIKeyID: &keyID, ChannelID: &channelID, Model: "gpt", Status: "success", TTFTMs: intPtr(200)},
+		{RequestID: "ttft-3", UserID: &userID, APIKeyID: &keyID, ChannelID: &channelID, Model: "gpt", Status: "error", TTFTMs: intPtr(500)},
+		{RequestID: "ttft-no-value", UserID: &userID, APIKeyID: &keyID, ChannelID: &channelID, Model: "gpt", Status: "success"},
+		{RequestID: "ttft-other", Model: "other", Status: "success", TTFTMs: intPtr(1000)},
+	} {
+		if _, err := st.InsertUsageLog(input); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	stats := adminDo(t, handler, http.MethodGet, "/admin/stats/ttft?user_id=7&api_key_id=9&channel_id=11&model=gpt&start_time=2020-01-01T00:00:00Z&end_time=2100-01-01T00:00:00Z", nil)
+	data := stats["data"].(map[string]any)
+	for field, want := range map[string]float64{
+		"sample_count": 3,
+		"average_ms":   266,
+		"p50_ms":       200,
+		"p95_ms":       500,
+		"p99_ms":       500,
+	} {
+		if got := data[field].(float64); got != want {
+			t.Fatalf("%s = %v, want %v; data=%+v", field, got, want, data)
+		}
+	}
+
+	empty := adminDo(t, handler, http.MethodGet, "/admin/stats/ttft?model=missing", nil)
+	if empty["data"].(map[string]any)["sample_count"].(float64) != 0 {
+		t.Fatalf("empty TTFT stats = %+v", empty["data"])
+	}
+
+	invalid := adminRaw(t, handler, http.MethodGet, "/admin/stats/ttft?api_key_id=bad", nil)
+	if invalid.Code != http.StatusBadRequest {
+		t.Fatalf("invalid api_key_id status = %d, want 400", invalid.Code)
+	}
+}
