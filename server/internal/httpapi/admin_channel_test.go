@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"LLMGateway/server/internal/domain"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -203,5 +204,38 @@ func TestDeleteMissingModelMappingReturnsNotFound(t *testing.T) {
 	res := adminRaw(t, handler, http.MethodDelete, "/admin/channels/1/models/404", nil)
 	if res.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want %d; body=%s", res.Code, http.StatusNotFound, res.Body.String())
+	}
+}
+
+func TestChannelHealthSubresourcesAndReset(t *testing.T) {
+	handler := newTestServer()
+	adminDo(t, handler, http.MethodPost, "/admin/channels", map[string]any{"name": "Healthy", "base_url": "https://healthy.test", "api_key": "secret", "auth_type": "bearer", "status": 1})
+	adminDo(t, handler, http.MethodPost, "/admin/channels", map[string]any{"name": "NoHealth", "base_url": "https://no-health.test", "api_key": "secret", "auth_type": "bearer", "status": 0})
+	for i := 0; i < 5; i++ {
+		if _, err := handler.store.RecordChannelFailure(1, domain.FailureUpstream5xx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	single := adminDo(t, handler, http.MethodGet, "/admin/channels/1/health", nil)
+	if single["data"].(map[string]any)["state"] != "open" {
+		t.Fatalf("single health = %+v", single)
+	}
+	all := adminDo(t, handler, http.MethodGet, "/admin/channels/health", nil)
+	items := all["data"].(map[string]any)["list"].([]any)
+	if len(items) != 2 {
+		t.Fatalf("health list = %+v", all)
+	}
+	for _, raw := range items {
+		if raw.(map[string]any)["channel_id"].(float64) == 2 && raw.(map[string]any)["state"] != "closed" {
+			t.Fatalf("missing health row = %+v", raw)
+		}
+	}
+	adminDo(t, handler, http.MethodPost, "/admin/channels/1/health/reset", nil)
+	reset := adminDo(t, handler, http.MethodGet, "/admin/channels/1/health", nil)
+	if reset["data"].(map[string]any)["state"] != "closed" {
+		t.Fatalf("reset health = %+v", reset)
+	}
+	if res := adminRaw(t, handler, http.MethodGet, "/admin/channels/404/health", nil); res.Code != http.StatusNotFound {
+		t.Fatalf("missing channel health status = %d", res.Code)
 	}
 }

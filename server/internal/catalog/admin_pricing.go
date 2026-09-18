@@ -13,6 +13,9 @@ func (a *Server) Data(r *http.Request, parts []string) (any, bool, int, string) 
 		return httpcommon.Result(a.store.ListCatalogModels(r.URL.Query().Get("status") == "1"))
 	}
 	if len(parts) >= 2 && parts[1] == "channels" {
+		if len(parts) == 3 && parts[2] == "health" && r.Method == http.MethodGet {
+			return httpcommon.Result(a.store.ListChannelHealth())
+		}
 		return a.channelData(r, parts)
 	}
 	if len(parts) == 2 && parts[1] == "pricing" {

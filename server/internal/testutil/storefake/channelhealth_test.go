@@ -96,6 +96,9 @@ func TestResetChannelHealth(t *testing.T) {
 
 func TestListChannelHealth(t *testing.T) {
 	st, _ := newHealthTestStore()
+	if _, err := st.CreateChannel(domain.ChannelInput{Name: "channel", BaseURL: "https://channel.test", APIKey: "secret", Status: 1}); err != nil {
+		t.Fatal(err)
+	}
 	if _, err := st.RecordChannelFailure(1, domain.FailureUpstream5xx); err != nil {
 		t.Fatal(err)
 	}

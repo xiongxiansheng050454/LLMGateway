@@ -129,12 +129,13 @@ async function loadDashboardData() {
   const dateFrom = toDateParam(start);
   const dateTo = toDateParam(end);
 
-  const [overview, ttftStats, daily, channels, channelStats, logs, users, rateLimits, models, quotaPolicies, quotaUsage] = await Promise.all([
+  const [overview, ttftStats, daily, channels, channelStats, healthRows, logs, users, rateLimits, models, quotaPolicies, quotaUsage] = await Promise.all([
     adminGet('/stats/overview', { start_time: startTime, end_time: endTime }),
     adminGet('/stats/ttft', { start_time: startTime, end_time: endTime }),
     adminGet('/stats/daily', { date_from: dateFrom, date_to: dateTo, page: 1, page_size: 100 }),
     adminGet('/channels', { page: 1, page_size: 100 }),
     adminGet('/stats/channels', { start_time: startTime, end_time: endTime }),
+    adminGet('/channels/health'),
     adminGet('/usage-logs', { start_time: startTime, end_time: endTime, page: 1, page_size: 20 }),
     adminGet('/users', { page: 1, page_size: 100 }),
     adminGet('/rate-limits', { page: 1, page_size: 100, enabled: true }),
@@ -152,7 +153,7 @@ async function loadDashboardData() {
     p99_ms: Number(ttftStats?.p99_ms || 0),
   };
   DAILY_STATS = normalizeDaily(daily?.list || [], start, end);
-  CHANNELS = normalizeChannels(channels?.list || [], channelStats?.list || [], logs?.list || [], models?.list || []);
+  CHANNELS = normalizeChannels(channels?.list || [], channelStats?.list || [], healthRows?.list || [], logs?.list || [], models?.list || []);
   MODEL_DIST = normalizeModelDist(logs?.list || []);
   RECENT_LOGS = normalizeLogs(logs?.list || [], users?.list || []);
   TOP_USERS = normalizeUsers(users?.list || [], DAILY_STATS);
@@ -199,8 +200,9 @@ function normalizeDaily(rows, start, end) {
   return out;
 }
 
-function normalizeChannels(rows, statsRows, logs, models) {
+function normalizeChannels(rows, statsRows, healthRows, logs, models) {
   const stats = new Map(statsRows.map((row) => [Number(row.channel_id), row]));
+  const healthRowsByChannel = new Map(healthRows.map((row) => [Number(row.channel_id), row]));
   const rpm = new Map();
   const cutoff = Date.now() - 60 * 1000;
   logs.forEach((log) => {
@@ -214,6 +216,7 @@ function normalizeChannels(rows, statsRows, logs, models) {
 
   return rows.map((ch) => {
     const s = stats.get(Number(ch.id)) || {};
+    const healthRow = healthRowsByChannel.get(Number(ch.id)) || {};
     const requests = Number(s.request_count || 0);
     const success = Number(s.success_count || 0);
     const successRate = requests ? percent(success, requests) : (Number(ch.status) === 1 ? 100 : 0);
@@ -233,7 +236,7 @@ function normalizeChannels(rows, statsRows, logs, models) {
       rpm: rpm.get(Number(ch.id)) || 0,
       models: Array.from({ length: modelCount.get(Number(ch.id)) || Number(ch.model_count || 0) }),
       cost_24h: money(s.total_cost),
-      circuit: Number(ch.status) === 1 ? (health < 95 ? 'half-open' : 'closed') : 'open',
+      circuit: healthRow.state || 'closed',
     };
   });
 }
