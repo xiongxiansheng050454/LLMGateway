@@ -1,112 +1,58 @@
 # AGENTS.md
 
-本文件面向在本仓库中工作的 AI Agent 和协作者，说明项目背景、目录约定、开发原则和提交要求。
+本文件面向在本仓库中工作的 AI Agent 和协作者。项目是一个 LLM API Gateway：后端使用 Go 标准库 `net/http`、PostgreSQL 和 sqlc，前端是无需构建的静态 HTML/CSS/JS 控制台。
 
-## 项目背景
+## 目录放置规则
 
-本项目是一个 LLM API Gateway，已有静态前端控制台与 Go 后端（标准库 net/http + PostgreSQL/sqlc）。后端位于 `server/`，提供 `/admin` 管理端接口与 `/v1` OpenAI 兼容下游接口。
+- `server/` 是 Go 模块根。所有 Go 命令在该目录执行，或在仓库根使用 `go -C server ...`。
+- `server/cmd/llmgateway/` 只放进程装配、启动、优雅关闭和顶层 HTTP 路由表。路径到入口的映射统一放在 `router.go`。
+- `server/internal/catalog/` 放渠道、模型映射、定价、渠道连通性测试及对应管理端入口。
+- `server/internal/accounts/` 放用户、余额、网关 Key、认证上下文和权限能力。
+- `server/internal/usage/` 放用量日志、审计查询和统计能力。
+- `server/internal/ratelimit/` 放限流规则管理；与代理请求执行强相关的限流编排放在 `server/internal/proxy/`。
+- `server/internal/proxy/` 放下游代理业务编排，包括认证、选路、计费、限流、熔断、结算和上游调用。
+- `server/internal/proxy/openai/` 只放 OpenAI 兼容 wire DTO、请求解析和响应适配。
+- `server/internal/httpapi/` 只放顶层 HTTP 入口、统一响应、错误映射、静态 Dashboard 托管和对业务模块的委托，不集中放具体业务实现。
+- `server/internal/httpcommon/` 放跨业务复用的 HTTP 路径、JSON、分页、存储错误映射和响应 helper。
+- `server/internal/domain/` 放协议中立、存储中立的共享业务类型和纯规则。仅单个业务模块使用的类型优先留在该模块内。
+- `server/internal/store/` 只放存储端口、组合接口和通用存储错误；按 `channel.go`、`user.go`、`usage.go`、`ratelimit.go`、`channelhealth.go` 等业务领域拆分，禁止继续向单个总文件堆方法。
+- `server/internal/store/postgres/` 放 PostgreSQL Store 实现；业务模块不得直接导入该包。
+- `server/internal/store/memory/` 是当前运行时回退和测试实现。在 PostgreSQL-only 任务完成前，两种 Store 的字段、排序、错误和金额格式必须一致；不要新增仅 memory 支持的业务行为。
+- `server/db/migrations/` 放 schema 迁移，`server/db/queries/` 放 sqlc 查询，`server/internal/db/migrate/` 放迁移 runner，`server/internal/db/sqlc/` 放生成代码。禁止手改 sqlc 生成文件。
+- `server/internal/money/` 放定点金额能力，`server/internal/crypto/` 放密钥加密、生成与哈希，`server/internal/config/` 放环境变量名称、解析和默认值。
+- `dashboard/index.html` 是静态前端入口；`dashboard/js/data.js` 放 `/admin` 数据接入；`dashboard/js/core.js` 放导航、路由和启动逻辑；`dashboard/js/views/` 按页面放视图代码。
+- `docs/api-requirements.md` 是管理端与下游 API 契约来源，`docs/backend-structure.md` 记录后端结构细节。接口或结构发生变化时同步更新对应文档。
+- `deployments/` 放本地部署配置。`communication/` 只用于本地协作，不得提交。
+- 新文件优先放入现有业务模块。只有出现独立、稳定且可清晰命名的业务能力时才新增顶层模块，禁止按 `service`、`handler`、`utils` 等泛化技术层创建兜底目录。
 
-前端控制台位于 `dashboard/`，是一个无需打包的静态 HTML/CSS/JS 项目。它默认请求同源 `/admin` 管理端接口，也支持通过 URL 参数覆盖接口地址：
+## 边界规则
 
-```text
-?api_base=http://host:port/admin
-```
+- 后端按业务能力纵向组织。`catalog`、`accounts`、`usage`、`ratelimit`、`proxy` 各自持有本领域入口和规则，不把业务重新集中到通用 handler 或 service 包。
+- 业务模块通过 `server/internal/store` 中的窄端口访问持久化，不直接依赖 PostgreSQL、pgx 或 sqlc。Store 实现不得反向依赖 HTTP 层。
+- `server/internal/httpapi` 负责协议入口和委托，不负责选路、计费、认证、限流、熔断或结算等代理业务。
+- OpenAI JSON wire type 只能出现在 `server/internal/proxy/openai` 和必要的 HTTP 适配边界。`domain`、`store`、`catalog`、`accounts`、`usage`、`ratelimit` 不能依赖 OpenAI 协议 DTO。
+- `server/internal/proxy` 使用协议中立 contract 编排业务，不直接操作 `http.ResponseWriter`，也不依赖具体 Store 实现。
+- `money` 和 `crypto` 是叶子能力包，不得依赖 `store`、`httpapi` 或业务模块。禁止各业务模块或 Store 重复实现金额、加密和哈希逻辑。
+- `/admin` 接口统一返回 `{code,message,data}`，列表统一返回 `{list,total}`。时间使用 RFC3339，自然日使用 `YYYY-MM-DD`。
+- `/v1` 尽量保持 OpenAI 兼容；认证使用 `Authorization: Bearer <gateway-key>`，错误响应保持稳定、可识别。
+- 金额禁止使用 `float64` 参与计算。数据库使用 `NUMERIC`，Go 使用定点整数，对外使用字符串。
+- 渠道 API Key 必须加密存储；网关 Key 只存哈希，明文只在创建或重置时返回一次。响应、日志和错误信息不得泄露密钥、Token、数据库密码或其他敏感配置。
+- 修改 SQL 查询或 schema 后运行 `sqlc generate`；迁移只能新增，不修改已发布迁移的既有语义。
+- Dashboard 默认请求同源 `/admin`，也支持 `?api_base=http://host:port/admin`。如增加管理端认证、修改响应结构或接口路径，必须同步修改前端数据层。
+- Dashboard 启动会并发请求多个管理端接口，任一失败都会进入错误页。修改启动接口时必须同时验证 `/admin/stats/overview`、`/admin/stats/daily`、`/admin/channels`、`/admin/stats/channels`、`/admin/usage-logs`、`/admin/users`、`/admin/rate-limits` 和 `/admin/models`。
+- 前端当前使用带 JSON 请求体的 `DELETE /admin/pricing`；除非同步修改前端，否则后端必须保持兼容。
+- 修改前检查工作区状态，不覆盖或回退他人改动，不做无关的大范围重排或格式化。提交应聚焦一个目标，不得提交 `communication/`、本地密钥或其他敏感文件。
+- 后端变更至少执行 `go test ./...`、`go build ./...`、`go vet ./...` 和 `gofmt -l cmd internal`。PostgreSQL 集成测试使用 `TEST_DATABASE_URL`；未设置时测试会跳过，不能据此宣称 PostgreSQL 路径已验证。
 
-后端 API 要求集中整理在：
+## 注释规则
 
-```text
-docs/api-requirements.md
-```
-
-## 目录说明
-
-```text
-server/                    Go 模块根（module LLMGateway/server，go.mod / go.sum / sqlc.yaml）
-server/cmd/llmgateway/     进程入口与 HTTP 路由表（router.go）
-server/internal/           后端实现（config/crypto/money/domain/store/handler/db）
-server/db/                 迁移与 sqlc 查询（migrations/、queries/）
-dashboard/                 静态前端控制台（仓库根）
-dashboard/index.html       前端入口
-dashboard/js/data.js       前端数据接入层，定义 /admin 接口调用
-dashboard/js/core.js       前端导航、路由和启动逻辑
-dashboard/js/views/        各控制台页面
-docs/api-requirements.md   后端 API 要求
-docs/backend-structure.md  后端目录与分层约定
-deployments/               本地 PostgreSQL docker compose
-communication/             本地协作通信文件，不提交
-```
-
-## 运行与验证
-
-所有 Go 命令都在 `server/` 目录下执行（或在仓库根使用 `go -C server ...`）：
-
-```powershell
-cd server
-go build ./...
-go vet ./...
-go test ./...
-gofmt -l cmd internal
-sqlc generate
-go run ./cmd/llmgateway
-```
-
-运行默认使用内存存储，托管仓库根的 `dashboard/`：
-
-```text
-DASHBOARD_DIR=../dashboard
-```
-
-PostgreSQL 集成测试需要 `TEST_DATABASE_URL`，未设置时自动跳过。
-
-## Git 约定
-
-- `communication/` 不允许提交，已在 `.gitignore` 中忽略。
-- 不要提交本地密钥、上游 API Key、数据库密码、Token 或任何敏感配置。
-- 修改前先查看当前工作区状态，避免覆盖他人改动。
-- 不要无理由重排、格式化大量无关代码。
-- 每次提交应聚焦一个明确目标。
-
-## 后端开发原则
-
-- 优先满足 `docs/api-requirements.md` 中 Dashboard 启动必需接口。
-- `/admin` 接口统一返回 `{code,message,data}`。
-- 列表接口统一返回 `{list,total}`。
-- 金额建议使用字符串表示，避免浮点精度问题。
-- 时间使用 RFC3339；自然日参数使用 `YYYY-MM-DD`。
-- 管理端当前前端假设“不设认证”，如果后端加入认证，需要同步修改前端请求逻辑。
-- 下游接口应尽量兼容 OpenAI API，例如 `/v1/models` 和 `/v1/chat/completions`。
-
-## 推荐实现顺序
-
-1. 静态托管 `dashboard/`。
-2. 实现 `/healthz`。
-3. 实现统一响应封装和错误处理。
-4. 实现 Dashboard 启动必需的只读接口。
-5. 实现渠道、用户、Key、限流、定价的 CRUD。
-6. 实现 OpenAI 兼容下游接口。
-7. 实现路由、计费、限流、日志和余额扣减。
-
-## 前端注意事项
-
-- 前端启动时 `loadDashboardData()` 会并发请求多个 `/admin` 接口，任一失败都会进入错误页。
-- `dashboard/js/views/pricing.js` 当前使用 `DELETE /admin/pricing` 并携带 JSON 请求体，后端需兼容该行为，或同步调整前端。
-- 文档页会加载 `docs/README.md`、`docs/01-下游接口/*`、`docs/02-管理端接口/*` 等文件；如果这些文件不存在，文档页会提示加载失败。
-- Dashboard 中成功率在请求量为 0 时可能显示 `NaN%`，后续可修复。
-
-## 验证建议
-
-后端实现后至少验证：
-
-```text
-GET /healthz
-GET /admin/stats/overview
-GET /admin/stats/daily
-GET /admin/channels
-GET /admin/stats/channels
-GET /admin/usage-logs
-GET /admin/users
-GET /admin/rate-limits
-GET /admin/models
-```
-
-确认前端 `dashboard/index.html` 可以正常加载并进入仪表盘。
+- 注释解释设计原因、边界条件、事务语义、并发约束、安全要求或不直观的兼容行为，不复述代码表面动作。
+- 公共 Go 标识符仅在名称和类型不足以表达契约时补充简洁注释；注释应以标识符名称开头并描述调用方需要知道的行为。
+- 复杂业务流程只在关键决策点加注释，例如重试条件、熔断状态转换、计费舍入、结算原子性和 best-effort 行为。不要逐行注释。
+- 已知限制必须说明影响和后续条件，优先关联对应 Issue，例如 `TODO(#56): ...`。禁止使用没有责任边界的 `TODO`、`FIXME` 或“临时处理”。
+- 协议兼容代码应注明兼容对象和不能简化的原因，例如 OpenAI SSE 帧语义或前端 `DELETE` 请求体约定。
+- 安全相关注释不得包含真实密钥、Token、连接串或可用凭据；示例统一使用明显的占位值。
+- SQL 注释说明查询意图、锁或事务要求，不重复字段名。迁移注释说明不可逆操作和数据兼容风险。
+- 前端注释只说明数据来源、派生口径、浏览器兼容或非显然交互，不为普通 DOM 操作添加说明。
+- 不在 `server/internal/db/sqlc/` 生成文件中添加或修改注释；应修改源 SQL 后重新生成。
+- 移动或重构代码时同步更新失效注释。与实现不一致的注释视为缺陷，不保留历史描述。
