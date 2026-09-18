@@ -152,3 +152,63 @@ func TestTTFTStatsFiltersAndPercentiles(t *testing.T) {
 		t.Fatalf("invalid api_key_id status = %d, want 400", invalid.Code)
 	}
 }
+
+func TestUsageLogsFilterAndAggregateByAPIKey(t *testing.T) {
+	handler, st := newUsageTestHandler(t)
+	userID, keyA, keyB, channelA, channelB := 1, 10, 20, 100, 200
+	for _, input := range []domain.UsageLogInput{
+		{RequestID: "key-a-gpt-success", UserID: &userID, APIKeyID: &keyA, ChannelID: &channelA, Model: "gpt", Status: "success", TotalTokens: 100, TotalCost: "0.001000", DurationMs: 40},
+		{RequestID: "key-a-gpt-error", UserID: &userID, APIKeyID: &keyA, ChannelID: &channelB, Model: "gpt", Status: "error", TotalTokens: 50, TotalCost: "0.002000", DurationMs: 60},
+		{RequestID: "key-a-other", UserID: &userID, APIKeyID: &keyA, ChannelID: &channelA, Model: "other", Status: "success", TotalTokens: 30, TotalCost: "0.003000", DurationMs: 20},
+		{RequestID: "key-b-gpt", UserID: &userID, APIKeyID: &keyB, ChannelID: &channelA, Model: "gpt", Status: "success", TotalTokens: 999, TotalCost: "9.000000", DurationMs: 99},
+	} {
+		if _, err := st.InsertUsageLog(input); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	logs := adminDo(t, handler, http.MethodGet, "/admin/usage-logs?api_key_id=10&page=1&page_size=20", nil)
+	if logs["data"].(map[string]any)["total"].(float64) != 3 {
+		t.Fatalf("key-filtered logs = %+v", logs["data"])
+	}
+
+	byModel := adminDo(t, handler, http.MethodGet, "/admin/stats/usage?group_by=model&api_key_id=10&start_time=2020-01-01T00:00:00Z&end_time=2100-01-01T00:00:00Z", nil)
+	modelData := byModel["data"].(map[string]any)
+	if modelData["total"].(float64) != 2 {
+		t.Fatalf("model aggregation = %+v", modelData)
+	}
+	model := modelData["list"].([]any)[0].(map[string]any)
+	if model["model"] != "gpt" || model["request_count"].(float64) != 2 || model["success_count"].(float64) != 1 || model["error_count"].(float64) != 1 || model["total_tokens"].(float64) != 150 || model["total_cost"] != "0.003000" || model["duration_ms"].(float64) != 100 {
+		t.Fatalf("gpt aggregation = %+v", model)
+	}
+
+	byChannel := adminDo(t, handler, http.MethodGet, "/admin/stats/usage?group_by=channel&api_key_id=10&date_from=2020-01-01&date_to=2100-01-01", nil)
+	channelData := byChannel["data"].(map[string]any)
+	if channelData["total"].(float64) != 2 {
+		t.Fatalf("channel aggregation = %+v", channelData)
+	}
+	byUser := adminDo(t, handler, http.MethodGet, "/admin/stats/usage?group_by=user&api_key_id=10", nil)
+	if row := byUser["data"].(map[string]any)["list"].([]any)[0].(map[string]any); row["user_id"].(float64) != 1 || row["request_count"].(float64) != 3 || row["total_tokens"].(float64) != 180 {
+		t.Fatalf("user aggregation = %+v", row)
+	}
+	byKey := adminDo(t, handler, http.MethodGet, "/admin/stats/usage?group_by=api_key&page=1&page_size=1", nil)
+	keyData := byKey["data"].(map[string]any)
+	if keyData["total"].(float64) != 2 || len(keyData["list"].([]any)) != 1 {
+		t.Fatalf("key aggregation pagination = %+v", keyData)
+	}
+	empty := adminDo(t, handler, http.MethodGet, "/admin/stats/usage?group_by=model&api_key_id=404", nil)
+	if data := empty["data"].(map[string]any); data["total"].(float64) != 0 || len(data["list"].([]any)) != 0 {
+		t.Fatalf("empty aggregation = %+v", data)
+	}
+
+	for _, path := range []string{
+		"/admin/usage-logs?api_key_id=sk-secret",
+		"/admin/stats/usage?group_by=unknown",
+		"/admin/stats/usage?group_by=model&api_key_id=sk-secret",
+		"/admin/stats/usage?group_by=model&start_time=2026-01-01T00:00:00Z&date_from=2026-01-01",
+	} {
+		if res := adminRaw(t, handler, http.MethodGet, path, nil); res.Code != http.StatusBadRequest {
+			t.Fatalf("%s status = %d, want 400; body=%s", path, res.Code, res.Body.String())
+		}
+	}
+}

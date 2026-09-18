@@ -11,6 +11,10 @@ import (
 )
 
 type Querier interface {
+	AggregateUsageByAPIKey(ctx context.Context, arg AggregateUsageByAPIKeyParams) ([]AggregateUsageByAPIKeyRow, error)
+	AggregateUsageByChannel(ctx context.Context, arg AggregateUsageByChannelParams) ([]AggregateUsageByChannelRow, error)
+	AggregateUsageByModel(ctx context.Context, arg AggregateUsageByModelParams) ([]AggregateUsageByModelRow, error)
+	AggregateUsageByUser(ctx context.Context, arg AggregateUsageByUserParams) ([]AggregateUsageByUserRow, error)
 	CountBalanceTransactions(ctx context.Context, userID int64) (int32, error)
 	CountKeys(ctx context.Context) (int32, error)
 	CountRateLimitRules(ctx context.Context, enabled pgtype.Bool) (int32, error)

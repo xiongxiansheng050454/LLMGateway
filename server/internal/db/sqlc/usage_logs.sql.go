@@ -11,6 +11,286 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const aggregateUsageByAPIKey = `-- name: AggregateUsageByAPIKey :many
+SELECT api_key_id, count(*)::bigint AS request_count, count(*) FILTER (WHERE status = 'success')::bigint AS success_count, count(*) FILTER (WHERE status <> 'success')::bigint AS error_count, coalesce(sum(total_tokens), 0)::bigint AS total_tokens, coalesce(sum(total_cost), 0)::numeric(20, 6)::text AS total_cost, coalesce(sum(duration_ms), 0)::bigint AS duration_ms, count(*) OVER()::bigint AS aggregate_total
+FROM usage_logs
+WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz
+  AND ($3::bigint IS NULL OR user_id = $3::bigint) AND ($4::bigint IS NULL OR api_key_id = $4::bigint) AND ($5::bigint IS NULL OR channel_id = $5::bigint) AND ($6::text IS NULL OR model = $6::text) AND ($7::text IS NULL OR status = $7::text)
+GROUP BY api_key_id ORDER BY request_count DESC, api_key_id NULLS LAST LIMIT $9 OFFSET $8
+`
+
+type AggregateUsageByAPIKeyParams struct {
+	StartTime  pgtype.Timestamptz `json:"start_time"`
+	EndTime    pgtype.Timestamptz `json:"end_time"`
+	UserID     pgtype.Int8        `json:"user_id"`
+	ApiKeyID   pgtype.Int8        `json:"api_key_id"`
+	ChannelID  pgtype.Int8        `json:"channel_id"`
+	Model      pgtype.Text        `json:"model"`
+	Status     pgtype.Text        `json:"status"`
+	PageOffset int32              `json:"page_offset"`
+	PageLimit  int32              `json:"page_limit"`
+}
+
+type AggregateUsageByAPIKeyRow struct {
+	ApiKeyID       pgtype.Int8 `json:"api_key_id"`
+	RequestCount   int64       `json:"request_count"`
+	SuccessCount   int64       `json:"success_count"`
+	ErrorCount     int64       `json:"error_count"`
+	TotalTokens    int64       `json:"total_tokens"`
+	TotalCost      string      `json:"total_cost"`
+	DurationMs     int64       `json:"duration_ms"`
+	AggregateTotal int64       `json:"aggregate_total"`
+}
+
+func (q *Queries) AggregateUsageByAPIKey(ctx context.Context, arg AggregateUsageByAPIKeyParams) ([]AggregateUsageByAPIKeyRow, error) {
+	rows, err := q.db.Query(ctx, aggregateUsageByAPIKey,
+		arg.StartTime,
+		arg.EndTime,
+		arg.UserID,
+		arg.ApiKeyID,
+		arg.ChannelID,
+		arg.Model,
+		arg.Status,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AggregateUsageByAPIKeyRow{}
+	for rows.Next() {
+		var i AggregateUsageByAPIKeyRow
+		if err := rows.Scan(
+			&i.ApiKeyID,
+			&i.RequestCount,
+			&i.SuccessCount,
+			&i.ErrorCount,
+			&i.TotalTokens,
+			&i.TotalCost,
+			&i.DurationMs,
+			&i.AggregateTotal,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const aggregateUsageByChannel = `-- name: AggregateUsageByChannel :many
+SELECT channel_id, count(*)::bigint AS request_count, count(*) FILTER (WHERE status = 'success')::bigint AS success_count, count(*) FILTER (WHERE status <> 'success')::bigint AS error_count, coalesce(sum(total_tokens), 0)::bigint AS total_tokens, coalesce(sum(total_cost), 0)::numeric(20, 6)::text AS total_cost, coalesce(sum(duration_ms), 0)::bigint AS duration_ms, count(*) OVER()::bigint AS aggregate_total
+FROM usage_logs
+WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz
+  AND ($3::bigint IS NULL OR user_id = $3::bigint) AND ($4::bigint IS NULL OR api_key_id = $4::bigint) AND ($5::bigint IS NULL OR channel_id = $5::bigint) AND ($6::text IS NULL OR model = $6::text) AND ($7::text IS NULL OR status = $7::text)
+GROUP BY channel_id ORDER BY request_count DESC, channel_id NULLS LAST LIMIT $9 OFFSET $8
+`
+
+type AggregateUsageByChannelParams struct {
+	StartTime  pgtype.Timestamptz `json:"start_time"`
+	EndTime    pgtype.Timestamptz `json:"end_time"`
+	UserID     pgtype.Int8        `json:"user_id"`
+	ApiKeyID   pgtype.Int8        `json:"api_key_id"`
+	ChannelID  pgtype.Int8        `json:"channel_id"`
+	Model      pgtype.Text        `json:"model"`
+	Status     pgtype.Text        `json:"status"`
+	PageOffset int32              `json:"page_offset"`
+	PageLimit  int32              `json:"page_limit"`
+}
+
+type AggregateUsageByChannelRow struct {
+	ChannelID      pgtype.Int8 `json:"channel_id"`
+	RequestCount   int64       `json:"request_count"`
+	SuccessCount   int64       `json:"success_count"`
+	ErrorCount     int64       `json:"error_count"`
+	TotalTokens    int64       `json:"total_tokens"`
+	TotalCost      string      `json:"total_cost"`
+	DurationMs     int64       `json:"duration_ms"`
+	AggregateTotal int64       `json:"aggregate_total"`
+}
+
+func (q *Queries) AggregateUsageByChannel(ctx context.Context, arg AggregateUsageByChannelParams) ([]AggregateUsageByChannelRow, error) {
+	rows, err := q.db.Query(ctx, aggregateUsageByChannel,
+		arg.StartTime,
+		arg.EndTime,
+		arg.UserID,
+		arg.ApiKeyID,
+		arg.ChannelID,
+		arg.Model,
+		arg.Status,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AggregateUsageByChannelRow{}
+	for rows.Next() {
+		var i AggregateUsageByChannelRow
+		if err := rows.Scan(
+			&i.ChannelID,
+			&i.RequestCount,
+			&i.SuccessCount,
+			&i.ErrorCount,
+			&i.TotalTokens,
+			&i.TotalCost,
+			&i.DurationMs,
+			&i.AggregateTotal,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const aggregateUsageByModel = `-- name: AggregateUsageByModel :many
+SELECT model, count(*)::bigint AS request_count, count(*) FILTER (WHERE status = 'success')::bigint AS success_count, count(*) FILTER (WHERE status <> 'success')::bigint AS error_count, coalesce(sum(total_tokens), 0)::bigint AS total_tokens, coalesce(sum(total_cost), 0)::numeric(20, 6)::text AS total_cost, coalesce(sum(duration_ms), 0)::bigint AS duration_ms, count(*) OVER()::bigint AS aggregate_total
+FROM usage_logs
+WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz
+  AND ($3::bigint IS NULL OR user_id = $3::bigint) AND ($4::bigint IS NULL OR api_key_id = $4::bigint) AND ($5::bigint IS NULL OR channel_id = $5::bigint) AND ($6::text IS NULL OR model = $6::text) AND ($7::text IS NULL OR status = $7::text)
+GROUP BY model ORDER BY request_count DESC, model LIMIT $9 OFFSET $8
+`
+
+type AggregateUsageByModelParams struct {
+	StartTime  pgtype.Timestamptz `json:"start_time"`
+	EndTime    pgtype.Timestamptz `json:"end_time"`
+	UserID     pgtype.Int8        `json:"user_id"`
+	ApiKeyID   pgtype.Int8        `json:"api_key_id"`
+	ChannelID  pgtype.Int8        `json:"channel_id"`
+	Model      pgtype.Text        `json:"model"`
+	Status     pgtype.Text        `json:"status"`
+	PageOffset int32              `json:"page_offset"`
+	PageLimit  int32              `json:"page_limit"`
+}
+
+type AggregateUsageByModelRow struct {
+	Model          string `json:"model"`
+	RequestCount   int64  `json:"request_count"`
+	SuccessCount   int64  `json:"success_count"`
+	ErrorCount     int64  `json:"error_count"`
+	TotalTokens    int64  `json:"total_tokens"`
+	TotalCost      string `json:"total_cost"`
+	DurationMs     int64  `json:"duration_ms"`
+	AggregateTotal int64  `json:"aggregate_total"`
+}
+
+func (q *Queries) AggregateUsageByModel(ctx context.Context, arg AggregateUsageByModelParams) ([]AggregateUsageByModelRow, error) {
+	rows, err := q.db.Query(ctx, aggregateUsageByModel,
+		arg.StartTime,
+		arg.EndTime,
+		arg.UserID,
+		arg.ApiKeyID,
+		arg.ChannelID,
+		arg.Model,
+		arg.Status,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AggregateUsageByModelRow{}
+	for rows.Next() {
+		var i AggregateUsageByModelRow
+		if err := rows.Scan(
+			&i.Model,
+			&i.RequestCount,
+			&i.SuccessCount,
+			&i.ErrorCount,
+			&i.TotalTokens,
+			&i.TotalCost,
+			&i.DurationMs,
+			&i.AggregateTotal,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const aggregateUsageByUser = `-- name: AggregateUsageByUser :many
+SELECT user_id, count(*)::bigint AS request_count, count(*) FILTER (WHERE status = 'success')::bigint AS success_count, count(*) FILTER (WHERE status <> 'success')::bigint AS error_count, coalesce(sum(total_tokens), 0)::bigint AS total_tokens, coalesce(sum(total_cost), 0)::numeric(20, 6)::text AS total_cost, coalesce(sum(duration_ms), 0)::bigint AS duration_ms, count(*) OVER()::bigint AS aggregate_total
+FROM usage_logs
+WHERE created_at >= $1::timestamptz AND created_at < $2::timestamptz
+  AND ($3::bigint IS NULL OR user_id = $3::bigint) AND ($4::bigint IS NULL OR api_key_id = $4::bigint) AND ($5::bigint IS NULL OR channel_id = $5::bigint) AND ($6::text IS NULL OR model = $6::text) AND ($7::text IS NULL OR status = $7::text)
+GROUP BY user_id ORDER BY request_count DESC, user_id NULLS LAST LIMIT $9 OFFSET $8
+`
+
+type AggregateUsageByUserParams struct {
+	StartTime  pgtype.Timestamptz `json:"start_time"`
+	EndTime    pgtype.Timestamptz `json:"end_time"`
+	UserID     pgtype.Int8        `json:"user_id"`
+	ApiKeyID   pgtype.Int8        `json:"api_key_id"`
+	ChannelID  pgtype.Int8        `json:"channel_id"`
+	Model      pgtype.Text        `json:"model"`
+	Status     pgtype.Text        `json:"status"`
+	PageOffset int32              `json:"page_offset"`
+	PageLimit  int32              `json:"page_limit"`
+}
+
+type AggregateUsageByUserRow struct {
+	UserID         pgtype.Int8 `json:"user_id"`
+	RequestCount   int64       `json:"request_count"`
+	SuccessCount   int64       `json:"success_count"`
+	ErrorCount     int64       `json:"error_count"`
+	TotalTokens    int64       `json:"total_tokens"`
+	TotalCost      string      `json:"total_cost"`
+	DurationMs     int64       `json:"duration_ms"`
+	AggregateTotal int64       `json:"aggregate_total"`
+}
+
+func (q *Queries) AggregateUsageByUser(ctx context.Context, arg AggregateUsageByUserParams) ([]AggregateUsageByUserRow, error) {
+	rows, err := q.db.Query(ctx, aggregateUsageByUser,
+		arg.StartTime,
+		arg.EndTime,
+		arg.UserID,
+		arg.ApiKeyID,
+		arg.ChannelID,
+		arg.Model,
+		arg.Status,
+		arg.PageOffset,
+		arg.PageLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []AggregateUsageByUserRow{}
+	for rows.Next() {
+		var i AggregateUsageByUserRow
+		if err := rows.Scan(
+			&i.UserID,
+			&i.RequestCount,
+			&i.SuccessCount,
+			&i.ErrorCount,
+			&i.TotalTokens,
+			&i.TotalCost,
+			&i.DurationMs,
+			&i.AggregateTotal,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const countRequestsSince = `-- name: CountRequestsSince :one
 SELECT count(*)::int
 FROM usage_logs
@@ -68,15 +348,17 @@ const countUsageLogs = `-- name: CountUsageLogs :one
 SELECT count(*)::int
 FROM usage_logs l
 WHERE ($1::bigint IS NULL OR l.user_id = $1::bigint)
-  AND ($2::bigint IS NULL OR l.channel_id = $2::bigint)
-  AND ($3::text IS NULL OR l.model = $3::text)
-  AND ($4::text IS NULL OR l.status = $4::text)
-  AND ($5::timestamptz IS NULL OR l.created_at >= $5::timestamptz)
-  AND ($6::timestamptz IS NULL OR l.created_at <= $6::timestamptz)
+  AND ($2::bigint IS NULL OR l.api_key_id = $2::bigint)
+  AND ($3::bigint IS NULL OR l.channel_id = $3::bigint)
+  AND ($4::text IS NULL OR l.model = $4::text)
+  AND ($5::text IS NULL OR l.status = $5::text)
+  AND ($6::timestamptz IS NULL OR l.created_at >= $6::timestamptz)
+  AND ($7::timestamptz IS NULL OR l.created_at <= $7::timestamptz)
 `
 
 type CountUsageLogsParams struct {
 	UserID    pgtype.Int8        `json:"user_id"`
+	ApiKeyID  pgtype.Int8        `json:"api_key_id"`
 	ChannelID pgtype.Int8        `json:"channel_id"`
 	Model     pgtype.Text        `json:"model"`
 	Status    pgtype.Text        `json:"status"`
@@ -87,6 +369,7 @@ type CountUsageLogsParams struct {
 func (q *Queries) CountUsageLogs(ctx context.Context, arg CountUsageLogsParams) (int32, error) {
 	row := q.db.QueryRow(ctx, countUsageLogs,
 		arg.UserID,
+		arg.ApiKeyID,
 		arg.ChannelID,
 		arg.Model,
 		arg.Status,
@@ -282,17 +565,19 @@ SELECT
 FROM usage_logs l
 LEFT JOIN channels c ON c.id = l.channel_id
 WHERE ($1::bigint IS NULL OR l.user_id = $1::bigint)
-  AND ($2::bigint IS NULL OR l.channel_id = $2::bigint)
-  AND ($3::text IS NULL OR l.model = $3::text)
-  AND ($4::text IS NULL OR l.status = $4::text)
-  AND ($5::timestamptz IS NULL OR l.created_at >= $5::timestamptz)
-  AND ($6::timestamptz IS NULL OR l.created_at <= $6::timestamptz)
+  AND ($2::bigint IS NULL OR l.api_key_id = $2::bigint)
+  AND ($3::bigint IS NULL OR l.channel_id = $3::bigint)
+  AND ($4::text IS NULL OR l.model = $4::text)
+  AND ($5::text IS NULL OR l.status = $5::text)
+  AND ($6::timestamptz IS NULL OR l.created_at >= $6::timestamptz)
+  AND ($7::timestamptz IS NULL OR l.created_at <= $7::timestamptz)
 ORDER BY l.created_at DESC, l.id DESC
-LIMIT $8 OFFSET $7
+LIMIT $9 OFFSET $8
 `
 
 type ListUsageLogsParams struct {
 	UserID     pgtype.Int8        `json:"user_id"`
+	ApiKeyID   pgtype.Int8        `json:"api_key_id"`
 	ChannelID  pgtype.Int8        `json:"channel_id"`
 	Model      pgtype.Text        `json:"model"`
 	Status     pgtype.Text        `json:"status"`
@@ -329,6 +614,7 @@ type ListUsageLogsRow struct {
 func (q *Queries) ListUsageLogs(ctx context.Context, arg ListUsageLogsParams) ([]ListUsageLogsRow, error) {
 	rows, err := q.db.Query(ctx, listUsageLogs,
 		arg.UserID,
+		arg.ApiKeyID,
 		arg.ChannelID,
 		arg.Model,
 		arg.Status,

@@ -867,6 +867,7 @@ page=1
 page_size=20
 user_id=1
 channel_id=1
+api_key_id=1
 model=gpt-4o-mini
 status=success
 start_time=RFC3339
@@ -909,6 +910,14 @@ end_time=RFC3339
 ### GET /admin/usage-logs/:id
 
 返回单条日志对象，字段同列表项。
+
+### GET /admin/stats/usage
+
+对 `usage_logs` 执行 PostgreSQL 实时聚合。必须提供 `group_by=user|api_key|model|channel`，返回 `{list,total}`；每项包含对应维度 ID 或模型名，以及 `request_count`、`success_count`、`error_count`、`total_tokens`、字符串 `total_cost` 和 `duration_ms`。
+
+可选过滤：`user_id`、`api_key_id`、`channel_id`、`model`、`status`。`api_key_id` 是日志保存的内部数值 ID，仅接受正整数；不能传递 Gateway Key 明文、前缀或哈希。支持分页。
+
+时间范围只能使用一组：`start_time`/`end_time`（RFC3339 UTC，半开区间 `[start_time,end_time)`），或 `date_from`/`date_to`（`YYYY-MM-DD`，按 UTC 自然日，含 `date_to`）。两组同时传递返回 `400`。空结果返回 `{"list":[],"total":0}`。
 
 ### GET /admin/stats/ttft
 
