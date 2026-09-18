@@ -1,6 +1,8 @@
 package architecture_test
 
 import (
+	"go/parser"
+	"go/token"
 	"os"
 	"path/filepath"
 	"strings"
@@ -20,7 +22,6 @@ func TestVisibleBackendModuleDirectories(t *testing.T) {
 		"internal/proxy/openai",
 		"internal/domain",
 		"internal/store",
-		"internal/store/memory",
 		"internal/store/postgres",
 		"internal/db/sqlc",
 	} {
@@ -30,6 +31,78 @@ func TestVisibleBackendModuleDirectories(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "internal/handler")); !os.IsNotExist(err) {
 		t.Fatalf("internal/handler should not remain as the HTTP catch-all module")
+	}
+	if _, err := os.Stat(filepath.Join(root, "internal/store/memory")); !os.IsNotExist(err) {
+		t.Fatalf("internal/store/memory should not remain as a production store")
+	}
+}
+
+func TestBusinessModulesDependOnlyOnStorePorts(t *testing.T) {
+	root := filepath.Join("..", "..")
+	for _, dir := range []string{
+		"internal/catalog",
+		"internal/accounts",
+		"internal/usage",
+		"internal/ratelimit",
+		"internal/proxy",
+		"internal/httpapi",
+	} {
+		assertNoImports(t, filepath.Join(root, dir), []string{
+			"LLMGateway/server/internal/store/postgres",
+			"LLMGateway/server/internal/db/sqlc",
+			"github.com/jackc/pgx",
+		})
+	}
+}
+
+func TestProductionCodeDoesNotImportTestStore(t *testing.T) {
+	root := filepath.Join("..", "..")
+	for _, dir := range []string{"cmd", "internal"} {
+		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, entry os.DirEntry, err error) error {
+			if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+				return err
+			}
+			if strings.Contains(filepath.ToSlash(path), "/internal/testutil/") {
+				return nil
+			}
+			file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+			if err != nil {
+				return err
+			}
+			for _, spec := range file.Imports {
+				if strings.Trim(spec.Path.Value, `"`) == "LLMGateway/server/internal/testutil/storefake" {
+					t.Fatalf("production file %s imports the test-only store", path)
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+}
+
+func assertNoImports(t *testing.T, root string, forbidden []string) {
+	t.Helper()
+	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
+		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") {
+			return err
+		}
+		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
+		if err != nil {
+			return err
+		}
+		for _, spec := range file.Imports {
+			for _, prefix := range forbidden {
+				if strings.HasPrefix(strings.Trim(spec.Path.Value, `"`), prefix) {
+					t.Fatalf("%s imports concrete infrastructure package %s", path, spec.Path.Value)
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatal(err)
 	}
 }
 
@@ -136,7 +209,14 @@ func TestHTTPRouteTableStaysCentralized(t *testing.T) {
 
 func TestOpenAIWireTypesStayInProtocolPackage(t *testing.T) {
 	root := filepath.Join("..", "..")
-	for _, dir := range []string{"internal/domain", "internal/store"} {
+	for _, dir := range []string{
+		"internal/catalog",
+		"internal/accounts",
+		"internal/usage",
+		"internal/ratelimit",
+		"internal/domain",
+		"internal/store",
+	} {
 		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, entry os.DirEntry, err error) error {
 			if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") {
 				return err

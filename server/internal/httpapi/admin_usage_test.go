@@ -6,14 +6,14 @@ import (
 	"testing"
 
 	"LLMGateway/server/internal/domain"
-	"LLMGateway/server/internal/store/memory"
+	"LLMGateway/server/internal/testutil/storefake"
 )
 
 func intPtr(value int) *int { return &value }
 
-func newUsageTestHandler(t *testing.T) (*Server, *memory.Store) {
+func newUsageTestHandler(t *testing.T) (*Server, *storefake.Store) {
 	t.Helper()
-	st := memory.New()
+	st := storefake.New()
 	return NewServer(filepath.Join("..", "..", "..", "dashboard"), st), st
 }
 

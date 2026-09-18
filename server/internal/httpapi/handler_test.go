@@ -11,7 +11,7 @@ import (
 	"testing"
 
 	"LLMGateway/server/internal/httpcommon"
-	"LLMGateway/server/internal/store/memory"
+	"LLMGateway/server/internal/testutil/storefake"
 )
 
 func TestHealthz(t *testing.T) {
@@ -147,7 +147,7 @@ func TestStaticDashboardServed(t *testing.T) {
 }
 
 func newTestServer() *Server {
-	return NewServer(filepath.Join("..", "..", "..", "dashboard"), memory.New())
+	return NewServer(filepath.Join("..", "..", "..", "dashboard"), storefake.New())
 }
 
 func assertListResponse(t *testing.T, data map[string]any) {

@@ -15,7 +15,7 @@ import (
 	"LLMGateway/server/internal/domain"
 	openaiwire "LLMGateway/server/internal/proxy/openai"
 	"LLMGateway/server/internal/store"
-	"LLMGateway/server/internal/store/memory"
+	"LLMGateway/server/internal/testutil/storefake"
 )
 
 const upstreamKey = "up-secret-key"
@@ -48,7 +48,7 @@ type proxyFixture struct {
 
 func newProxyFixture(t *testing.T, upstream http.Handler, opts ...Option) *proxyFixture {
 	t.Helper()
-	return newProxyFixtureWithStore(t, upstream, memory.New(), opts...)
+	return newProxyFixtureWithStore(t, upstream, storefake.New(), opts...)
 }
 
 func newProxyFixtureWithStore(t *testing.T, upstream http.Handler, st store.Store, opts ...Option) *proxyFixture {
@@ -349,7 +349,7 @@ func TestChatCompletionsRateLimited(t *testing.T) {
 
 func TestChatCompletionsModelRateLimitCountsOnlySameModel(t *testing.T) {
 	current := time.Now().UTC()
-	st := memory.NewWithClock(func() time.Time { return current })
+	st := storefake.NewWithClock(func() time.Time { return current })
 	f := newProxyFixtureWithStore(t, upstreamSuccess(), st, WithClock(func() time.Time { return current }))
 	if _, err := f.store.CreateChannelModel(1, domain.ChannelModel{ModelName: "gpt-other", UpstreamModel: "up-other", Enabled: true}); err != nil {
 		t.Fatal(err)
@@ -372,7 +372,7 @@ func TestChatCompletionsModelRateLimitCountsOnlySameModel(t *testing.T) {
 
 func TestChatCompletionsChannelRateLimitAfterRouting(t *testing.T) {
 	current := time.Now().UTC()
-	st := memory.NewWithClock(func() time.Time { return current })
+	st := storefake.NewWithClock(func() time.Time { return current })
 	var calls int32
 	f := newProxyFixtureWithStore(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&calls, 1)
@@ -464,7 +464,7 @@ func TestChatCompletionsHalfOpenRecovers(t *testing.T) {
 	})
 
 	current := time.Now().UTC()
-	st := memory.NewWithClock(func() time.Time { return current })
+	st := storefake.NewWithClock(func() time.Time { return current })
 	f := newProxyFixtureWithStore(t, upstream, st)
 	body := `{"model":"gpt","messages":[]}`
 
@@ -490,7 +490,7 @@ func TestChatCompletionsHalfOpenRecovers(t *testing.T) {
 }
 
 func TestChatCompletionsHealthRecordFailureDoesNotBreakSuccess(t *testing.T) {
-	f := newProxyFixtureWithStore(t, upstreamSuccess(), failingHealthStore{Store: memory.New()})
+	f := newProxyFixtureWithStore(t, upstreamSuccess(), failingHealthStore{Store: storefake.New()})
 	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","messages":[]}`)
 	if res.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 even when health recording fails; body=%s", res.Code, res.Body.String())

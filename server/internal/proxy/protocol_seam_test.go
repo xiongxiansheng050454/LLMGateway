@@ -8,12 +8,12 @@ import (
 	"time"
 
 	"LLMGateway/server/internal/domain"
-	"LLMGateway/server/internal/store/memory"
+	"LLMGateway/server/internal/testutil/storefake"
 )
 
-func newProtocolSeamService(t *testing.T, transport http.RoundTripper, adapter ProtocolAdapter) (*Service, *memory.Store, *domain.AuthContext) {
+func newProtocolSeamService(t *testing.T, transport http.RoundTripper, adapter ProtocolAdapter) (*Service, *storefake.Store, *domain.AuthContext) {
 	t.Helper()
-	st := memory.New()
+	st := storefake.New()
 	if _, err := st.CreateUser(domain.UserInput{Nickname: "seam-user"}); err != nil {
 		t.Fatal(err)
 	}

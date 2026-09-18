@@ -5,6 +5,8 @@ import (
 	"strconv"
 )
 
+const EnvDatabaseURL = "DATABASE_URL"
+
 // EnvChannelKey is the environment variable holding the channel api_key
 // encryption key (raw bytes; 16, 24 or 32 bytes for AES-128/192/256). The
 // configuration layer owns env parsing; crypto validates the key material.
@@ -16,7 +18,7 @@ type Config struct {
 	DatabaseURL   string
 	MigrationsDir string
 	// ChannelKeyEncryptionKey is the raw AES key used to encrypt upstream
-	// channel api keys. Required when DatabaseURL is set.
+	// channel api keys. It is required for every runtime configuration.
 	ChannelKeyEncryptionKey string
 	// UpstreamTimeoutSeconds bounds a downstream proxy call to the upstream
 	// provider. Chat completions need far more than the default admin timeout.
@@ -27,7 +29,7 @@ func Load() Config {
 	cfg := Config{
 		Addr:                    os.Getenv("ADDR"),
 		DashboardDir:            os.Getenv("DASHBOARD_DIR"),
-		DatabaseURL:             os.Getenv("DATABASE_URL"),
+		DatabaseURL:             os.Getenv(EnvDatabaseURL),
 		MigrationsDir:           os.Getenv("MIGRATIONS_DIR"),
 		ChannelKeyEncryptionKey: os.Getenv(EnvChannelKey),
 	}
@@ -42,12 +44,6 @@ func Load() Config {
 	}
 	cfg.UpstreamTimeoutSeconds = parsePositiveInt(os.Getenv("UPSTREAM_TIMEOUT_SECONDS"), 60)
 	return cfg
-}
-
-// UsePostgres reports whether a PostgreSQL store should be used instead of the
-// default in-memory store.
-func (c Config) UsePostgres() bool {
-	return c.DatabaseURL != ""
 }
 
 func parsePositiveInt(value string, fallback int) int {

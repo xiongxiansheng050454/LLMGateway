@@ -34,7 +34,7 @@ type ChannelHealthDTO struct {
 }
 
 // ChannelBreakerConfig holds the circuit breaker thresholds shared by the
-// memory and PostgreSQL implementations.
+// persistence implementations and test fakes.
 type ChannelBreakerConfig struct {
 	FailureThreshold int
 	Cooldown         time.Duration

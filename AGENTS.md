@@ -17,7 +17,7 @@
 - `server/internal/domain/` 放协议中立、存储中立的共享业务类型和纯规则。仅单个业务模块使用的类型优先留在该模块内。
 - `server/internal/store/` 只放存储端口、组合接口和通用存储错误；按 `channel.go`、`user.go`、`usage.go`、`ratelimit.go`、`channelhealth.go` 等业务领域拆分，禁止继续向单个总文件堆方法。
 - `server/internal/store/postgres/` 放 PostgreSQL Store 实现；业务模块不得直接导入该包。
-- `server/internal/store/memory/` 是当前运行时回退和测试实现。在 PostgreSQL-only 任务完成前，两种 Store 的字段、排序、错误和金额格式必须一致；不要新增仅 memory 支持的业务行为。
+- `server/internal/store/postgres/` 是唯一生产 Store 实现；`server/internal/testutil/storefake/` 仅供不需要数据库的单元与 HTTP 契约测试使用，生产代码不得导入，运行时不得提供 memory fallback。
 - `server/db/migrations/` 放 schema 迁移，`server/db/queries/` 放 sqlc 查询，`server/internal/db/migrate/` 放迁移 runner，`server/internal/db/sqlc/` 放生成代码。禁止手改 sqlc 生成文件。
 - `server/internal/money/` 放定点金额能力，`server/internal/crypto/` 放密钥加密、生成与哈希，`server/internal/config/` 放环境变量名称、解析和默认值。
 - `dashboard/index.html` 是静态前端入口；`dashboard/js/data.js` 放 `/admin` 数据接入；`dashboard/js/core.js` 放导航、路由和启动逻辑；`dashboard/js/views/` 按页面放视图代码。

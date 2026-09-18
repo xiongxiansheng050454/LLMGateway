@@ -7,7 +7,7 @@ import (
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("ADDR", "")
 	t.Setenv("DASHBOARD_DIR", "")
-	t.Setenv("DATABASE_URL", "")
+	t.Setenv(EnvDatabaseURL, "")
 	t.Setenv("MIGRATIONS_DIR", "")
 	t.Setenv(EnvChannelKey, "")
 
@@ -32,7 +32,7 @@ func TestLoadDefaults(t *testing.T) {
 func TestLoadOverrides(t *testing.T) {
 	t.Setenv("ADDR", ":9999")
 	t.Setenv("DASHBOARD_DIR", "/srv/dashboard")
-	t.Setenv("DATABASE_URL", "postgres://user:pass@localhost:5432/db?sslmode=disable")
+	t.Setenv(EnvDatabaseURL, "postgres://user:pass@localhost:5432/db?sslmode=disable")
 	t.Setenv("MIGRATIONS_DIR", "/srv/migrations")
 	t.Setenv(EnvChannelKey, "0123456789abcdef0123456789abcdef")
 
@@ -51,14 +51,5 @@ func TestLoadOverrides(t *testing.T) {
 	}
 	if cfg.ChannelKeyEncryptionKey != "0123456789abcdef0123456789abcdef" {
 		t.Fatalf("ChannelKeyEncryptionKey = %q, want override", cfg.ChannelKeyEncryptionKey)
-	}
-}
-
-func TestUsePostgres(t *testing.T) {
-	if (Config{}).UsePostgres() {
-		t.Fatal("empty DatabaseURL should not enable PostgreSQL")
-	}
-	if !(Config{DatabaseURL: "postgres://localhost/db"}).UsePostgres() {
-		t.Fatal("DatabaseURL should enable PostgreSQL")
 	}
 }

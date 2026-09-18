@@ -7,8 +7,8 @@ import (
 )
 
 // CanonicalJSON is a serialization-consistency helper (not a business rule):
-// it re-encodes JSON into a compact, key-sorted form so the memory store (raw
-// input) and PostgreSQL (JSONB) return byte-identical values. Empty input
+// it re-encodes JSON into a compact, key-sorted form so test fakes (raw input)
+// and PostgreSQL (JSONB) return byte-identical values. Empty input
 // returns nil.
 func CanonicalJSON(value json.RawMessage) json.RawMessage {
 	if len(value) == 0 {

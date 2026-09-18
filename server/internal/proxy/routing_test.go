@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"LLMGateway/server/internal/domain"
-	"LLMGateway/server/internal/store/memory"
+	"LLMGateway/server/internal/testutil/storefake"
 )
 
-func newRouteTestApp(st *memory.Store, randIntN func(int) int) *Service {
+func newRouteTestApp(st *storefake.Store, randIntN func(int) int) *Service {
 	return &Service{
 		store:    st,
 		client:   &http.Client{},
@@ -18,9 +18,9 @@ func newRouteTestApp(st *memory.Store, randIntN func(int) int) *Service {
 	}
 }
 
-func seedRoutingStore(t *testing.T) *memory.Store {
+func seedRoutingStore(t *testing.T) *storefake.Store {
 	t.Helper()
-	st := memory.New()
+	st := storefake.New()
 	create := func(name string, priority, weight int, balance string) int {
 		var balancePtr *string
 		if balance != "" {
@@ -91,7 +91,7 @@ func TestSelectChannelExcludesNonPositiveBalance(t *testing.T) {
 }
 
 func TestSelectChannelNoCandidates(t *testing.T) {
-	a := newRouteTestApp(memory.New(), func(int) int { return 0 })
+	a := newRouteTestApp(storefake.New(), func(int) int { return 0 })
 	if _, err := a.selectChannel("missing"); err != ErrNoHealthyChannel {
 		t.Fatalf("err = %v, want ErrNoHealthyChannel", err)
 	}

@@ -9,7 +9,6 @@ import (
 	"LLMGateway/server/internal/crypto"
 	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/store"
-	"LLMGateway/server/internal/store/memory"
 )
 
 func createKeyAndHash(t *testing.T, st store.Store, userID int) (int, string) {
@@ -184,7 +183,7 @@ func TestPGDebitUserBalanceConcurrent(t *testing.T) {
 	}
 }
 
-// proxySnapshot captures the fields that must match between memory and PG.
+// proxySnapshot captures the PostgreSQL proxy-store contract in one scenario.
 type proxySnapshot struct {
 	authActive       bool
 	authUserStatus   string
@@ -308,11 +307,16 @@ func errorKind(err error) string {
 	}
 }
 
-func TestMemoryVsPGProxyConsistency(t *testing.T) {
-	pg := runProxyScenario(t, testStore(t))
-	mem := runProxyScenario(t, memory.New())
-
-	if !reflect.DeepEqual(pg, mem) {
-		t.Fatalf("memory and PG differ:\npg  = %+v\nmem = %+v", pg, mem)
+func TestPGProxyScenario(t *testing.T) {
+	got := runProxyScenario(t, testStore(t))
+	want := proxySnapshot{
+		authActive: true, authUserStatus: "active", authBalance: "25.000000",
+		authPermissions: `{"models":["*"]}`, pricingInput: "0.10000000", pricingUpstream: "up-gpt",
+		pricingCached: "0.05000000", pricingCurrency: "USD", routeOrder: []int{2, 1},
+		routeUpstream: "up-gpt", routeBalance: "5.000000", afterDebit: "21.500000",
+		insufficientErr: "invalid", missingPricingIs: true, countAll: 1,
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("proxy snapshot = %+v, want %+v", got, want)
 	}
 }

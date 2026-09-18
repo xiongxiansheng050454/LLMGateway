@@ -6,7 +6,7 @@ import (
 )
 
 // ValidateTimeRange checks optional RFC3339 start/end bounds. Invalid values
-// return ErrInvalid so memory and PostgreSQL behave identically.
+// return ErrInvalid so persistence code and test fakes behave identically.
 func ValidateTimeRange(startTime, endTime string) error {
 	if startTime != "" {
 		if _, err := time.Parse(time.RFC3339, startTime); err != nil {
@@ -22,7 +22,7 @@ func ValidateTimeRange(startTime, endTime string) error {
 }
 
 // ValidateSince requires a non-empty RFC3339 timestamp. Used by window
-// counting so memory and PostgreSQL cannot diverge on an empty value.
+// counting so persistence code and test fakes cannot diverge on an empty value.
 func ValidateSince(since string) error {
 	if since == "" {
 		return fmt.Errorf("%w: since is required", ErrInvalid)

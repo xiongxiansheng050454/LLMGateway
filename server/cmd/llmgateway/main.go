@@ -16,7 +16,6 @@ import (
 	"LLMGateway/server/internal/db/migrate"
 	"LLMGateway/server/internal/httpapi"
 	"LLMGateway/server/internal/store"
-	"LLMGateway/server/internal/store/memory"
 	"LLMGateway/server/internal/store/postgres"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -66,11 +65,10 @@ func run() error {
 	return server.Shutdown(shutdownCtx)
 }
 
-// buildStore selects the persistence implementation from configuration.
+// buildStore constructs the only runtime persistence implementation.
 func buildStore(ctx context.Context, cfg config.Config) (store.Store, func(), error) {
-	if !cfg.UsePostgres() {
-		log.Print("DATABASE_URL not set, using in-memory store")
-		return memory.New(), func() {}, nil
+	if cfg.DatabaseURL == "" {
+		return nil, nil, fmt.Errorf("DATABASE_URL is required")
 	}
 
 	cipher, err := crypto.NewCipher([]byte(cfg.ChannelKeyEncryptionKey))
