@@ -55,6 +55,7 @@ func (s *Store) ResetChannelHealth(channelID int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.channelHealth, channelID)
+	delete(s.probes, channelID)
 	return nil
 }
 
@@ -62,8 +63,8 @@ func (s *Store) ListChannelHealth() (domain.ListResponse[domain.ChannelHealthDTO
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	ids := make([]int, 0, len(s.channelHealth))
-	for id := range s.channelHealth {
+	ids := make([]int, 0, len(s.channels))
+	for id := range s.channels {
 		ids = append(ids, id)
 	}
 	sort.Ints(ids)

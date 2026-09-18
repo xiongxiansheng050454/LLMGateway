@@ -102,21 +102,40 @@ func (s *Store) recordChannelHealth(channelID int, apply func(domain.ChannelHeal
 }
 
 func (s *Store) ResetChannelHealth(channelID int) error {
-	if _, err := s.queries.DeleteChannelHealth(context.Background(), int64(channelID)); err != nil {
+	ctx := context.Background()
+	tx, err := s.pool.Begin(ctx)
+	if err != nil {
 		return mapError(err)
 	}
-	return nil
+	defer func() { _ = tx.Rollback(ctx) }()
+	for _, table := range []string{"channel_breaker_probes", "channel_breaker_configs", "channel_health_buckets", "channel_health"} {
+		if _, err := tx.Exec(ctx, "DELETE FROM "+table+" WHERE channel_id=$1", channelID); err != nil {
+			return mapError(err)
+		}
+	}
+	return mapError(tx.Commit(ctx))
 }
 
 func (s *Store) ListChannelHealth() (domain.ListResponse[domain.ChannelHealthDTO], error) {
-	rows, err := s.queries.ListChannelHealth(context.Background())
+	rows, err := s.pool.Query(context.Background(), `SELECT c.id, COALESCE(h.state,'closed'), COALESCE(h.consecutive_failures,0), COALESCE(h.success_count,0), COALESCE(h.failure_count,0), h.opened_at, COALESCE(h.updated_at,c.updated_at) FROM channels c LEFT JOIN channel_health h ON h.channel_id=c.id ORDER BY c.id`)
 	if err != nil {
 		return domain.ListResponse[domain.ChannelHealthDTO]{}, mapError(err)
 	}
+	defer rows.Close()
 	list := []domain.ChannelHealthDTO{}
-	for _, row := range rows {
-		health := domain.EvaluateChannelHealth(channelHealthFromRow(row), s.now(), s.breaker)
-		list = append(list, channelHealthDTO(&health))
+	for rows.Next() {
+		var h domain.ChannelHealth
+		var opened, updated pgtype.Timestamptz
+		if err := rows.Scan(&h.ChannelID, &h.State, &h.ConsecutiveFailures, &h.SuccessCount, &h.FailureCount, &opened, &updated); err != nil {
+			return domain.ListResponse[domain.ChannelHealthDTO]{}, mapError(err)
+		}
+		h.OpenedAt = optionalTimestamp(opened)
+		h.UpdatedAt = updated.Time.UTC().Format(time.RFC3339)
+		h = domain.EvaluateChannelHealth(h, s.now(), s.breaker)
+		list = append(list, channelHealthDTO(&h))
+	}
+	if err := rows.Err(); err != nil {
+		return domain.ListResponse[domain.ChannelHealthDTO]{}, mapError(err)
 	}
 	return domain.ListResponse[domain.ChannelHealthDTO]{List: list, Total: len(list)}, nil
 }
