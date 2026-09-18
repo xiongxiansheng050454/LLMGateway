@@ -101,16 +101,17 @@ var _ store.ChannelStore = (*postgres.Store)(nil)
 
 ## 下游代理（/v1）
 
-- `GET /v1/models` 与 `POST /v1/chat/completions` 由 `server/internal/httpapi/openai.go` 暴露 HTTP 入口、方法校验、body 读取、客户端 IP 提取和 OpenAI 错误响应映射；代理业务编排及其 `openai` 协议适配位于 `server/internal/proxy`。
+- `GET /v1/models` 与 `POST /v1/chat/completions` 由 `server/internal/httpapi/openai.go` 暴露 HTTP 入口、方法校验、body 读取、客户端 IP 提取、SSE write/flush 和 OpenAI 错误响应映射；代理业务编排及其 `openai` 协议适配位于 `server/internal/proxy`。
 - 认证使用 `Authorization: Bearer <gateway-key>`；密钥经 `server/internal/crypto.HashKey` 后查询，明文不落日志/响应。
 - 路由候选按 `priority` 越大越优先，同级内按 `weight` 加权随机；非正余额渠道被排除。
 - 计费：缓存 token 已包含在 `prompt_tokens` 中，仅按 `(prompt_tokens - cached_tokens)` 计输入价，缓存部分计缓存价，避免重复计费。
 - 成功结算：非流式 chat completion 成功后通过 store 级 `SettleChatCompletion` 端口统一处理用户扣费、可扣费渠道余额扣减与 success usage log。PostgreSQL 实现在单一事务中提交；`last_used_at` 仍为成功响应后的 best-effort 更新。
+- 流式结算：`stream=true` 时网关强制向上游请求 `stream_options.include_usage=true`，逐事件重写 public model 并 flush；首个合法 JSON data 帧记录 TTFT。只有同时收到 usage 与 `[DONE]` 后才执行一次原子结算并下发终止帧。缺 usage、缺 `[DONE]`、畸形帧或中途断流均不扣费，写明确 error usage log，并通过流内 OpenAI error 帧结束；客户端取消会传播到上游且不计渠道失败。
 - 限流：`rpm` + `reject` 规则基于 `usage_logs` 统计最近 1 分钟请求次数。`global`/`user`/`api_key` 保持按当前用户/Key 计数；`model` 规则额外按 public model 精确过滤；`channel` 规则在路由选中最终渠道后、调用上游前评估，超限直接返回 429 且写入 `error_code=rate_limited` 的 error usage log，不自动改选其他渠道。
 - 熔断：每个渠道有 `channel_health` 状态（closed/open/half-open）。连续失败达阈值（默认 5）或确定性失败（上游 401/403/402）立即 open；冷却（默认 30s）后惰性转为 half-open 允许探测，探测成功回 closed、失败回 open。`ListRouteCandidates` 排除 open 渠道；当无可用渠道（无映射或全部 open）时返回 `503 no_healthy_channel`（错误码由 `no_available_channel` 变更而来，同时覆盖这两种情况）。失败分类仅计入传输错误、上游 429/401/403/402 与 5xx，其余 4xx 透传且不计渠道失败。健康记录为 best-effort。
 - 已知限制（后续 issue 处理）：
   - 未配置 `model_pricing` 的渠道×模型按 cost=0 放行（建议为所有可路由模型配置定价）。
-  - `queue` 动作未实现；`stream=true` 返回 400（SSE 未实现）。
+  - `queue` 动作未实现。
 
 ## 本地 PostgreSQL
 

@@ -9,14 +9,14 @@ import (
 )
 
 var (
-	ErrUnauthorized         = errors.New("unauthorized")
-	ErrForbidden            = errors.New("forbidden")
-	ErrInvalidRequest       = errors.New("invalid request")
-	ErrStreamingUnsupported = errors.New("streaming is not supported")
-	ErrRateLimited          = errors.New("rate limit exceeded")
-	ErrInsufficientBalance  = errors.New("insufficient balance")
-	ErrNoHealthyChannel     = errors.New("no healthy channel available")
-	ErrUpstream             = errors.New("upstream error")
+	ErrUnauthorized        = errors.New("unauthorized")
+	ErrForbidden           = errors.New("forbidden")
+	ErrInvalidRequest      = errors.New("invalid request")
+	ErrRateLimited         = errors.New("rate limit exceeded")
+	ErrInsufficientBalance = errors.New("insufficient balance")
+	ErrNoHealthyChannel    = errors.New("no healthy channel available")
+	ErrUpstream            = errors.New("upstream error")
+	ErrInvalidStream       = errors.New("invalid upstream stream")
 )
 
 type Service struct {

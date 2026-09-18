@@ -13,6 +13,7 @@ const (
 	FailureUpstream403         FailureReason = "upstream_403"
 	FailureUpstream429         FailureReason = "upstream_429"
 	FailureUpstream5xx         FailureReason = "upstream_5xx"
+	FailureUpstreamProtocol    FailureReason = "upstream_protocol_error"
 	FailureInvalidChannelKey   FailureReason = "invalid_channel_key"
 )
 

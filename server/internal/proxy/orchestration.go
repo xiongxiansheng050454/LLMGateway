@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bytes"
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -38,15 +39,11 @@ func (a *Service) Models(auth *domain.AuthContext) (ModelList, error) {
 	return ModelList{Models: data}, nil
 }
 
-// chatCompletions proxies a non-streaming chat completion request. It returns
-// the HTTP status and body to send downstream. A non-nil error is a
-// pre-flight/transport failure the handler maps to an OpenAI error.
-func (a *Service) ChatCompletions(auth *domain.AuthContext, req ChatRequest, clientIP string) (ChatResponse, error) {
+// ChatCompletions prepares a buffered or streaming chat completion. A non-nil
+// error is a pre-flight/transport failure the handler maps to an OpenAI error.
+func (a *Service) ChatCompletions(ctx context.Context, auth *domain.AuthContext, req ChatRequest, clientIP string) (ChatResponse, error) {
 	if req.Model == "" {
 		return ChatResponse{}, ErrInvalidRequest
-	}
-	if req.Stream {
-		return ChatResponse{}, ErrStreamingUnsupported
 	}
 	if !allowModel(auth, req.Model) {
 		return ChatResponse{}, ErrForbidden
@@ -96,12 +93,16 @@ func (a *Service) ChatCompletions(auth *domain.AuthContext, req ChatRequest, cli
 		return ChatResponse{}, ErrInvalidRequest
 	}
 
-	httpReq, err := http.NewRequest(http.MethodPost, strings.TrimRight(secret.BaseURL, "/")+"/v1/chat/completions", bytes.NewReader(upstreamBody))
+	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(secret.BaseURL, "/")+"/v1/chat/completions", bytes.NewReader(upstreamBody))
 	if err != nil {
 		return ChatResponse{}, ErrUpstream
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
-	httpReq.Header.Set("Accept", "application/json")
+	if req.Stream {
+		httpReq.Header.Set("Accept", "text/event-stream")
+	} else {
+		httpReq.Header.Set("Accept", "application/json")
+	}
 	if secret.AuthType == "bearer" && secret.APIKey != "" {
 		httpReq.Header.Set("Authorization", "Bearer "+secret.APIKey)
 	}
@@ -114,9 +115,27 @@ func (a *Service) ChatCompletions(auth *domain.AuthContext, req ChatRequest, cli
 		a.logUsage(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", "upstream_unreachable")
 		return ChatResponse{}, ErrUpstream
 	}
+	if req.Stream && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		if a.adapter.ParseStream == nil || a.adapter.StreamError == nil {
+			resp.Body.Close()
+			return ChatResponse{}, ErrInvalidRequest
+		}
+		return ChatResponse{Status: resp.StatusCode, Stream: &completionStream{
+			service: a, body: resp.Body, ctx: ctx, requestID: requestID, auth: auth,
+			candidate: candidate, publicModel: req.Model, clientIP: clientIP, start: start,
+		}}, nil
+	}
+
 	defer resp.Body.Close()
-	responseBody, _ := io.ReadAll(resp.Body)
+	responseBody, readErr := io.ReadAll(resp.Body)
 	durationMs := elapsedMs(start, a.now())
+	if readErr != nil {
+		if !errors.Is(readErr, context.Canceled) && !errors.Is(ctx.Err(), context.Canceled) {
+			a.recordChannelHealth(candidate.ChannelID, false, domain.FailureUpstreamUnreachable)
+		}
+		a.logUsage(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", durationMs, clientIP, "error", "upstream_stream_interrupted")
+		return ChatResponse{}, ErrUpstream
+	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		if reason, failure := classifyUpstreamResult(resp.StatusCode, nil); failure {
@@ -126,12 +145,16 @@ func (a *Service) ChatCompletions(auth *domain.AuthContext, req ChatRequest, cli
 		return ChatResponse{Status: resp.StatusCode, Body: responseBody}, nil
 	}
 
-	a.recordChannelHealth(candidate.ChannelID, true, "")
-
 	if a.adapter.ParseUsage == nil || a.adapter.RewriteResponse == nil {
 		return ChatResponse{}, ErrInvalidRequest
 	}
 	usage := a.adapter.ParseUsage(responseBody)
+	if usage == nil {
+		a.recordChannelHealth(candidate.ChannelID, false, domain.FailureUpstreamProtocol)
+		a.logUsage(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", durationMs, clientIP, "error", "upstream_usage_missing")
+		return ChatResponse{}, ErrUpstream
+	}
+	a.recordChannelHealth(candidate.ChannelID, true, "")
 	cost, inputPrice, outputPrice, err := a.priceFor(candidate.ChannelID, req.Model, usage)
 	if err != nil {
 		return ChatResponse{}, err

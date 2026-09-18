@@ -162,8 +162,8 @@ type UsageLogInput struct {
 	ClientIP             string
 }
 
-// ChatSettlementInput is the store-level contract for a successful
-// non-streaming chat completion settlement. Implementations must apply user
+// ChatSettlementInput is the store-level contract for a successful chat
+// completion settlement. Implementations must apply user
 // debit, optional channel debit and success usage logging atomically where the
 // backing store supports transactions.
 type ChatSettlementInput struct {

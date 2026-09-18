@@ -1,5 +1,7 @@
 package proxy
 
+import "io"
+
 // ChatRequest is the protocol-neutral input needed by proxy orchestration.
 type ChatRequest struct {
 	Model  string
@@ -32,6 +34,22 @@ type ChatResponse struct {
 	Status int
 	Body   []byte
 	Usage  *Usage
+	Stream ChatStream
+}
+
+// ChatStream forwards a successful upstream stream while proxy orchestration
+// retains ownership of settlement, audit logging and channel health.
+type ChatStream interface {
+	Forward(func([]byte) error) error
+	Close() error
+}
+
+// StreamEvent is a protocol-neutral event emitted by a wire adapter.
+type StreamEvent struct {
+	Frame []byte
+	Data  bool
+	Done  bool
+	Usage *Usage
 }
 
 // ProtocolAdapter contains the small protocol seam needed by proxy business
@@ -40,4 +58,6 @@ type ProtocolAdapter struct {
 	RewriteRequest  func([]byte, string) ([]byte, error)
 	ParseUsage      func([]byte) *Usage
 	RewriteResponse func([]byte, string) []byte
+	ParseStream     func(io.Reader, string, func(StreamEvent) error) error
+	StreamError     func(string, string) []byte
 }

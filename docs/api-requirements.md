@@ -922,6 +922,9 @@ Authorization: Bearer <gateway-key>
 - 按模型映射选择可用渠道。
 - 按渠道 `priority`、`weight`、余额、状态进行路由。
 - 请求上游并透传 OpenAI 风格响应。
+- `stream=true` 返回 `text/event-stream`，按 SSE 事件持续 flush，并保持 OpenAI `data:` 与 `[DONE]` 语义。
+- 流式请求会强制向上游设置 `stream_options.include_usage=true`；首个合法 JSON data 帧记录 `ttft_ms`。
+- 流式成功必须同时收到 usage 与 `[DONE]`，随后只执行一次原子结算。缺 usage、缺 `[DONE]`、畸形帧或中途断流不扣费，并返回 OpenAI 风格流内错误；客户端取消会及时取消上游请求。
 - 记录 `usage_logs`。
 - 按 `model_pricing` 计算费用。
 - 更新用户余额和渠道余额。

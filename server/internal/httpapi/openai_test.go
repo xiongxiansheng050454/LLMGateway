@@ -1,9 +1,13 @@
 package httpapi
 
 import (
+	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -271,11 +275,155 @@ func TestChatCompletionsAuthFailures(t *testing.T) {
 	}
 }
 
-func TestChatCompletionsStreamingUnsupported(t *testing.T) {
-	f := newProxyFixture(t, upstreamSuccess())
+func TestChatCompletionsStreamingSuccess(t *testing.T) {
+	st := &countingSettlementStore{Store: storefake.New()}
+	f := newProxyFixtureWithStore(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var payload map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatal(err)
+		}
+		options, _ := payload["stream_options"].(map[string]any)
+		if options["include_usage"] != true {
+			t.Fatalf("stream_options = %#v, want include_usage=true", options)
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "data: {\"id\":\"chatcmpl-stream\",\"model\":\"up-gpt\",\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n")
+		_, _ = fmt.Fprint(w, "data: {\"id\":\"chatcmpl-stream\",\"model\":\"up-gpt\",\"choices\":[],\"usage\":{\"prompt_tokens\":1000,\"completion_tokens\":500,\"total_tokens\":1500}}\n\n")
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+	}), st)
 	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","stream":true,"messages":[]}`)
-	if res.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", res.Code)
+	if res.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body=%s", res.Code, res.Body.String())
+	}
+	if got := res.Header().Get("Content-Type"); !strings.HasPrefix(got, "text/event-stream") {
+		t.Fatalf("Content-Type = %q, want text/event-stream", got)
+	}
+	if strings.Contains(res.Body.String(), "up-gpt") || !strings.Contains(res.Body.String(), `"model":"gpt"`) {
+		t.Fatalf("stream model was not rewritten: %s", res.Body.String())
+	}
+	if !strings.HasSuffix(res.Body.String(), "data: [DONE]\n\n") {
+		t.Fatalf("stream missing terminal DONE: %s", res.Body.String())
+	}
+	balance, _ := f.store.GetUserBalance(1)
+	if balance.AvailableBalance != "9.999550" {
+		t.Fatalf("balance = %s, want 9.999550", balance.AvailableBalance)
+	}
+	logs, _ := f.store.ListUsageLogs(domain.UsageLogFilter{Page: 1, PageSize: 10})
+	if logs.Total != 1 || logs.List[0].Status != "success" || logs.List[0].TTFTMs == nil {
+		t.Fatalf("usage logs = %+v, want one success with TTFT", logs)
+	}
+	if calls := st.settlementCalls.Load(); calls != 1 {
+		t.Fatalf("settlement calls = %d, want 1", calls)
+	}
+}
+
+func TestChatCompletionsStreamingWithoutUsageDoesNotCharge(t *testing.T) {
+	f := newProxyFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "data: {\"id\":\"chatcmpl-stream\",\"model\":\"up-gpt\",\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n")
+		_, _ = fmt.Fprint(w, "data: [DONE]\n\n")
+	}))
+	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","stream":true,"messages":[]}`)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "upstream_usage_missing") {
+		t.Fatalf("status/body = %d %s, want SSE usage error", res.Code, res.Body.String())
+	}
+	balance, _ := f.store.GetUserBalance(1)
+	if balance.AvailableBalance != "10.000000" {
+		t.Fatalf("balance changed without usage: %s", balance.AvailableBalance)
+	}
+	logs, _ := f.store.ListUsageLogs(domain.UsageLogFilter{Page: 1, PageSize: 10})
+	if logs.Total != 1 || logs.List[0].Status != "error" || logs.List[0].ErrorCode != "upstream_usage_missing" {
+		t.Fatalf("usage logs = %+v", logs)
+	}
+}
+
+func TestChatCompletionsStreamingWithoutDoneFailsAndTripsBreaker(t *testing.T) {
+	f := newProxyFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "data: {\"id\":\"chatcmpl-stream\",\"model\":\"up-gpt\",\"choices\":[],\"usage\":{\"prompt_tokens\":10,\"completion_tokens\":2,\"total_tokens\":12}}\n\n")
+	}))
+	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","stream":true,"messages":[]}`)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "upstream_stream_interrupted") {
+		t.Fatalf("status/body = %d %s, want interrupted SSE error", res.Code, res.Body.String())
+	}
+	health, err := f.store.GetChannelHealth(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.ConsecutiveFailures != 1 {
+		t.Fatalf("consecutive failures = %d, want 1", health.ConsecutiveFailures)
+	}
+	balance, _ := f.store.GetUserBalance(1)
+	if balance.AvailableBalance != "10.000000" {
+		t.Fatalf("balance changed after interrupted stream: %s", balance.AvailableBalance)
+	}
+}
+
+func TestChatCompletionsStreamingMalformedDataTripsBreaker(t *testing.T) {
+	f := newProxyFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "data: {not-json}\n\n")
+	}))
+	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","stream":true,"messages":[]}`)
+	if !strings.Contains(res.Body.String(), "upstream_stream_protocol_error") {
+		t.Fatalf("body = %s, want protocol error", res.Body.String())
+	}
+	health, _ := f.store.GetChannelHealth(1)
+	if health.ConsecutiveFailures != 1 {
+		t.Fatalf("consecutive failures = %d, want 1", health.ConsecutiveFailures)
+	}
+}
+
+func TestChatCompletionsStreamingUpstreamErrorPassesThrough(t *testing.T) {
+	f := newProxyFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		writeOpenAIError(w, http.StatusTooManyRequests, "rate_limit_exceeded", "busy")
+	}))
+	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","stream":true,"messages":[]}`)
+	if res.Code != http.StatusTooManyRequests || res.Header().Get("Content-Type") == "text/event-stream" {
+		t.Fatalf("status/content type = %d %q", res.Code, res.Header().Get("Content-Type"))
+	}
+	if !strings.Contains(res.Body.String(), "rate_limit_exceeded") {
+		t.Fatalf("upstream error body not preserved: %s", res.Body.String())
+	}
+}
+
+func TestChatCompletionsStreamingCancellationReachesUpstream(t *testing.T) {
+	upstreamCanceled := make(chan struct{})
+	firstFrame := make(chan struct{})
+	f := newProxyFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "data: {\"id\":\"chatcmpl-stream\",\"model\":\"up-gpt\",\"choices\":[{\"delta\":{\"content\":\"hi\"}}]}\n\n")
+		w.(http.Flusher).Flush()
+		close(firstFrame)
+		<-r.Context().Done()
+		close(upstreamCanceled)
+	}))
+	gateway := httptest.NewServer(http.HandlerFunc(f.server.OpenAI))
+	t.Cleanup(gateway.Close)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, gateway.URL+"/v1/chat/completions", strings.NewReader(`{"model":"gpt","stream":true,"messages":[]}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	req.Header.Set("Authorization", "Bearer "+f.fullKey)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	reader := bufio.NewReader(resp.Body)
+	if _, err := reader.ReadString('\n'); err != nil {
+		t.Fatalf("read first frame: %v", err)
+	}
+	<-firstFrame
+	cancel()
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	select {
+	case <-upstreamCanceled:
+	case <-time.After(2 * time.Second):
+		t.Fatal("upstream request was not canceled")
 	}
 }
 
@@ -501,6 +649,16 @@ func TestChatCompletionsHealthRecordFailureDoesNotBreakSuccess(t *testing.T) {
 // best-effort and cannot turn a successful request into an error.
 type failingHealthStore struct {
 	store.Store
+}
+
+type countingSettlementStore struct {
+	store.Store
+	settlementCalls atomic.Int32
+}
+
+func (s *countingSettlementStore) SettleChatCompletion(in domain.ChatSettlementInput) (int, error) {
+	s.settlementCalls.Add(1)
+	return s.Store.SettleChatCompletion(in)
 }
 
 func (f failingHealthStore) RecordChannelSuccess(int) (domain.ChannelHealth, error) {
