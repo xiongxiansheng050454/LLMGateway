@@ -394,15 +394,20 @@ function channelListHTML(channels) {
     const warn = c.health < 95;
     const circuitBadge = disabled
       ? Badge('已停用', 'neutral')
+      : c.circuit === 'open' ? Badge('熔断开启', 'error')
       : c.circuit === 'half-open' ? Badge('半开探测', 'warning')
       : Badge('熔断关闭', 'success');
+    const resetButton = !disabled && (c.circuit === 'open' || c.circuit === 'half-open')
+      ? `<button data-breaker-reset="${c.id}" class="btn btn-ghost shrink-0 rounded-md border border-amber-400/30 px-2 py-1 text-[10px] font-semibold text-amber-400">恢复熔断</button>`
+      : '';
     const balance = c.balance == null ? '不限' : `$${Number(c.balance).toFixed(4)}`;
     return `
       <div class="group rounded-lg border border-transparent p-2 -m-2 transition hover:border-zinc-800 hover:bg-zinc-800/40 ${disabled ? 'opacity-45' : ''}">
         <div class="mb-1.5 flex items-center gap-2">
           <span class="h-1.5 w-1.5 rounded-full ${disabled ? 'bg-zinc-500' : warn ? 'bg-amber-400' : 'bg-emerald-400 dot-live text-emerald-400'}"></span>
-          <span class="flex-1 truncate text-xs font-semibold">${c.name}</span>
-          ${circuitBadge}
+           <span class="flex-1 truncate text-xs font-semibold">${c.name}</span>
+           ${circuitBadge}
+           ${resetButton}
         </div>
         ${ProgressBar({ value: c.health, warn, label: `健康度 · 权重 ${c.weight} / 优先级 ${c.priority}`, right: c.health.toFixed(1) + '%' })}
         <div class="mt-1.5 flex items-center justify-between font-mono text-[10px] text-zinc-500">

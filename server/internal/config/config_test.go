@@ -17,6 +17,7 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("QUOTA_RESERVATION_TTL_SECONDS", "")
 	t.Setenv("QUOTA_REAPER_INTERVAL_SECONDS", "")
 	t.Setenv("QUOTA_REAPER_BATCH_SIZE", "")
+	t.Setenv("CHANNEL_MIN_ROUTE_BALANCE", "")
 
 	cfg := Load()
 	if cfg.Addr != ":8080" {
@@ -34,7 +35,7 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.ChannelKeyEncryptionKey != "" {
 		t.Fatalf("ChannelKeyEncryptionKey = %q, want empty", cfg.ChannelKeyEncryptionKey)
 	}
-	if cfg.UpstreamTimeoutSeconds != 60 || cfg.UpstreamMaxAttempts != 3 || cfg.QuotaDefaultMaxTokens != 4096 || cfg.QuotaReservationTTLSeconds != 120 || cfg.QuotaReaperIntervalSeconds != 30 || cfg.QuotaReaperBatchSize != 100 {
+	if cfg.UpstreamTimeoutSeconds != 60 || cfg.UpstreamMaxAttempts != 3 || cfg.QuotaDefaultMaxTokens != 4096 || cfg.QuotaReservationTTLSeconds != 120 || cfg.QuotaReaperIntervalSeconds != 30 || cfg.QuotaReaperBatchSize != 100 || cfg.ChannelMinRouteBalance != "0.000000" {
 		t.Fatalf("quota defaults = %+v", cfg)
 	}
 }
@@ -52,6 +53,7 @@ func TestLoadOverrides(t *testing.T) {
 	t.Setenv("QUOTA_RESERVATION_TTL_SECONDS", "180")
 	t.Setenv("QUOTA_REAPER_INTERVAL_SECONDS", "15")
 	t.Setenv("QUOTA_REAPER_BATCH_SIZE", "50")
+	t.Setenv("CHANNEL_MIN_ROUTE_BALANCE", "2.5")
 
 	cfg := Load()
 	if cfg.Addr != ":9999" {
@@ -69,8 +71,19 @@ func TestLoadOverrides(t *testing.T) {
 	if cfg.ChannelKeyEncryptionKey != "0123456789abcdef0123456789abcdef" {
 		t.Fatalf("ChannelKeyEncryptionKey = %q, want override", cfg.ChannelKeyEncryptionKey)
 	}
-	if cfg.UpstreamTimeoutSeconds != 90 || cfg.UpstreamMaxAttempts != 5 || cfg.QuotaDefaultMaxTokens != 8192 || cfg.QuotaReservationTTLSeconds != 180 || cfg.QuotaReaperIntervalSeconds != 15 || cfg.QuotaReaperBatchSize != 50 {
+	if cfg.UpstreamTimeoutSeconds != 90 || cfg.UpstreamMaxAttempts != 5 || cfg.QuotaDefaultMaxTokens != 8192 || cfg.QuotaReservationTTLSeconds != 180 || cfg.QuotaReaperIntervalSeconds != 15 || cfg.QuotaReaperBatchSize != 50 || cfg.ChannelMinRouteBalance != "2.500000" {
 		t.Fatalf("quota overrides = %+v", cfg)
+	}
+}
+
+func TestLoadMinimumRouteBalanceRejectsInvalidValues(t *testing.T) {
+	for _, value := range []string{"-1", "invalid"} {
+		t.Run(value, func(t *testing.T) {
+			t.Setenv("CHANNEL_MIN_ROUTE_BALANCE", value)
+			if got := Load().ChannelMinRouteBalance; got != "0.000000" {
+				t.Fatalf("ChannelMinRouteBalance = %q, want 0.000000", got)
+			}
+		})
 	}
 }
 

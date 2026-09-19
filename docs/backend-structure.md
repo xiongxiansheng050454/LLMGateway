@@ -85,7 +85,7 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
     - `server/internal/proxy/openai/`：`types.go`、`adapter.go`（OpenAI 兼容 wire DTO、请求解析和响应适配；proxy 业务模块的协议边界）
 - `store.Store` 由领域子接口组合而成，禁止继续往 `store.go` 堆方法：
 
-```go
+```text
 type Store interface {
     ChannelStore
     // UserStore / UsageStore / RateLimitStore 由对应 issue 加入
@@ -94,7 +94,7 @@ type Store interface {
 
 - PostgreSQL 实现以编译期断言固定其端口契约：
 
-```go
+```text
 var _ store.ChannelStore = (*postgres.Store)(nil)
 ```
 
@@ -105,10 +105,10 @@ var _ store.ChannelStore = (*postgres.Store)(nil)
 
 - `GET /v1/models` 与 `POST /v1/chat/completions` 由 `server/internal/httpapi/openai.go` 暴露 HTTP 入口、方法校验、body 读取、客户端 IP 提取、SSE write/flush 和 OpenAI 错误响应映射；代理业务编排及其 `openai` 协议适配位于 `server/internal/proxy`。
 - 认证使用 `Authorization: Bearer <gateway-key>`；密钥经 `server/internal/crypto.HashKey` 后查询，明文不落日志/响应。
-- 路由候选按 `priority` 越大越优先，同级内按 `weight` 加权随机；非正余额渠道被排除。
+- 路由候选按 `priority` 越大越优先；同一 API Key 使用同一 public model 时，在最高优先级候选组内按 `APIKeyID + model` 稳定哈希结合 `weight` 选择粘性首选渠道。熔断渠道和余额低于全局 `CHANNEL_MIN_ROUTE_BALANCE` 的计费渠道被排除，未设置余额的渠道不受该阈值影响。首选渠道失败时仍按本次请求的候选顺序故障切换；未设置或设置为 `0` 时仍排除非正余额渠道。
 - 计费：缓存 token 已包含在 `prompt_tokens` 中，仅按 `(prompt_tokens - cached_tokens)` 计输入价，缓存部分计缓存价，避免重复计费。
 - 成功结算：非流式 chat completion 成功后通过 store 级 `SettleChatCompletion` 端口统一处理用户扣费、可扣费渠道余额扣减与 success usage log。PostgreSQL 实现在单一事务中提交；`last_used_at` 仍为成功响应后的 best-effort 更新。
-- 流式结算：`stream=true` 时网关强制向上游请求 `stream_options.include_usage=true`，逐事件重写 public model 并 flush；首个合法 JSON data 帧记录 TTFT。只有同时收到 usage 与 `[DONE]` 后才执行一次原子结算并下发终止帧。缺 usage、缺 `[DONE]`、畸形帧或中途断流均不扣费，写明确 error usage log，并通过流内 OpenAI error 帧结束；客户端取消会传播到上游且不计渠道失败。
+- 流式结算：`stream=true` 时网关强制向上游请求 `stream_options.include_usage=true`，逐事件重写 public model 并 flush；首个合法 JSON data 帧记录 TTFT。收到 usage 与 `[DONE]` 时按上游实际 usage 一次原子结算。中途断流、客户端取消或流协议错误时，仅对已成功写入下游的文本 delta 使用本地 tokenizer 估算 completion token，并与请求 prompt 估算一起结算；日志以 `partial_estimated_*` 错误码标识该估算口径。没有已转发文本、缺 usage 或本地估算失败时不扣费；客户端取消会传播到上游且不计渠道失败。
 - 上游故障切换：一次请求只查询一次健康路由候选，proxy 在内存中按最高优先级组的权重选择首选，并以 `channel_id` 去重保留后备。仅传输错误、429、401/402/403 和 5xx 可切换；流式 2xx 后不再切换。`UPSTREAM_REQUEST_TIMEOUT` 控制请求总 deadline，`UPSTREAM_MAX_ATTEMPTS` 控制最大候选尝试数。
 - 运行时限流：请求预检按 global -> user -> api_key -> model 顺序检查 RPM/TPM/RPD/TPD/concurrency，路由后检查 channel；Token 预留使用输入 Token 加 `max_tokens` 的保守估算，完成后按实际 usage 结算。限流 reservation 与计数器独立持久化，过期记录由 reaper 清理。
 - 周期配额：所有边界使用 UTC，日桶为 `[00:00, 次日 00:00)`，月桶为 `[当月 1 日, 下月 1 日)`。请求选定最终渠道后，使用内嵌 tokenizer 估算输入 token，并按 `max_completion_tokens > max_tokens > QUOTA_DEFAULT_MAX_TOKENS` 预留最大输出 token；费用按最终渠道价格预留。用户 policy 与 Key policy 必须全部满足。
@@ -117,7 +117,6 @@ var _ store.ChannelStore = (*postgres.Store)(nil)
 - 熔断：每个渠道有 `channel_health` 状态（closed/open/half-open）。连续失败达阈值（默认 5）或确定性失败（上游 401/403/402）立即 open；冷却（默认 30s）后惰性转为 half-open 允许探测，探测成功回 closed、失败回 open。`ListRouteCandidates` 排除 open 渠道；当无可用渠道（无映射或全部 open）时返回 `503 no_healthy_channel`（错误码由 `no_available_channel` 变更而来，同时覆盖这两种情况）。失败分类仅计入传输错误、上游 429/401/403/402 与 5xx，其余 4xx 透传且不计渠道失败。健康记录为 best-effort。
 - 已知限制（后续 issue 处理）：
   - 未配置 `model_pricing` 的渠道×模型按 cost=0 放行（建议为所有可路由模型配置定价）。
-  - `queue` 动作未实现。
 
 ## 本地 PostgreSQL
 

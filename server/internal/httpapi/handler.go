@@ -49,6 +49,7 @@ type options struct {
 	quotaDefaultMaxTokens int
 	quotaReservationTTL   time.Duration
 	upstreamMaxAttempts   int
+	minimumRouteBalance   string
 }
 
 func WithQuotaConfig(defaultMaxTokens int, reservationTTL time.Duration) Option {
@@ -76,6 +77,14 @@ func WithUpstreamMaxAttempts(attempts int) Option {
 		if attempts > 0 {
 			o.upstreamMaxAttempts = attempts
 		}
+	}
+}
+
+// WithMinimumRouteBalance sets the global reserve below which chargeable
+// channels are excluded from routing.
+func WithMinimumRouteBalance(balance string) Option {
+	return func(o *options) {
+		o.minimumRouteBalance = balance
 	}
 }
 
@@ -116,6 +125,7 @@ func NewServer(dashboardDir string, st store.Store, opts ...Option) *Server {
 	proxyService := proxy.NewService(st, client, settings.randIntN, settings.now, openaiwire.Adapter())
 	proxyService.ConfigureQuota(settings.quotaDefaultMaxTokens, settings.quotaReservationTTL)
 	proxyService.ConfigureRequest(settings.upstreamTimeout, settings.upstreamMaxAttempts)
+	proxyService.ConfigureMinimumRouteBalance(settings.minimumRouteBalance)
 	return &Server{
 		store:        st,
 		client:       client,

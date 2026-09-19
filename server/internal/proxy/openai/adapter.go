@@ -16,11 +16,12 @@ func Adapter() proxy.ProtocolAdapter {
 		RewriteResponse: rewriteResponse,
 		ParseStream: func(reader io.Reader, publicModel string, emit func(proxy.StreamEvent) error) error {
 			return parseStream(reader, publicModel, func(event streamEvent) error {
-				return emit(proxy.StreamEvent{Frame: event.Frame, Data: event.Data, Done: event.Done, Usage: event.Usage})
+				return emit(proxy.StreamEvent{Frame: event.Frame, Data: event.Data, Done: event.Done, Usage: event.Usage, Text: event.Text})
 			})
 		},
-		StreamError:   streamError,
-		EstimateUsage: estimateRequestUsage,
+		StreamError:     streamError,
+		EstimateUsage:   estimateRequestUsage,
+		CountTextTokens: countTextTokens,
 	}
 }
 

@@ -363,6 +363,31 @@ func TestChatCompletionsStreamingWithoutDoneFailsAndTripsBreaker(t *testing.T) {
 	}
 }
 
+func TestChatCompletionsInterruptedStreamChargesForwardedTextEstimate(t *testing.T) {
+	f := newProxyFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/event-stream")
+		_, _ = fmt.Fprint(w, "data: {\"id\":\"chatcmpl-stream\",\"model\":\"up-gpt\",\"choices\":[{\"delta\":{\"content\":\"hello world\"}}]}\n\n")
+	}))
+	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","stream":true,"messages":[]}`)
+	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "upstream_stream_interrupted") {
+		t.Fatalf("status/body = %d %s, want interrupted SSE error", res.Code, res.Body.String())
+	}
+	logs, err := f.store.ListUsageLogs(domain.UsageLogFilter{Page: 1, PageSize: 10})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if logs.Total != 1 || logs.List[0].ErrorCode != "partial_estimated_upstream_stream_interrupted" || logs.List[0].TotalTokens <= 0 || logs.List[0].TotalCost == "0.000000" {
+		t.Fatalf("partial usage log = %+v", logs)
+	}
+	balance, err := f.store.GetUserBalance(1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if balance.AvailableBalance == "10.000000" {
+		t.Fatalf("balance was not charged for forwarded text")
+	}
+}
+
 func TestChatCompletionsStreamingMalformedDataTripsBreaker(t *testing.T) {
 	f := newProxyFixture(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
@@ -439,11 +464,11 @@ func TestChatCompletionsStreamingCancellationReachesUpstream(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if usage.Total == 1 && usage.List[0].ReservedTokens == 0 && usage.List[0].UsedTokens == 0 {
+		if usage.Total == 1 && usage.List[0].ReservedTokens == 0 && usage.List[0].UsedTokens > 0 {
 			break
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("quota reservation was not released after cancellation: %+v", usage)
+			t.Fatalf("forwarded stream usage was not settled after cancellation: %+v", usage)
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
@@ -451,7 +476,7 @@ func TestChatCompletionsStreamingCancellationReachesUpstream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if logs.Total != 1 || logs.List[0].ErrorCode != "client_canceled" || logs.List[0].TTFTMs == nil {
+	if logs.Total != 1 || logs.List[0].ErrorCode != "partial_estimated_client_canceled" || logs.List[0].TotalTokens <= 0 || logs.List[0].TTFTMs == nil {
 		t.Fatalf("canceled stream must retain observed TTFT: %+v", logs)
 	}
 }

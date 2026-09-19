@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-llmgateway}
+      POSTGRES_USER: ${POSTGRES_USER:-llmgateway}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in deployments/.env}
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    volumes:
+      - llmgateway_pgdata:/var/lib/postgresql/data
+
+  llmgateway:
+    build:
+      context: ..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      ADDR: :8080
+      DATABASE_URL: postgres://${POSTGRES_USER:-llmgateway}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-llmgateway}?sslmode=disable
+      CHANNEL_KEY_ENCRYPTION_KEY: ${CHANNEL_KEY_ENCRYPTION_KEY:?set CHANNEL_KEY_ENCRYPTION_KEY in deployments/.env}
+      UPSTREAM_REQUEST_TIMEOUT: ${UPSTREAM_REQUEST_TIMEOUT:-60}
+      UPSTREAM_MAX_ATTEMPTS: ${UPSTREAM_MAX_ATTEMPTS:-3}
+      QUOTA_DEFAULT_MAX_TOKENS: ${QUOTA_DEFAULT_MAX_TOKENS:-4096}
+      CHANNEL_MIN_ROUTE_BALANCE: ${CHANNEL_MIN_ROUTE_BALANCE:-0.000000}
+    ports:
+      - "${LLMGATEWAY_PORT:-8080}:8080"
+
+volumes:
+  llmgateway_pgdata:

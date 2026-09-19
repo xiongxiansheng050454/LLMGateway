@@ -90,6 +90,35 @@ func TestSelectChannelExcludesNonPositiveBalance(t *testing.T) {
 	}
 }
 
+func TestSelectChannelExcludesBalanceBelowConfiguredReserve(t *testing.T) {
+	st := storefake.New()
+	lowBalance := "0.999999"
+	highBalance := "1.000000"
+	for _, input := range []domain.ChannelInput{
+		{Name: "below-reserve", BaseURL: "https://below.test", APIKey: "sk", Status: 1, Priority: 10, Weight: 100, Balance: &lowBalance},
+		{Name: "at-reserve", BaseURL: "https://at.test", APIKey: "sk", Status: 1, Priority: 10, Weight: 100, Balance: &highBalance},
+		{Name: "unlimited", BaseURL: "https://unlimited.test", APIKey: "sk", Status: 1, Priority: 10, Weight: 100},
+	} {
+		channel, err := st.CreateChannel(input)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := st.CreateChannelModel(channel.ID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "gpt", Enabled: true}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	a := newRouteTestApp(st, func(int) int { return 0 })
+	a.ConfigureMinimumRouteBalance("1.000000")
+	candidates, err := a.orderedCandidates("gpt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(candidates) != 2 || candidates[0].ChannelName == "below-reserve" || candidates[1].ChannelName == "below-reserve" {
+		t.Fatalf("candidates = %+v, want channels at-reserve and unlimited", candidates)
+	}
+}
+
 func TestSelectChannelNoCandidates(t *testing.T) {
 	a := newRouteTestApp(storefake.New(), func(int) int { return 0 })
 	if _, err := a.selectChannel("missing"); err != ErrNoHealthyChannel {
@@ -122,5 +151,28 @@ func TestOrderedCandidatesDeduplicateChannelsAndKeepPriorityFallbacks(t *testing
 	}
 	if len(candidates) != 2 || candidates[0].ChannelID != ids[0] || candidates[1].ChannelID != ids[1] {
 		t.Fatalf("candidates = %+v, want channels 1,2 once", candidates)
+	}
+}
+
+func TestOrderedCandidatesSticksAPIKeyAndModelToSameChannel(t *testing.T) {
+	st := seedRoutingStore(t)
+	a := newRouteTestApp(st, func(int) int { return 299 })
+	first, err := a.orderedCandidates("gpt", 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := a.orderedCandidates("gpt", 42)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first[0].ChannelID != second[0].ChannelID {
+		t.Fatalf("sticky first candidates = %d,%d, want same channel", first[0].ChannelID, second[0].ChannelID)
+	}
+	otherKey, err := a.orderedCandidates("gpt", 43)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if otherKey[0].ChannelID == 0 {
+		t.Fatalf("other key candidate = %+v", otherKey)
 	}
 }

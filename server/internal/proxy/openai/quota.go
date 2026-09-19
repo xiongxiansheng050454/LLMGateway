@@ -55,3 +55,17 @@ func estimateRequestUsage(body []byte, defaultMaxTokens int) (proxy.EstimatedUsa
 	input += strings.Count(string(body), `"input_audio"`) * 8192
 	return proxy.EstimatedUsage{InputTokens: input, OutputTokens: output, TotalTokens: input + output}, nil
 }
+
+func countTextTokens(model, text string) (int, error) {
+	if text == "" {
+		return 0, nil
+	}
+	encoding, err := tokenizer.ForModel(tokenizer.Model(model))
+	if err != nil {
+		encoding, err = tokenizer.Get(tokenizer.Cl100kBase)
+		if err != nil {
+			return 0, fmt.Errorf("load tokenizer: %w", err)
+		}
+	}
+	return encoding.Count(text)
+}

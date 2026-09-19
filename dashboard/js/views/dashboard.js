@@ -76,6 +76,16 @@ function renderDashboardView() {
   const chCard = Card('col-span-12 xl:col-span-4', `
     ${CardHeader({ title: '渠道健康状态', desc: '路由 · 熔断 · 成功率' })}
     <div class="space-y-4">${channelListHTML(CHANNELS)}</div>`);
+  chCard.querySelectorAll('[data-breaker-reset]').forEach((button) => {
+    const channelID = Number(button.dataset.breakerReset);
+    const channel = CHANNELS.find((item) => item.id === channelID);
+    button.addEventListener('click', () => Confirm(`确认恢复渠道「${channel?.name || '#' + channelID}」的熔断状态？`, async () => {
+      await adminSend('POST', `/channels/${channelID}/health/reset`, {});
+      Toast('熔断状态已恢复', 'success');
+      await loadDashboardData();
+      applyRoute();
+    }));
+  });
   bento.append(chCard);
 
   const routeCard = Card('col-span-12 xl:col-span-4', `

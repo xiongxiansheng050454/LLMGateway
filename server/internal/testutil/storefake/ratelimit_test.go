@@ -1,7 +1,6 @@
 package storefake
 
 import (
-	"encoding/json"
 	"errors"
 	"testing"
 
@@ -45,9 +44,8 @@ func TestRateLimitCRUDAndFilter(t *testing.T) {
 		t.Fatalf("non-positive limit err = %v, want ErrInvalid", err)
 	}
 
-	// tpd must be accepted.
-	if _, err := st.CreateRateLimit(domain.RateLimitInput{RuleName: strp("tpd"), TargetType: strp("model"), Metric: strp("tpd"), LimitValue: int64p(1000), WindowSeconds: intp(86400), Action: strp("queue"), Extras: json.RawMessage(`{"queue_timeout_seconds":30}`)}); err != nil {
-		t.Fatalf("tpd rule rejected: %v", err)
+	if _, err := st.CreateRateLimit(domain.RateLimitInput{RuleName: strp("queue"), TargetType: strp("model"), Metric: strp("tpd"), LimitValue: int64p(1000), WindowSeconds: intp(86400), Action: strp("queue")}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("queue action err = %v, want ErrInvalid", err)
 	}
 
 	// Partial update: only enabled.
@@ -64,13 +62,13 @@ func TestRateLimitCRUDAndFilter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListRateLimits: %v", err)
 	}
-	if enabledList.Total != 1 {
-		t.Fatalf("enabled total = %d, want 1", enabledList.Total)
+	if enabledList.Total != 0 {
+		t.Fatalf("enabled total = %d, want 0", enabledList.Total)
 	}
 
 	all, _ := st.ListRateLimits(nil, 1, 20)
-	if all.Total != 2 {
-		t.Fatalf("all total = %d, want 2", all.Total)
+	if all.Total != 1 {
+		t.Fatalf("all total = %d, want 1", all.Total)
 	}
 
 	if err := st.DeleteRateLimit(1); err != nil {

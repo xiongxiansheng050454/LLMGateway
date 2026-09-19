@@ -45,6 +45,7 @@ func run() error {
 		Handler: newRouter(cfg.DashboardDir, st,
 			httpapi.WithUpstreamTimeout(time.Duration(cfg.UpstreamTimeoutSeconds)*time.Second),
 			httpapi.WithUpstreamMaxAttempts(cfg.UpstreamMaxAttempts),
+			httpapi.WithMinimumRouteBalance(cfg.ChannelMinRouteBalance),
 			httpapi.WithQuotaConfig(cfg.QuotaDefaultMaxTokens, time.Duration(cfg.QuotaReservationTTLSeconds)*time.Second)),
 	}
 	var workers sync.WaitGroup

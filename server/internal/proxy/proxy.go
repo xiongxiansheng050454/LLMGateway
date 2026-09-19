@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"time"
 
+	"LLMGateway/server/internal/money"
 	"LLMGateway/server/internal/store"
 )
 
@@ -26,6 +27,7 @@ type Service struct {
 	randIntN         func(int) int
 	now              func() time.Time
 	adapter          ProtocolAdapter
+	minRouteBalance  money.Amount
 	defaultMaxTokens int
 	reservationTTL   time.Duration
 	requestTimeout   time.Duration
@@ -46,6 +48,15 @@ func (a *Service) ConfigureRequest(timeout time.Duration, maxAttempts int) {
 	}
 	if maxAttempts > 0 {
 		a.maxAttempts = maxAttempts
+	}
+}
+
+// ConfigureMinimumRouteBalance excludes chargeable channels below the global
+// reserve amount while leaving channels without a balance limit eligible.
+func (a *Service) ConfigureMinimumRouteBalance(balance string) {
+	amount, err := money.Parse6(balance)
+	if err == nil && amount.Cmp(0) >= 0 {
+		a.minRouteBalance = amount
 	}
 }
 

@@ -61,8 +61,7 @@ func requestWindowStart(now time.Time, windowSeconds int) time.Time {
 	return time.Unix(seconds-(seconds%int64(windowSeconds)), 0).UTC()
 }
 
-// checkRateLimit enforces enabled rpm rules with the reject action. queue rules
-// are intentionally not implemented (recorded as a known limitation).
+// checkRateLimit enforces enabled rate-limit rules with the reject action.
 //
 // A key's rate_limit_overrides.rpm takes precedence over matching rules.
 func (a *Service) checkRateLimit(auth *domain.AuthContext, model string, estimatedTokens *int64) error {

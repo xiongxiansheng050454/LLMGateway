@@ -20,12 +20,17 @@ async function renderLogsView() {
         <option value="success">success</option>
         <option value="error">error</option>
       </select>
-      <input id="lf-start" type="datetime-local" class="form-input" title="开始时间"/>
-      <input id="lf-end" type="datetime-local" class="form-input" title="结束时间"/>
+      <label class="filter-field"><span>开始时间</span><input id="lf-start" type="datetime-local" class="form-input"/></label>
+      <label class="filter-field"><span>结束时间</span><input id="lf-end" type="datetime-local" class="form-input"/></label>
     </div>
-    <div class="mb-4 flex gap-2">
+    <div class="mb-4 flex flex-wrap items-center gap-2">
+      <span class="text-[11px] text-zinc-500">快捷范围</span>
+      <button data-log-range="today" class="btn btn-ghost rounded-lg border border-zinc-800 px-3 py-1.5 text-[11px] text-zinc-400">今天</button>
+      <button data-log-range="24h" class="btn btn-ghost rounded-lg border border-zinc-800 px-3 py-1.5 text-[11px] text-zinc-400">最近 24 小时</button>
+      <button data-log-range="7d" class="btn btn-ghost rounded-lg border border-zinc-800 px-3 py-1.5 text-[11px] text-zinc-400">最近 7 天</button>
       <button id="lf-query" class="btn btn-primary rounded-lg px-3.5 py-1.5 text-[11px] font-bold">查询</button>
       <button id="lf-reset" class="btn btn-ghost rounded-lg border border-zinc-800 px-3.5 py-1.5 text-[11px] font-semibold text-zinc-400">重置</button>
+      <span id="lf-range-error" class="text-[11px] text-rose-400"></span>
     </div>
     <div id="log-list" class="py-10 text-center text-xs text-zinc-500">加载中…</div>
     <div id="log-pager"></div>`);
@@ -33,11 +38,29 @@ async function renderLogsView() {
 
   document.getElementById('lg-refresh').addEventListener('click', () => loadLogs(LOG_PAGE));
   document.getElementById('lf-query').addEventListener('click', () => loadLogs(1));
+  document.querySelectorAll('[data-log-range]').forEach((button) => button.addEventListener('click', () => setLogRange(button.dataset.logRange)));
+  document.querySelectorAll('#lf-start, #lf-end').forEach((input) => {
+    input.addEventListener('click', () => {
+      if (typeof input.showPicker === 'function') input.showPicker();
+    });
+  });
   document.getElementById('lf-reset').addEventListener('click', () => {
     ['lf-user', 'lf-channel', 'lf-model', 'lf-status', 'lf-start', 'lf-end'].forEach((id) => { document.getElementById(id).value = ''; });
     loadLogs(1);
   });
   await loadLogs(1);
+}
+
+function setLogRange(range) {
+  const end = new Date();
+  const start = new Date(end);
+  if (range === 'today') start.setHours(0, 0, 0, 0);
+  else if (range === '24h') start.setTime(end.getTime() - 24 * 60 * 60 * 1000);
+  else start.setTime(end.getTime() - 7 * 24 * 60 * 60 * 1000);
+  const format = (d) => { const p = (n) => String(n).padStart(2, '0'); return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`; };
+  document.getElementById('lf-start').value = format(start);
+  document.getElementById('lf-end').value = format(end);
+  loadLogs(1);
 }
 
 function logFilterParams() {
@@ -52,6 +75,7 @@ function logFilterParams() {
   if (channel) params.channel_id = channel;
   if (model) params.model = model;
   if (status) params.status = status;
+  if (start && end && new Date(start) >= new Date(end)) throw new Error('开始时间必须早于结束时间');
   if (start) params.start_time = new Date(start).toISOString();
   if (end) params.end_time = new Date(end).toISOString();
   return params;

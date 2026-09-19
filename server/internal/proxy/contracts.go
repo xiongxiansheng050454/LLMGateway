@@ -56,6 +56,10 @@ type StreamEvent struct {
 	Data  bool
 	Done  bool
 	Usage *Usage
+	// Text is content successfully forwarded to the downstream caller. It is
+	// accumulated for local token estimation only when upstream final usage is
+	// unavailable.
+	Text string
 }
 
 // ProtocolAdapter contains the small protocol seam needed by proxy business
@@ -67,4 +71,5 @@ type ProtocolAdapter struct {
 	ParseStream     func(io.Reader, string, func(StreamEvent) error) error
 	StreamError     func(string, string) []byte
 	EstimateUsage   func([]byte, int) (EstimatedUsage, error)
+	CountTextTokens func(string, string) (int, error)
 }

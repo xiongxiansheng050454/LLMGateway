@@ -3,6 +3,8 @@ package config
 import (
 	"os"
 	"strconv"
+
+	"LLMGateway/server/internal/money"
 )
 
 const EnvDatabaseURL = "DATABASE_URL"
@@ -33,6 +35,7 @@ type Config struct {
 	QuotaReservationTTLSeconds int
 	QuotaReaperIntervalSeconds int
 	QuotaReaperBatchSize       int
+	ChannelMinRouteBalance     string
 }
 
 func Load() Config {
@@ -61,6 +64,7 @@ func Load() Config {
 	}
 	cfg.QuotaReaperIntervalSeconds = parsePositiveInt(os.Getenv("QUOTA_REAPER_INTERVAL_SECONDS"), 30)
 	cfg.QuotaReaperBatchSize = parsePositiveInt(os.Getenv("QUOTA_REAPER_BATCH_SIZE"), 100)
+	cfg.ChannelMinRouteBalance = parseNonNegativeAmount(os.Getenv("CHANNEL_MIN_ROUTE_BALANCE"), "0.000000")
 	return cfg
 }
 
@@ -73,4 +77,12 @@ func parsePositiveInt(value string, fallback int) int {
 		return fallback
 	}
 	return parsed
+}
+
+func parseNonNegativeAmount(value, fallback string) string {
+	amount, err := money.Parse6(value)
+	if value == "" || err != nil || amount.Cmp(0) < 0 {
+		return fallback
+	}
+	return money.Format6(amount)
 }

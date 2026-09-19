@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,18 +16,19 @@ import (
 var errDownstreamWrite = errors.New("downstream stream write failed")
 
 type completionStream struct {
-	service           *Service
-	body              io.ReadCloser
-	ctx               context.Context
-	requestID         string
-	auth              *domain.AuthContext
-	candidate         domain.RouteCandidate
-	publicModel       string
-	clientIP          string
-	start             time.Time
-	reservationID     int64
-	rateReservationID int64
-	cancel            context.CancelFunc
+	service               *Service
+	body                  io.ReadCloser
+	ctx                   context.Context
+	requestID             string
+	auth                  *domain.AuthContext
+	candidate             domain.RouteCandidate
+	publicModel           string
+	clientIP              string
+	start                 time.Time
+	reservationID         int64
+	rateReservationID     int64
+	estimatedPromptTokens int
+	cancel                context.CancelFunc
 
 	mu        sync.Mutex
 	forwarded bool
@@ -64,6 +66,7 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 	var usage *Usage
 	var ttft *int
 	done := false
+	var forwardedText strings.Builder
 	err := s.service.adapter.ParseStream(s.body, s.publicModel, func(event StreamEvent) error {
 		if event.Done {
 			done = true
@@ -79,11 +82,14 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 		if err := emit(event.Frame); err != nil {
 			return fmt.Errorf("%w: %v", errDownstreamWrite, err)
 		}
+		forwardedText.WriteString(event.Text)
 		return nil
 	})
 	if err != nil {
 		if errors.Is(err, errDownstreamWrite) || errors.Is(s.ctx.Err(), context.Canceled) {
-			s.logError(usage, ttft, "client_canceled")
+			if s.settlePartial(forwardedText.String(), ttft, "partial_estimated_client_canceled") {
+				settled = true
+			}
 			return err
 		}
 		reason := domain.FailureUpstreamUnreachable
@@ -95,17 +101,23 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 			message = "upstream stream contained invalid data"
 		}
 		s.service.recordChannelHealth(s.candidate.ChannelID, false, reason)
-		s.logError(usage, ttft, code)
+		if s.settlePartial(forwardedText.String(), ttft, "partial_estimated_"+code) {
+			settled = true
+		}
 		s.emitError(emit, code, message)
 		return err
 	}
 	if !done {
 		if errors.Is(s.ctx.Err(), context.Canceled) {
-			s.logError(usage, ttft, "client_canceled")
+			if s.settlePartial(forwardedText.String(), ttft, "partial_estimated_client_canceled") {
+				settled = true
+			}
 			return s.ctx.Err()
 		}
 		s.service.recordChannelHealth(s.candidate.ChannelID, false, domain.FailureUpstreamProtocol)
-		s.logError(usage, ttft, "upstream_stream_interrupted")
+		if s.settlePartial(forwardedText.String(), ttft, "partial_estimated_upstream_stream_interrupted") {
+			settled = true
+		}
 		s.emitError(emit, "upstream_stream_interrupted", "upstream stream ended before [DONE]")
 		return ErrUpstream
 	}
@@ -159,6 +171,59 @@ func (s *completionStream) logError(usage *Usage, ttft *int, code string) {
 	input := s.service.usageLogInput(s.requestID, s.auth, &s.candidate.ChannelID, s.candidate.UpstreamModel, s.publicModel, usage, "0.000000", "", "", durationMs, s.clientIP, "error", code)
 	input.TTFTMs = ttft
 	_, _ = s.service.store.InsertUsageLog(input)
+}
+
+// settlePartial charges only text frames confirmed written to the downstream
+// caller when the upstream final usage frame is unavailable. A missing or failed
+// local token estimate remains uncharged rather than inventing a token count.
+func (s *completionStream) settlePartial(text string, ttft *int, code string) bool {
+	if text == "" || s.service.adapter.CountTextTokens == nil {
+		s.logError(nil, ttft, code)
+		return false
+	}
+	completionTokens, err := s.service.adapter.CountTextTokens(s.publicModel, text)
+	if err != nil || completionTokens <= 0 {
+		s.logError(nil, ttft, code)
+		return false
+	}
+	usage := &Usage{
+		PromptTokens:     s.estimatedPromptTokens,
+		CompletionTokens: completionTokens,
+		TotalTokens:      s.estimatedPromptTokens + completionTokens,
+	}
+	cost, inputPrice, outputPrice, err := s.service.priceFor(s.candidate.ChannelID, s.publicModel, usage)
+	if err != nil {
+		s.logError(usage, ttft, code)
+		return false
+	}
+	input := s.service.usageLogInput(s.requestID, s.auth, &s.candidate.ChannelID, s.candidate.UpstreamModel, s.publicModel, usage, cost, inputPrice, outputPrice, elapsedMs(s.start, s.service.now()), s.clientIP, "error", code)
+	input.TTFTMs = ttft
+	if _, err := s.service.store.SettleChatCompletion(domain.ChatSettlementInput{
+		ReservationID: s.reservationID,
+		UserID:        s.auth.UserID,
+		APIKeyID:      s.auth.KeyID,
+		ChannelID:     &s.candidate.ChannelID,
+		Cost:          cost,
+		DebitChannel:  s.candidate.Balance != nil,
+		Description:   "partial chat completion " + s.requestID,
+		UsageLog:      input,
+	}); err != nil {
+		// The atomic settlement did not create a usage log, so record the failed
+		// partial charge with a distinct request id instead of colliding with it.
+		input.RequestID += "_settlement_failed"
+		input.TotalCost = "0.000000"
+		input.UnitPriceInputPer1M = ""
+		input.UnitPriceOutputPer1M = ""
+		input.ErrorCode = "partial_estimated_settlement_failed"
+		_, _ = s.service.store.InsertUsageLog(input)
+		return false
+	}
+	if s.rateReservationID != 0 {
+		_ = s.service.store.FinalizeRateLimit(context.Background(), s.rateReservationID, int64(usage.TotalTokens))
+		s.rateReservationID = 0
+	}
+	_ = s.service.store.UpdateKeyLastUsed(s.auth.KeyID)
+	return true
 }
 
 func (s *completionStream) emitError(emit func([]byte) error, code, message string) {

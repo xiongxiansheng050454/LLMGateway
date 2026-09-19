@@ -18,6 +18,7 @@ type streamEvent struct {
 	Data  bool
 	Done  bool
 	Usage *proxy.Usage
+	Text  string
 }
 
 func parseStream(reader io.Reader, publicModel string, emit func(streamEvent) error) error {
@@ -85,7 +86,19 @@ func parseEvent(frame []byte, publicModel string) (streamEvent, error) {
 		return streamEvent{}, fmt.Errorf("%w: encode JSON data frame", proxy.ErrInvalidStream)
 	}
 	usage := parseUsage(rewritten)
-	return streamEvent{Frame: append(append([]byte("data: "), rewritten...), '\n', '\n'), Data: true, Usage: usage}, nil
+	return streamEvent{Frame: append(append([]byte("data: "), rewritten...), '\n', '\n'), Data: true, Usage: usage, Text: deltaText(payload)}, nil
+}
+
+func deltaText(payload map[string]any) string {
+	choices, _ := payload["choices"].([]any)
+	var text strings.Builder
+	for _, choice := range choices {
+		item, _ := choice.(map[string]any)
+		delta, _ := item["delta"].(map[string]any)
+		content, _ := delta["content"].(string)
+		text.WriteString(content)
+	}
+	return text.String()
 }
 
 func normalizeEvent(frame []byte) []byte {

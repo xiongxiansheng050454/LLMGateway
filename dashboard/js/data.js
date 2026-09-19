@@ -45,10 +45,8 @@ function emptyTTFTStats() {
 
 function docsLinks() {
   return [
-    { title: 'Chat Completions', desc: 'OpenAI 兼容下游接口', href: '../docs/01-下游接口/chat-completions.md', icon: 'zap' },
-    { title: '模型列表', desc: 'GET /v1/models', href: '../docs/01-下游接口/models.md', icon: 'models' },
-    { title: '渠道管理', desc: 'GET /admin/channels', href: '../docs/02-管理端接口/channels.md', icon: 'channels' },
-    { title: '统计与账单', desc: 'usage_logs / daily stats', href: '../docs/02-管理端接口/stats-billing.md', icon: 'chart' },
+    { title: '后端结构', desc: '服务端模块与运行时边界', href: 'docs/backend-structure.md', icon: 'zap' },
+    { title: 'API 需求', desc: '下游与管理端接口契约', href: 'docs/api-requirements.md', icon: 'book' },
   ];
 }
 

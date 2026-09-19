@@ -16,14 +16,6 @@ func TestRateLimitCRUDAndFilter(t *testing.T) {
 		t.Fatalf("unexpected rule: %+v", rule)
 	}
 
-	queued := adminDo(t, handler, http.MethodPost, "/admin/rate-limits", map[string]any{
-		"rule_name": "queue rule", "target_type": "model", "metric": "tpd", "limit_value": 1000, "window_seconds": 86400, "action": "queue",
-		"extras": map[string]any{"queue_timeout_seconds": 30},
-	})
-	if queued["data"].(map[string]any)["metric"] != "tpd" {
-		t.Fatalf("tpd rule rejected: %+v", queued["data"])
-	}
-
 	// Partial update: only enabled.
 	updated := adminDo(t, handler, http.MethodPut, "/admin/rate-limits/1", map[string]any{"enabled": false})
 	rule = updated["data"].(map[string]any)
@@ -33,13 +25,13 @@ func TestRateLimitCRUDAndFilter(t *testing.T) {
 
 	enabled := adminDo(t, handler, http.MethodGet, "/admin/rate-limits?enabled=true", nil)
 	data := enabled["data"].(map[string]any)
-	if data["total"].(float64) != 1 {
-		t.Fatalf("enabled filter total = %v, want 1", data["total"])
+	if data["total"].(float64) != 0 {
+		t.Fatalf("enabled filter total = %v, want 0", data["total"])
 	}
 
 	all := adminDo(t, handler, http.MethodGet, "/admin/rate-limits", nil)
-	if all["data"].(map[string]any)["total"].(float64) != 2 {
-		t.Fatalf("all total = %v, want 2", all["data"])
+	if all["data"].(map[string]any)["total"].(float64) != 1 {
+		t.Fatalf("all total = %v, want 1", all["data"])
 	}
 
 	adminDo(t, handler, http.MethodDelete, "/admin/rate-limits/1", nil)
@@ -53,5 +45,11 @@ func TestRateLimitCRUDAndFilter(t *testing.T) {
 	})
 	if invalid.Code != http.StatusBadRequest {
 		t.Fatalf("invalid metric status = %d, want 400", invalid.Code)
+	}
+	queue := adminRaw(t, handler, http.MethodPost, "/admin/rate-limits", map[string]any{
+		"rule_name": "queue", "target_type": "user", "metric": "rpm", "limit_value": 1, "window_seconds": 60, "action": "queue",
+	})
+	if queue.Code != http.StatusBadRequest {
+		t.Fatalf("queue action status = %d, want 400", queue.Code)
 	}
 }

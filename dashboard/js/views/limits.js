@@ -79,7 +79,7 @@ function rulesTableHTML(rows) {
               <td class="py-2.5 pr-3 font-mono text-zinc-400">${r.target_value}</td>
               <td class="py-2.5 pr-3 font-mono text-cyan-400">${r.metric}</td>
               <td class="py-2.5 pr-3 text-right font-mono text-zinc-300">${r.limit_value} / ${r.window_seconds}s</td>
-              <td class="py-2.5 pr-3">${r.action === 'queue' ? Badge('queue', 'warning') : Badge('reject', 'neutral')}</td>
+              <td class="py-2.5 pr-3">${Badge('reject', 'neutral')}</td>
               <td class="py-2.5 pr-3 text-right font-mono text-zinc-400">${r.priority}</td>
               <td class="py-2.5 pr-3">${r.enabled ? Badge('启用', 'success') : Badge('停用', 'neutral')}</td>
               <td class="py-2.5 text-right whitespace-nowrap">
@@ -116,7 +116,6 @@ function bindRuleActions() {
 
 function ruleForm(rule) {
   const isNew = !rule;
-  const extras = rule?.extras || {};
   openModal({
     title: isNew ? '新建限流规则' : `编辑规则 · ${rule.rule_name}`,
     submitText: isNew ? '创建' : '保存',
@@ -127,9 +126,8 @@ function ruleForm(rule) {
       { name: 'metric', label: '指标', type: 'select', value: rule?.metric || 'rpm', options: METRICS },
       { name: 'limit_value', label: '限额', type: 'number', value: rule?.limit_value ?? 600 },
       { name: 'window_seconds', label: '窗口（秒）', type: 'number', value: rule?.window_seconds ?? 60 },
-      { name: 'action', label: '动作', type: 'select', value: rule?.action || 'reject', options: [{ value: 'reject', label: 'reject' }, { value: 'queue', label: 'queue' }] },
+      { name: 'action', label: '动作', type: 'select', value: 'reject', options: [{ value: 'reject', label: 'reject' }] },
       { name: 'priority', label: '优先级（越小越优先）', type: 'number', value: rule?.priority ?? 100 },
-      { name: 'queue_timeout_seconds', label: 'queue 超时（秒，仅 queue）', type: 'number', value: extras.queue_timeout_seconds ?? '' },
       { name: 'enabled', label: '启用', type: 'switch', value: rule?.enabled ?? true },
     ],
     onSubmit: async (v) => {
@@ -144,10 +142,6 @@ function ruleForm(rule) {
         priority: v.priority ?? 0,
         enabled: v.enabled,
       };
-      if (v.action === 'queue') {
-        if (!v.queue_timeout_seconds) throw new Error('queue 动作需填写超时秒数');
-        body.extras = { queue_timeout_seconds: Number(v.queue_timeout_seconds) };
-      }
       if (isNew) await adminSend('POST', '/rate-limits', body);
       else await adminSend('PUT', `/rate-limits/${rule.id}`, body);
       Toast(isNew ? '规则已创建' : '规则已更新', 'success');

@@ -92,7 +92,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *domain.AuthContext,
 		}
 	}()
 
-	candidates, err := a.orderedCandidates(req.Model)
+	candidates, err := a.orderedCandidates(req.Model, auth.KeyID)
 	if err != nil {
 		if errors.Is(err, ErrNoHealthyChannel) {
 			// Degraded: every candidate is tripped open or there is no mapping.
@@ -226,7 +226,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *domain.AuthContext,
 		rateReservationOpen = false
 		return ChatResponse{Status: resp.StatusCode, Stream: &completionStream{
 			service: a, body: resp.Body, ctx: ctx, requestID: requestID, auth: auth,
-			candidate: candidate, publicModel: req.Model, clientIP: clientIP, start: start, reservationID: reservation.ID, rateReservationID: rateReservation.ID, cancel: cancel,
+			candidate: candidate, publicModel: req.Model, clientIP: clientIP, start: start, reservationID: reservation.ID, rateReservationID: rateReservation.ID, estimatedPromptTokens: estimate.InputTokens, cancel: cancel,
 		}}, nil
 	}
 

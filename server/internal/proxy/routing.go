@@ -4,12 +4,15 @@ import (
 	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/money"
 	"context"
+	"crypto/sha256"
+	"encoding/binary"
+	"fmt"
 )
 
 // selectChannel returns the channel to use for a public model. Candidates come
 // ordered by priority desc, weight desc, channel id; channels with a non-nil
-// balance of zero or less are excluded. Within the highest priority group the
-// choice is weighted-random using the injected source.
+// balance below the configured reserve are excluded. Within the highest priority
+// group the choice is weighted-random using the injected source.
 func (a *Service) selectChannel(model string) (domain.RouteCandidate, error) {
 	candidates, err := a.orderedCandidates(model)
 	if err != nil {
@@ -21,7 +24,7 @@ func (a *Service) selectChannel(model string) (domain.RouteCandidate, error) {
 	return candidates[0], nil
 }
 
-func (a *Service) orderedCandidates(model string) ([]domain.RouteCandidate, error) {
+func (a *Service) orderedCandidates(model string, stickyKey ...int) ([]domain.RouteCandidate, error) {
 	result, err := a.store.RouteCandidates(model)
 	if err != nil {
 		return nil, err
@@ -41,7 +44,7 @@ func (a *Service) orderedCandidates(model string) ([]domain.RouteCandidate, erro
 		}
 		if candidate.Balance != nil {
 			parsed, err := money.Parse6(*candidate.Balance)
-			if err == nil && parsed.Cmp(0) <= 0 {
+			if err == nil && (parsed.Cmp(0) <= 0 || parsed.Cmp(a.minRouteBalance) < 0) {
 				continue
 			}
 		}
@@ -70,7 +73,7 @@ func (a *Service) orderedCandidates(model string) ([]domain.RouteCandidate, erro
 		return append(group, candidates[len(group):]...), nil
 	}
 
-	pick := a.randIntN(total)
+	pick := a.routePick(model, total, stickyKey...)
 	for _, candidate := range group {
 		if candidate.Weight <= 0 {
 			continue
@@ -92,4 +95,15 @@ func (a *Service) orderedCandidates(model string) ([]domain.RouteCandidate, erro
 		}
 	}
 	return candidates, nil
+}
+
+// routePick keeps an API key on the same weighted candidate for a public model.
+// A missing key falls back to the injected random source used by tests and
+// unauthenticated internal callers.
+func (a *Service) routePick(model string, total int, stickyKey ...int) int {
+	if len(stickyKey) == 0 || stickyKey[0] <= 0 {
+		return a.randIntN(total)
+	}
+	seed := sha256.Sum256([]byte(fmt.Sprintf("%d\x00%s", stickyKey[0], model)))
+	return int(binary.BigEndian.Uint64(seed[:8]) % uint64(total))
 }

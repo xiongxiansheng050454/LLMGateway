@@ -1,15 +1,7 @@
 /* 视图：API 文档（应用内 Markdown 阅读器） */
 const DOC_LIST = [
-  { title: '文档总览',            href: '../docs/README.md' },
-  { title: 'Chat Completions',   href: '../docs/01-下游接口/chat-completions.md' },
-  { title: 'Models',             href: '../docs/01-下游接口/models.md' },
-  { title: '结算与限速语义',       href: '../docs/01-下游接口/结算与限速语义.md' },
-  { title: '渠道管理',            href: '../docs/02-管理端接口/channels.md' },
-  { title: '用户与 Key',          href: '../docs/02-管理端接口/users-keys.md' },
-  { title: '计费定价',            href: '../docs/02-管理端接口/pricing.md' },
-  { title: '限流规则',            href: '../docs/02-管理端接口/rate-limits.md' },
-  { title: '统计与账单',          href: '../docs/02-管理端接口/stats-billing.md' },
-  { title: '附录',               href: '../docs/03-附录.md' },
+  { title: '后端结构',            href: 'docs/backend-structure.md' },
+  { title: 'API 需求',            href: 'docs/api-requirements.md' },
 ];
 
 async function renderDocsView(docHref) {

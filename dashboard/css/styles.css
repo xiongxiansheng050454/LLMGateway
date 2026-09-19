@@ -171,6 +171,9 @@ textarea.form-input { height: auto; padding: 8px 10px; line-height: 1.5; }
   box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.15);
 }
 .form-input::placeholder { color: #52525b; }
+.filter-field { display: flex; min-width: 0; flex-direction: column; gap: 4px; }
+.filter-field > span { color: #71717a; font-size: 10px; }
+.filter-field input[type="datetime-local"] { cursor: pointer; }
 
 /* 开关 */
 .form-switch {

@@ -1,7 +1,6 @@
 package postgres
 
 import (
-	"encoding/json"
 	"errors"
 	"testing"
 
@@ -22,8 +21,8 @@ func TestPGRateLimitCRUDAndFilter(t *testing.T) {
 		t.Fatalf("unexpected rule: %+v", created)
 	}
 
-	if _, err := st.CreateRateLimit(domain.RateLimitInput{RuleName: strp("q"), TargetType: strp("model"), Metric: strp("tpd"), LimitValue: i64p(1000), WindowSeconds: intp(86400), Action: strp("queue"), Extras: json.RawMessage(`{"queue_timeout_seconds":30}`)}); err != nil {
-		t.Fatalf("tpd queue rule rejected: %v", err)
+	if _, err := st.CreateRateLimit(domain.RateLimitInput{RuleName: strp("q"), TargetType: strp("model"), Metric: strp("tpd"), LimitValue: i64p(1000), WindowSeconds: intp(86400), Action: strp("queue")}); !errors.Is(err, store.ErrInvalid) {
+		t.Fatalf("queue action err = %v, want ErrInvalid", err)
 	}
 	if _, err := st.CreateRateLimit(domain.RateLimitInput{RuleName: strp("bad"), TargetType: strp("user"), Metric: strp("bogus"), LimitValue: i64p(1), WindowSeconds: intp(1), Action: strp("reject")}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid metric err = %v, want ErrInvalid", err)
@@ -42,12 +41,12 @@ func TestPGRateLimitCRUDAndFilter(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if enabledList.Total != 1 {
-		t.Fatalf("enabled total = %d, want 1", enabledList.Total)
+	if enabledList.Total != 0 {
+		t.Fatalf("enabled total = %d, want 0", enabledList.Total)
 	}
 	all, _ := st.ListRateLimits(nil, 1, 20)
-	if all.Total != 2 {
-		t.Fatalf("all total = %d, want 2", all.Total)
+	if all.Total != 1 {
+		t.Fatalf("all total = %d, want 1", all.Total)
 	}
 
 	if err := st.DeleteRateLimit(1); err != nil {
