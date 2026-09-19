@@ -42,7 +42,19 @@ func (a *Server) channelData(r *http.Request, parts []string) (any, bool, int, s
 		if _, err := a.store.GetChannelSecret(channelID); err != nil {
 			return httpcommon.Result(nil, err)
 		}
-		return httpcommon.Result(a.store.GetChannelHealth(channelID))
+		health, err := a.store.GetChannelHealth(channelID)
+		if err != nil {
+			return httpcommon.Result(nil, err)
+		}
+		return httpcommon.Result(domain.ChannelHealthDTO{
+			ChannelID:           health.ChannelID,
+			State:               string(health.State),
+			ConsecutiveFailures: health.ConsecutiveFailures,
+			SuccessCount:        health.SuccessCount,
+			FailureCount:        health.FailureCount,
+			OpenedAt:            health.OpenedAt,
+			UpdatedAt:           health.UpdatedAt,
+		}, nil)
 	}
 	if len(parts) == 5 && parts[3] == "health" && parts[4] == "reset" && r.Method == http.MethodPost {
 		if _, err := a.store.GetChannelSecret(channelID); err != nil {
