@@ -16,7 +16,7 @@ import (
 	"LLMGateway/server/internal/crypto"
 	"LLMGateway/server/internal/db/migrate"
 	"LLMGateway/server/internal/httpapi"
-	"LLMGateway/server/internal/store"
+	"LLMGateway/server/internal/quota"
 	"LLMGateway/server/internal/store/postgres"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -79,7 +79,12 @@ func run() error {
 	return err
 }
 
-func runQuotaReaper(ctx context.Context, st store.Store, interval time.Duration, batchSize int) {
+type reaperPort interface {
+	quota.Port
+	ReapRateLimitReservations(context.Context, int) (int, error)
+}
+
+func runQuotaReaper(ctx context.Context, st reaperPort, interval time.Duration, batchSize int) {
 	if interval <= 0 {
 		interval = 30 * time.Second
 	}
@@ -101,7 +106,7 @@ func runQuotaReaper(ctx context.Context, st store.Store, interval time.Duration,
 }
 
 // buildStore constructs the only runtime persistence implementation.
-func buildStore(ctx context.Context, cfg config.Config) (store.Store, func(), error) {
+func buildStore(ctx context.Context, cfg config.Config) (*postgres.Store, func(), error) {
 	if cfg.DatabaseURL == "" {
 		return nil, nil, fmt.Errorf("DATABASE_URL is required")
 	}

@@ -1,4 +1,8 @@
-package domain
+package catalog
+
+import "LLMGateway/server/internal/pagination"
+
+type ListResponse[T any] = pagination.List[T]
 
 type Channel struct {
 	ID      int

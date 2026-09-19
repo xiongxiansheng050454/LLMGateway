@@ -6,9 +6,10 @@ import (
 	"sort"
 	"time"
 
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/money"
+	domain "LLMGateway/server/internal/quota"
 	"LLMGateway/server/internal/store"
+	usage "LLMGateway/server/internal/usage"
 )
 
 type fakeQuotaBucket struct {
@@ -195,7 +196,7 @@ func fakeQuotaBucketKey(policyID int, start time.Time) string {
 	return fmt.Sprintf("%d:%s", policyID, start.UTC().Format(time.RFC3339))
 }
 
-func (s *Store) settleQuotaLocked(in domain.ChatSettlementInput, actualTokens int64, actualCost money.Amount) error {
+func (s *Store) settleQuotaLocked(in usage.ChatSettlementInput, actualTokens int64, actualCost money.Amount) error {
 	id := in.ReservationID
 	if id == 0 {
 		return nil

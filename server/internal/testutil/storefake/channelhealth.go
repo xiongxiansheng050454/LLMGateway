@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	"LLMGateway/server/internal/domain"
+	domain "LLMGateway/server/internal/catalog"
 )
 
 func (s *Store) RecordChannelAttempt(_ context.Context, channelID int, success bool, reason domain.FailureReason) (domain.ChannelHealth, error) {

@@ -1,6 +1,25 @@
 package proxy
 
-import "io"
+import (
+	"io"
+
+	"LLMGateway/server/internal/accounts"
+	"LLMGateway/server/internal/catalog"
+	"LLMGateway/server/internal/quota"
+	"LLMGateway/server/internal/ratelimit"
+	"LLMGateway/server/internal/usage"
+)
+
+// Port is the composition boundary assembled by the process and HTTP layers.
+// Business modules depend on their own narrower ports instead.
+type Port interface {
+	accounts.Port
+	catalog.Port
+	catalog.HealthPort
+	quota.Port
+	ratelimit.Port
+	usage.Port
+}
 
 // ChatRequest is the protocol-neutral input needed by proxy orchestration.
 type ChatRequest struct {

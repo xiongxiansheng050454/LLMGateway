@@ -6,7 +6,9 @@ import (
 	"strconv"
 	"time"
 
-	"LLMGateway/server/internal/domain"
+	"LLMGateway/server/internal/accounts"
+	"LLMGateway/server/internal/ratelimit"
+	"LLMGateway/server/internal/usage"
 )
 
 type rateLimitOverrides struct {
@@ -23,7 +25,7 @@ func parseRateLimitOverrides(raw json.RawMessage) rateLimitOverrides {
 	return rateLimitOverrides{RPM: value.RPM, TPM: value.TPM, RPD: value.RPD, TPD: value.TPD, Concurrency: value.Concurrency, RPMWindowSeconds: value.RPMWindowSeconds}
 }
 
-func applicableOverride(overrides rateLimitOverrides, rule domain.RateLimitRuleDTO) (int64, bool) {
+func applicableOverride(overrides rateLimitOverrides, rule ratelimit.RateLimitRuleDTO) (int64, bool) {
 	if rule.TargetType != "api_key" {
 		return 0, false
 	}
@@ -64,7 +66,7 @@ func requestWindowStart(now time.Time, windowSeconds int) time.Time {
 // checkRateLimit enforces enabled rate-limit rules with the reject action.
 //
 // A key's rate_limit_overrides.rpm takes precedence over matching rules.
-func (a *Service) checkRateLimit(auth *domain.AuthContext, model string, estimatedTokens *int64) error {
+func (a *Service) checkRateLimit(auth *accounts.AuthContext, model string, estimatedTokens *int64) error {
 	apiKeyOverrides := parseRateLimitOverrides(auth.RateLimitOverrides)
 
 	if override := apiKeyOverrides.RPM; override > 0 {
@@ -73,7 +75,7 @@ func (a *Service) checkRateLimit(auth *domain.AuthContext, model string, estimat
 			window = 60
 		}
 		since := a.now().Add(-time.Duration(window) * time.Second).UTC().Format(time.RFC3339)
-		count, err := a.store.CountRequestsSince(domain.UsageCountFilter{APIKeyID: &auth.KeyID, Since: since})
+		count, err := a.store.CountRequestsSince(usage.UsageCountFilter{APIKeyID: &auth.KeyID, Since: since})
 		if err != nil {
 			return err
 		}
@@ -101,7 +103,7 @@ func (a *Service) checkRateLimit(auth *domain.AuthContext, model string, estimat
 		if limit <= 0 {
 			continue
 		}
-		filter := domain.UsageCountFilter{Since: metricSince(a.now(), item.Metric, item.WindowSeconds)}
+		filter := usage.UsageCountFilter{Since: metricSince(a.now(), item.Metric, item.WindowSeconds)}
 		switch item.TargetType {
 		case "user":
 			filter.UserID = auth.UserID
@@ -131,7 +133,7 @@ func (a *Service) checkRateLimit(auth *domain.AuthContext, model string, estimat
 				return ErrRateLimited
 			}
 			since := metricSince(a.now(), item.Metric, item.WindowSeconds)
-			tokenFilter := domain.TokenCountFilter{APIKeyID: filter.APIKeyID, Model: filter.Model, Since: since}
+			tokenFilter := usage.TokenCountFilter{APIKeyID: filter.APIKeyID, Model: filter.Model, Since: since}
 			tokenFilter.UserID = filter.UserID
 			tokenCount, countErr := a.store.CountTokensSince(tokenFilter)
 			if countErr != nil {
@@ -162,7 +164,7 @@ func metricSince(now time.Time, metric string, windowSeconds int) string {
 	return now.Add(-time.Duration(windowSeconds) * time.Second).Format(time.RFC3339)
 }
 
-func (a *Service) checkChannelRateLimit(auth *domain.AuthContext, model string, channelID int, estimatedTokens int64) error {
+func (a *Service) checkChannelRateLimit(auth *accounts.AuthContext, model string, channelID int, estimatedTokens int64) error {
 	enabled := true
 	result, err := a.store.ListRateLimits(&enabled, 1, 1000)
 	if err != nil {
@@ -181,11 +183,11 @@ func (a *Service) checkChannelRateLimit(auth *domain.AuthContext, model string, 
 		var count int64
 		var err error
 		if item.Metric == "rpm" || item.Metric == "rpd" {
-			current, countErr := a.store.CountRequestsSince(domain.UsageCountFilter{Since: metricSince(a.now(), item.Metric, item.WindowSeconds), ChannelID: &channelID})
+			current, countErr := a.store.CountRequestsSince(usage.UsageCountFilter{Since: metricSince(a.now(), item.Metric, item.WindowSeconds), ChannelID: &channelID})
 			err = countErr
 			count = slidingWindowCount(0, int64(current), int64(item.WindowSeconds), a.now(), requestWindowStart(a.now(), item.WindowSeconds))
 		} else if item.Metric == "tpm" || item.Metric == "tpd" {
-			current, countErr := a.store.CountTokensSince(domain.TokenCountFilter{Since: metricSince(a.now(), item.Metric, item.WindowSeconds), Model: model, ChannelID: &channelID})
+			current, countErr := a.store.CountTokensSince(usage.TokenCountFilter{Since: metricSince(a.now(), item.Metric, item.WindowSeconds), Model: model, ChannelID: &channelID})
 			err = countErr
 			count = current + estimatedTokens
 		} else if item.Metric == "concurrency" {
@@ -206,7 +208,7 @@ func (a *Service) checkChannelRateLimit(auth *domain.AuthContext, model string, 
 }
 
 // matchesTarget decides whether a rule applies to the current request.
-func matchesTarget(rule domain.RateLimitRuleDTO, auth *domain.AuthContext, model string) bool {
+func matchesTarget(rule ratelimit.RateLimitRuleDTO, auth *accounts.AuthContext, model string) bool {
 	switch rule.TargetType {
 	case "global":
 		return true

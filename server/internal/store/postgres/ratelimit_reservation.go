@@ -1,7 +1,7 @@
 package postgres
 
 import (
-	"LLMGateway/server/internal/domain"
+	domain "LLMGateway/server/internal/ratelimit"
 	"LLMGateway/server/internal/store"
 	"context"
 	"time"

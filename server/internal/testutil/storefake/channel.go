@@ -5,7 +5,7 @@ import (
 	"sort"
 	"strings"
 
-	"LLMGateway/server/internal/domain"
+	domain "LLMGateway/server/internal/catalog"
 	"LLMGateway/server/internal/money"
 	"LLMGateway/server/internal/store"
 )

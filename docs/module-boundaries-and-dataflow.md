@@ -18,8 +18,8 @@ flowchart TB
     PROXY[internal/proxy\n认证、路由、代理、限流、结算]
     OPENAI[internal/proxy/openai\nOpenAI wire adapter 与 SSE 解析]
 
-    DOMAIN[internal/domain\n协议中立领域类型与纯规则]
-    STORE[internal/store\nStore ports 与组合接口]
+    TYPES[各业务模块\n类型、规则和窄 ports]
+    STORE[internal/store\n仅错误兼容别名]
     PG[internal/store/postgres\nPostgreSQL Store 实现]
     SQLC[internal/db/sqlc\nsqlc 生成代码]
     DB[(PostgreSQL)]
@@ -107,8 +107,8 @@ flowchart TB
 
 ### 3. 共享领域与基础设施
 
-- `domain` 放协议中立、存储中立的类型和纯规则，例如路由候选、失败原因、熔断状态、限流规则和金额相关业务输入。
-- `store` 定义持久化 port；业务模块依赖接口，不依赖 PostgreSQL 实现。
+- 各业务模块拥有自己的协议中立类型、纯规则和窄持久化 port；`domain` 已删除。
+- `internal/store` 不定义业务 port；仅保留错误兼容别名。进程装配在 `httpapi`/`proxy`/cmd 边界组合模块 port。
 - `store/postgres` 是生产 Store 唯一实现，负责事务、锁、SQL 错误映射和敏感数据解密。
 - `db/sqlc` 是生成代码，源头是 `db/queries` 和迁移文件，禁止手改生成文件。
 - `money` 是定点金额叶子包，禁止业务模块重复实现金额计算。
@@ -119,9 +119,8 @@ flowchart TB
 ```mermaid
 flowchart LR
     ENTRY[HTTP / cmd] --> BUSINESS[业务模块]
-    BUSINESS --> PORTS[Store ports]
-    BUSINESS --> DOMAIN[Domain rules]
-    PORTS --> IMPLEMENTATION[PostgreSQL implementation]
+    BUSINESS --> TYPES[模块自有类型、规则和 ports]
+    IMPLEMENTATION[PostgreSQL implementation] -.实现.-> TYPES
     IMPLEMENTATION --> GENERATED[sqlc generated code]
     GENERATED --> DATABASE[(PostgreSQL)]
 
@@ -130,9 +129,9 @@ flowchart LR
 
     BUSINESS -.禁止反向依赖.-> DATABASE
     BUSINESS -.禁止反向依赖.-> GENERATED
-    DOMAIN -.禁止依赖.-> BUSINESS
-    DOMAIN -.禁止依赖.-> DATABASE
-    STORE -.禁止依赖.-> HTTP
+    TYPES -.禁止依赖.-> HTTP
+    TYPES -.禁止依赖.-> DATABASE
+    STORE[internal/store errors] -.禁止定义业务 port.-> TYPES
     PROXY -.禁止依赖.-> HTTP_WRITER[http.ResponseWriter]
 ```
 

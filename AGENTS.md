@@ -15,8 +15,8 @@
 - `server/internal/proxy/openai/` 只放 OpenAI 兼容 wire DTO、请求解析和响应适配。
 - `server/internal/httpapi/` 只放顶层 HTTP 入口、统一响应、错误映射、静态 Dashboard 托管和对业务模块的委托，不集中放具体业务实现。
 - `server/internal/httpcommon/` 放跨业务复用的 HTTP 路径、JSON、分页、存储错误映射和响应 helper。
-- `server/internal/domain/` 放协议中立、存储中立的共享业务类型和纯规则。仅单个业务模块使用的类型优先留在该模块内。
-- `server/internal/store/` 只放存储端口、组合接口和通用存储错误；按 `channel.go`、`user.go`、`usage.go`、`ratelimit.go`、`channelhealth.go` 等业务领域拆分，禁止继续向单个总文件堆方法。
+- 业务类型、规则和窄端口由业务模块拥有：`catalog` 管理渠道/定价/健康，`accounts` 管理用户/Key/认证，`usage` 管理用量 DTO/校验，`ratelimit` 管理规则/reservation，`quota` 管理策略/reservation，`proxy` 管理代理编排 contract、失败和结算类型。`internal/domain` 已删除。
+- `server/internal/store/` 不再定义业务端口或 aggregate `Store`，仅保留通用错误兼容别名；组合接口由 `httpapi`、`proxy` 或 cmd 装配边界定义。
 - `server/internal/store/postgres/` 放 PostgreSQL Store 实现；业务模块不得直接导入该包。
 - `server/internal/store/postgres/` 是唯一生产 Store 实现；`server/internal/testutil/storefake/` 仅供不需要数据库的单元与 HTTP 契约测试使用，生产代码不得导入，运行时不得提供 memory fallback。
 - `server/db/migrations/` 放 schema 迁移，`server/db/queries/` 放 sqlc 查询，`server/internal/db/migrate/` 放迁移 runner，`server/internal/db/sqlc/` 放生成代码。禁止手改 sqlc 生成文件。
@@ -29,9 +29,9 @@
 ## 边界规则
 
 - 后端按业务能力纵向组织。`catalog`、`accounts`、`usage`、`ratelimit`、`quota`、`proxy` 各自持有本领域入口和规则，不把业务重新集中到通用 handler 或 service 包。
-- 业务模块通过 `server/internal/store` 中的窄端口访问持久化，不直接依赖 PostgreSQL、pgx 或 sqlc。Store 实现不得反向依赖 HTTP 层。
+- 业务模块通过自身包内的窄端口访问持久化，不直接依赖 PostgreSQL、pgx、sqlc 或 `internal/store`。Store 实现不得反向依赖 HTTP 层。
 - `server/internal/httpapi` 负责协议入口和委托，不负责选路、计费、认证、限流、熔断或结算等代理业务。
-- OpenAI JSON wire type 只能出现在 `server/internal/proxy/openai` 和必要的 HTTP 适配边界。`domain`、`store`、`catalog`、`accounts`、`usage`、`ratelimit` 不能依赖 OpenAI 协议 DTO。
+- OpenAI JSON wire type 只能出现在 `server/internal/proxy/openai` 和必要的 HTTP 适配边界，业务模块不能依赖 OpenAI 协议 DTO。
 - `server/internal/proxy` 使用协议中立 contract 编排业务，不直接操作 `http.ResponseWriter`，也不依赖具体 Store 实现。
 - `money` 和 `crypto` 是叶子能力包，不得依赖 `store`、`httpapi` 或业务模块。禁止各业务模块或 Store 重复实现金额、加密和哈希逻辑。
 - `/admin` 接口统一返回 `{code,message,data}`，列表统一返回 `{list,total}`。时间使用 RFC3339，自然日使用 `YYYY-MM-DD`。

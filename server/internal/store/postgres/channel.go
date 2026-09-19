@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	domain "LLMGateway/server/internal/catalog"
 	"LLMGateway/server/internal/db/sqlc"
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/money"
 	"LLMGateway/server/internal/store"
 )

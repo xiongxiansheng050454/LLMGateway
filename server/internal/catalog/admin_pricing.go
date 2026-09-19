@@ -4,7 +4,6 @@ import (
 	"io"
 	"net/http"
 
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/httpcommon"
 )
 
@@ -29,13 +28,13 @@ func (a *Server) pricingData(r *http.Request) (any, bool, int, string) {
 	case http.MethodGet:
 		return httpcommon.Result(a.store.ListPricing())
 	case http.MethodPost:
-		var req domain.PricingInput
+		var req PricingInput
 		if err := httpcommon.ReadJSON(r, &req); err != nil {
 			return nil, true, http.StatusBadRequest, "invalid json"
 		}
 		return httpcommon.Result(a.store.UpsertPricing(req))
 	case http.MethodDelete:
-		var req domain.DeletePricingInput
+		var req DeletePricingInput
 		if err := httpcommon.ReadJSON(r, &req); err != nil && err != io.EOF {
 			return nil, true, http.StatusBadRequest, "invalid json"
 		}

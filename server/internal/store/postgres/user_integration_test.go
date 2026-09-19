@@ -7,8 +7,8 @@ import (
 	"testing"
 
 	"LLMGateway/server/internal/crypto"
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/store"
+	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
 func userBoolPtr(value bool) *bool {

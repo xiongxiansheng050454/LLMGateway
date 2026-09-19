@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"LLMGateway/server/internal/domain"
-	"LLMGateway/server/internal/store"
+	"LLMGateway/server/internal/catalog"
+	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
 func createHealthTestChannel(t *testing.T, st interface {
@@ -164,7 +164,10 @@ type healthSnapshot struct {
 	deterministicOpen string
 }
 
-func runHealthScenario(t *testing.T, st store.Store, clock *time.Time) healthSnapshot {
+func runHealthScenario(t *testing.T, st interface {
+	catalog.Port
+	catalog.HealthPort
+}, clock *time.Time) healthSnapshot {
 	t.Helper()
 
 	created, err := st.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/store"
+	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
 func TestPGQuotaReservationRequiresUserAndKeyQuota(t *testing.T) {

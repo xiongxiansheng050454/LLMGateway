@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"testing"
 
-	"LLMGateway/server/internal/domain"
+	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
 func TestClassifyUpstreamResult(t *testing.T) {

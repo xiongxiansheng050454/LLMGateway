@@ -1,4 +1,4 @@
-package domain
+package quota
 
 import (
 	"fmt"
@@ -7,6 +7,10 @@ import (
 
 	"LLMGateway/server/internal/money"
 )
+
+import "LLMGateway/server/internal/pagination"
+
+type ListResponse[T any] = pagination.List[T]
 
 type QuotaScopeType string
 type QuotaPeriodType string

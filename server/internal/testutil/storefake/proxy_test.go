@@ -6,8 +6,8 @@ import (
 	"testing"
 
 	"LLMGateway/server/internal/crypto"
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/store"
+	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
 func seedKey(t *testing.T, st *Store, userID int) (keyID int, keyHash string) {

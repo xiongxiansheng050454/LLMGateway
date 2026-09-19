@@ -5,8 +5,8 @@ import (
 	"testing"
 
 	"LLMGateway/server/internal/crypto"
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/store"
+	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
 func TestUserCRUDAndBalance(t *testing.T) {

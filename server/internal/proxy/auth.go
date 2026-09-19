@@ -6,13 +6,13 @@ import (
 	"strings"
 	"time"
 
+	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/crypto"
-	"LLMGateway/server/internal/domain"
-	"LLMGateway/server/internal/store"
+	apperrors "LLMGateway/server/internal/errors"
 )
 
 // authenticate validates the Bearer gateway key and returns the raw auth state.
-func (a *Service) Authenticate(authorization string) (*domain.AuthContext, error) {
+func (a *Service) Authenticate(authorization string) (*accounts.AuthContext, error) {
 	token, ok := bearerToken(authorization)
 	if !ok {
 		return nil, ErrUnauthorized
@@ -20,7 +20,7 @@ func (a *Service) Authenticate(authorization string) (*domain.AuthContext, error
 
 	auth, err := a.store.AuthenticateKey(crypto.HashKey(token))
 	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
+		if errors.Is(err, apperrors.ErrNotFound) {
 			return nil, ErrUnauthorized
 		}
 		return nil, err
@@ -61,7 +61,7 @@ func bearerToken(authorization string) (string, bool) {
 
 // allowModel reports whether the key's permissions allow the requested model.
 // An empty or "*" list allows everything.
-func allowModel(auth *domain.AuthContext, model string) bool {
+func allowModel(auth *accounts.AuthContext, model string) bool {
 	if len(auth.Permissions) == 0 {
 		return true
 	}

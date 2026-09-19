@@ -1,4 +1,4 @@
-package catalog
+package catalog_test
 
 import (
 	"bytes"
@@ -8,8 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"LLMGateway/server/internal/domain"
+	"LLMGateway/server/internal/catalog"
 	"LLMGateway/server/internal/testutil/storefake"
+	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
 func TestChannelTestTimeoutReturnsSafeError(t *testing.T) {
@@ -21,13 +22,13 @@ func TestChannelTestTimeoutReturnsSafeError(t *testing.T) {
 	if _, err := st.CreateChannelModel(channel.ID, domain.ChannelModel{ModelName: "public", UpstreamModel: "upstream", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	server := New(st, &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+	server := catalog.New(st, &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		<-r.Context().Done()
 		return nil, r.Context().Err()
 	})})
-	server.testTimeout = 10 * time.Millisecond
+	server.ConfigureTestTimeout(10 * time.Millisecond)
 	req := httptest.NewRequest(http.MethodPost, "/admin/channels/1/test", bytes.NewBufferString(`{}`))
-	result, _, _, _ := server.testChannel(req, channel.ID)
+	result, _, _, _ := server.TestChannel(req, channel.ID)
 	item := result.(domain.ChannelTestResultDTO).List[0]
 	if item.OK || item.HTTPStatus != 0 || item.Error != "upstream request timed out" || item.LatencyMs <= 0 {
 		t.Fatalf("timeout item = %+v", item)
@@ -62,11 +63,11 @@ func TestChannelTestCheckAllFalseOnlyTestsFirstEnabledModel(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	server := New(st, &http.Client{})
+	server := catalog.New(st, &http.Client{})
 	checkAll := false
 	body, _ := json.Marshal(map[string]bool{"check_all": checkAll})
 	req := httptest.NewRequest(http.MethodPost, "/admin/channels/1/test", bytes.NewReader(body))
-	result, _, _, _ := server.testChannel(req, channel.ID)
+	result, _, _, _ := server.TestChannel(req, channel.ID)
 	items := result.(domain.ChannelTestResultDTO).List
 	if len(items) != 1 || len(models) != 1 || models[0] != "first-upstream" {
 		t.Fatalf("items/models = %+v/%+v", items, models)

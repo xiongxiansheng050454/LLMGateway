@@ -4,8 +4,8 @@ import (
 	"net/http"
 	"testing"
 
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/testutil/storefake"
+	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
 func intPtr(value int) *int { return &value }

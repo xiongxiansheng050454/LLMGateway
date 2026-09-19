@@ -1,14 +1,9 @@
 package postgres
 
-import (
-	"testing"
-
-	"LLMGateway/server/internal/store"
-)
+import "testing"
 
 func TestNewImplementsStore(t *testing.T) {
-	var st store.Store = New(nil, nil)
-	if st == nil {
+	if New(nil, nil) == nil {
 		t.Fatal("New returned nil")
 	}
 }

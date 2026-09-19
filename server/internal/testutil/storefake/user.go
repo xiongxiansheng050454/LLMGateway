@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
+	domain "LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/crypto"
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/money"
 	"LLMGateway/server/internal/store"
 )
@@ -232,8 +232,8 @@ func (s *Store) CreateKey(userID int, in domain.KeyInput) (domain.KeySecretDTO, 
 		keyName:            keyName,
 		prefix:             prefix,
 		keyHash:            crypto.HashKey(fullKey),
-		permissions:        store.CanonicalJSON(normalizeJSON(in.Permissions, defaultPermissions)),
-		rateLimitOverrides: store.CanonicalJSON(normalizeJSON(in.RateLimitOverrides, "")),
+		permissions:        canonicalJSON(normalizeJSON(in.Permissions, defaultPermissions)),
+		rateLimitOverrides: canonicalJSON(normalizeJSON(in.RateLimitOverrides, "")),
 		isActive:           isActive,
 		expiresAt:          normalizeTimestampPtr(in.ExpiresAt),
 	}

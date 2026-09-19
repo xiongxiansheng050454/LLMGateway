@@ -1,7 +1,7 @@
 package httpapi
 
 import (
-	"LLMGateway/server/internal/domain"
+	domain "LLMGateway/server/internal/testutil/testtypes"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"

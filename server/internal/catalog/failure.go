@@ -1,4 +1,4 @@
-package domain
+package catalog
 
 // FailureReason describes why an upstream channel attempt failed. The values
 // are shared by the proxy (which classifies upstream results) and the circuit

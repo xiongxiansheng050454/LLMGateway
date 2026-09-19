@@ -1,9 +1,13 @@
-package domain
+package usage
 
 import (
 	"fmt"
 	"time"
 )
+
+import "LLMGateway/server/internal/pagination"
+
+type ListResponse[T any] = pagination.List[T]
 
 // ValidateTimeRange checks optional RFC3339 start/end bounds. Invalid values
 // return ErrInvalid so persistence code and test fakes behave identically.

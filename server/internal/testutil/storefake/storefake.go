@@ -8,54 +8,58 @@ import (
 	"sync"
 	"time"
 
-	"LLMGateway/server/internal/domain"
+	"LLMGateway/server/internal/accounts"
+	"LLMGateway/server/internal/catalog"
 	"LLMGateway/server/internal/money"
+	"LLMGateway/server/internal/quota"
+	"LLMGateway/server/internal/ratelimit"
 	"LLMGateway/server/internal/store"
+	"LLMGateway/server/internal/usage"
 )
 
-// Store is the in-process test implementation of store.Store.
+// Store is the in-process test implementation of the module-owned ports.
 type Store struct {
 	mu            sync.Mutex
 	nextChannelID int
 	nextModelID   int
 	nextPricingID int
-	channels      map[int]*domain.Channel
-	models        map[int]map[int]*domain.ChannelModel
-	pricing       map[string]*domain.Pricing
+	channels      map[int]*catalog.Channel
+	models        map[int]map[int]*catalog.ChannelModel
+	pricing       map[string]*catalog.Pricing
 
 	nextUserID   int
 	nextKeyID    int
 	nextTxID     int
-	users        map[int]*domain.User
-	transactions map[int][]domain.BalanceTransaction
+	users        map[int]*accounts.User
+	transactions map[int][]accounts.BalanceTransaction
 	keys         map[int]*memoryKey
-	orders       map[string]domain.BalanceTransaction
+	orders       map[string]accounts.BalanceTransaction
 
 	nextRateLimitID int
-	rateLimits      map[int]*domain.RateLimitRule
+	rateLimits      map[int]*ratelimit.RateLimitRule
 	nextUsageLogID  int
-	usageLogs       []domain.UsageLog
+	usageLogs       []usage.UsageLog
 
-	channelHealth              map[int]*domain.ChannelHealth
+	channelHealth              map[int]*catalog.ChannelHealth
 	nextQuotaPolicyID          int
 	nextQuotaReservationID     int64
-	quotaPolicies              map[int]*domain.QuotaPolicy
+	quotaPolicies              map[int]*quota.QuotaPolicy
 	quotaBuckets               map[string]*fakeQuotaBucket
 	quotaReservations          map[int64]*fakeQuotaReservation
 	nextRateLimitReservationID int64
-	rateLimitReservations      map[int64]domain.RateLimitReservationInput
-	breaker                    domain.ChannelBreakerConfig
+	rateLimitReservations      map[int64]ratelimit.RateLimitReservationInput
+	breaker                    catalog.ChannelBreakerConfig
 	now                        func() time.Time
 	probes                     map[int]time.Time
 }
 
 var (
-	_ store.Store              = (*Store)(nil)
-	_ store.ChannelStore       = (*Store)(nil)
-	_ store.UserStore          = (*Store)(nil)
-	_ store.RateLimitStore     = (*Store)(nil)
-	_ store.UsageStore         = (*Store)(nil)
-	_ store.ChannelHealthStore = (*Store)(nil)
+	_ accounts.Port      = (*Store)(nil)
+	_ catalog.Port       = (*Store)(nil)
+	_ catalog.HealthPort = (*Store)(nil)
+	_ ratelimit.Port     = (*Store)(nil)
+	_ usage.Port         = (*Store)(nil)
+	_ quota.Port         = (*Store)(nil)
 )
 
 // memoryKey is the fake gateway key record. Only the hash is retained;
@@ -88,38 +92,38 @@ func New() *Store {
 		nextChannelID:              1,
 		nextModelID:                1,
 		nextPricingID:              1,
-		channels:                   map[int]*domain.Channel{},
-		models:                     map[int]map[int]*domain.ChannelModel{},
-		pricing:                    map[string]*domain.Pricing{},
+		channels:                   map[int]*catalog.Channel{},
+		models:                     map[int]map[int]*catalog.ChannelModel{},
+		pricing:                    map[string]*catalog.Pricing{},
 		nextUserID:                 1,
 		nextKeyID:                  1,
 		nextTxID:                   1,
-		users:                      map[int]*domain.User{},
-		transactions:               map[int][]domain.BalanceTransaction{},
+		users:                      map[int]*accounts.User{},
+		transactions:               map[int][]accounts.BalanceTransaction{},
 		keys:                       map[int]*memoryKey{},
-		orders:                     map[string]domain.BalanceTransaction{},
+		orders:                     map[string]accounts.BalanceTransaction{},
 		nextRateLimitID:            1,
-		rateLimits:                 map[int]*domain.RateLimitRule{},
+		rateLimits:                 map[int]*ratelimit.RateLimitRule{},
 		nextUsageLogID:             1,
 		nextQuotaPolicyID:          1,
 		nextQuotaReservationID:     1,
 		nextRateLimitReservationID: 1,
-		rateLimitReservations:      map[int64]domain.RateLimitReservationInput{},
-		quotaPolicies:              map[int]*domain.QuotaPolicy{},
+		rateLimitReservations:      map[int64]ratelimit.RateLimitReservationInput{},
+		quotaPolicies:              map[int]*quota.QuotaPolicy{},
 		quotaBuckets:               map[string]*fakeQuotaBucket{},
 		quotaReservations:          map[int64]*fakeQuotaReservation{},
-		channelHealth:              map[int]*domain.ChannelHealth{},
-		breaker:                    domain.DefaultChannelBreakerConfig(),
+		channelHealth:              map[int]*catalog.ChannelHealth{},
+		breaker:                    catalog.DefaultChannelBreakerConfig(),
 		now:                        time.Now,
 		probes:                     map[int]time.Time{},
 	}
 }
 
-func (s *Store) channelDTO(ch *domain.Channel) domain.ChannelDTO {
-	return domain.ChannelDTO{ID: ch.ID, Name: ch.Name, BaseURL: ch.BaseURL, AuthType: ch.AuthType, Status: ch.Status, Weight: ch.Weight, Priority: ch.Priority, Balance: ch.Balance, ModelCount: len(s.models[ch.ID])}
+func (s *Store) channelDTO(ch *catalog.Channel) catalog.ChannelDTO {
+	return catalog.ChannelDTO{ID: ch.ID, Name: ch.Name, BaseURL: ch.BaseURL, AuthType: ch.AuthType, Status: ch.Status, Weight: ch.Weight, Priority: ch.Priority, Balance: ch.Balance, ModelCount: len(s.models[ch.ID])}
 }
 
-func (s *Store) pricingDTO(p *domain.Pricing) domain.PricingDTO {
+func (s *Store) pricingDTO(p *catalog.Pricing) catalog.PricingDTO {
 	channelName, upstream := "", ""
 	if ch := s.channels[p.ChannelID]; ch != nil {
 		channelName = ch.Name
@@ -130,7 +134,7 @@ func (s *Store) pricingDTO(p *domain.Pricing) domain.PricingDTO {
 			break
 		}
 	}
-	return domain.PricingDTO{ID: p.ID, ChannelID: p.ChannelID, ChannelName: channelName, ModelName: p.ModelName, UpstreamModel: upstream, InputPricePer1M: p.InputPricePer1M, OutputPricePer1M: p.OutputPricePer1M, CachedInputPricePer1M: p.CachedInputPricePer1M, Currency: p.Currency}
+	return catalog.PricingDTO{ID: p.ID, ChannelID: p.ChannelID, ChannelName: channelName, ModelName: p.ModelName, UpstreamModel: upstream, InputPricePer1M: p.InputPricePer1M, OutputPricePer1M: p.OutputPricePer1M, CachedInputPricePer1M: p.CachedInputPricePer1M, Currency: p.Currency}
 }
 
 func (s *Store) hasChannelModelLocked(channelID int, modelName string) bool {

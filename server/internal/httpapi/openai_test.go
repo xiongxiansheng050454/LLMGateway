@@ -15,10 +15,9 @@ import (
 	"testing"
 	"time"
 
-	"LLMGateway/server/internal/domain"
 	openaiwire "LLMGateway/server/internal/proxy/openai"
-	"LLMGateway/server/internal/store"
 	"LLMGateway/server/internal/testutil/storefake"
+	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
 const upstreamKey = "up-secret-key"
@@ -44,7 +43,7 @@ func upstreamSuccess() http.Handler {
 
 type proxyFixture struct {
 	server   *Server
-	store    store.Store
+	store    Port
 	fullKey  string
 	upstream *httptest.Server
 }
@@ -54,7 +53,7 @@ func newProxyFixture(t *testing.T, upstream http.Handler, opts ...Option) *proxy
 	return newProxyFixtureWithStore(t, upstream, storefake.New(), opts...)
 }
 
-func newProxyFixtureWithStore(t *testing.T, upstream http.Handler, st store.Store, opts ...Option) *proxyFixture {
+func newProxyFixtureWithStore(t *testing.T, upstream http.Handler, st Port, opts ...Option) *proxyFixture {
 	t.Helper()
 
 	server := httptest.NewServer(upstream)
@@ -275,7 +274,7 @@ func TestChatCompletionsAuthFailures(t *testing.T) {
 }
 
 func TestChatCompletionsStreamingSuccess(t *testing.T) {
-	st := &countingSettlementStore{Store: storefake.New()}
+	st := &countingSettlementStore{Port: storefake.New()}
 	f := newProxyFixtureWithStore(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var payload map[string]any
 		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
@@ -765,7 +764,7 @@ func TestChatCompletionsHalfOpenRecovers(t *testing.T) {
 }
 
 func TestChatCompletionsHealthRecordFailureDoesNotBreakSuccess(t *testing.T) {
-	f := newProxyFixtureWithStore(t, upstreamSuccess(), failingHealthStore{Store: storefake.New()})
+	f := newProxyFixtureWithStore(t, upstreamSuccess(), failingHealthStore{Port: storefake.New()})
 	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","messages":[]}`)
 	if res.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200 even when health recording fails; body=%s", res.Code, res.Body.String())
@@ -775,17 +774,17 @@ func TestChatCompletionsHealthRecordFailureDoesNotBreakSuccess(t *testing.T) {
 // failingHealthStore makes health recording fail so tests can prove it is
 // best-effort and cannot turn a successful request into an error.
 type failingHealthStore struct {
-	store.Store
+	Port
 }
 
 type countingSettlementStore struct {
-	store.Store
+	Port
 	settlementCalls atomic.Int32
 }
 
 func (s *countingSettlementStore) SettleChatCompletion(in domain.ChatSettlementInput) (int, error) {
 	s.settlementCalls.Add(1)
-	return s.Store.SettleChatCompletion(in)
+	return s.Port.SettleChatCompletion(in)
 }
 
 func (f failingHealthStore) RecordChannelSuccess(int) (domain.ChannelHealth, error) {

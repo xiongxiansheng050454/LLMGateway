@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/httpcommon"
 )
 
@@ -58,7 +57,7 @@ func (a *Server) listUsageLogs(r *http.Request) (any, bool, int, string) {
 	query := r.URL.Query()
 	page, pageSize := httpcommon.ParsePagination(r)
 
-	filter := domain.UsageLogFilter{
+	filter := UsageLogFilter{
 		Model:     query.Get("model"),
 		Status:    query.Get("status"),
 		StartTime: query.Get("start_time"),
@@ -108,7 +107,7 @@ func (a *Server) statsChannels(r *http.Request) (any, bool, int, string) {
 
 func (a *Server) statsTTFT(r *http.Request) (any, bool, int, string) {
 	query := r.URL.Query()
-	filter := domain.TTFTStatsFilter{Model: query.Get("model"), StartTime: orDefault(query.Get("start_time"), defaultStartTime), EndTime: orDefault(query.Get("end_time"), defaultEndTime)}
+	filter := TTFTStatsFilter{Model: query.Get("model"), StartTime: orDefault(query.Get("start_time"), defaultStartTime), EndTime: orDefault(query.Get("end_time"), defaultEndTime)}
 	for name, target := range map[string]**int{"user_id": &filter.UserID, "api_key_id": &filter.APIKeyID, "channel_id": &filter.ChannelID} {
 		if value := query.Get(name); value != "" {
 			id, err := strconv.Atoi(value)
@@ -132,7 +131,7 @@ func (a *Server) aggregateUsage(r *http.Request) (any, bool, int, string) {
 	}
 	startTime, endTime := query.Get("start_time"), query.Get("end_time")
 	if query.Get("date_from") != "" || query.Get("date_to") != "" {
-		if err := domain.ValidateDateRange(query.Get("date_from"), query.Get("date_to")); err != nil {
+		if err := ValidateDateRange(query.Get("date_from"), query.Get("date_to")); err != nil {
 			return nil, true, http.StatusBadRequest, "invalid date range"
 		}
 		startTime = orDefault(query.Get("date_from"), defaultDateFrom) + "T00:00:00Z"
@@ -143,7 +142,7 @@ func (a *Server) aggregateUsage(r *http.Request) (any, bool, int, string) {
 			endTime = end.AddDate(0, 0, 1).Format(time.RFC3339)
 		}
 	}
-	filter := domain.UsageAggregateFilter{GroupBy: groupBy, Model: query.Get("model"), Status: query.Get("status"), StartTime: orDefault(startTime, defaultStartTime), EndTime: orDefault(endTime, defaultEndTime)}
+	filter := UsageAggregateFilter{GroupBy: groupBy, Model: query.Get("model"), Status: query.Get("status"), StartTime: orDefault(startTime, defaultStartTime), EndTime: orDefault(endTime, defaultEndTime)}
 	filter.Page, filter.PageSize = httpcommon.ParsePagination(r)
 	for name, target := range map[string]**int{"user_id": &filter.UserID, "api_key_id": &filter.APIKeyID, "channel_id": &filter.ChannelID} {
 		if value := query.Get(name); value != "" {

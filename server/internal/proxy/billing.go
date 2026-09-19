@@ -3,8 +3,8 @@ package proxy
 import (
 	"fmt"
 
+	apperrors "LLMGateway/server/internal/errors"
 	"LLMGateway/server/internal/money"
-	"LLMGateway/server/internal/store"
 )
 
 // computeCost converts token counts and 8-decimal per-1M unit prices into a
@@ -44,7 +44,7 @@ func parsePrice8(value string) (money.Amount, error) {
 	}
 	parsed, err := money.Parse8(value)
 	if err != nil {
-		return 0, fmt.Errorf("%w: invalid price", store.ErrInvalid)
+		return 0, fmt.Errorf("%w: invalid price", apperrors.ErrInvalid)
 	}
 	return parsed, nil
 }

@@ -4,7 +4,6 @@ import (
 	"net/http"
 	"strconv"
 
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/httpcommon"
 )
 
@@ -46,7 +45,7 @@ func (a *Server) channelData(r *http.Request, parts []string) (any, bool, int, s
 		if err != nil {
 			return httpcommon.Result(nil, err)
 		}
-		return httpcommon.Result(domain.ChannelHealthDTO{
+		return httpcommon.Result(ChannelHealthDTO{
 			ChannelID:           health.ChannelID,
 			State:               string(health.State),
 			ConsecutiveFailures: health.ConsecutiveFailures,
@@ -80,7 +79,7 @@ func (a *Server) channelModelData(r *http.Request, parts []string, channelID int
 		case http.MethodGet:
 			return httpcommon.Result(a.store.ListChannelModels(channelID))
 		case http.MethodPost:
-			var req domain.ChannelModel
+			var req ChannelModel
 			if err := httpcommon.ReadJSON(r, &req); err != nil {
 				return nil, true, http.StatusBadRequest, "invalid json"
 			}
@@ -110,7 +109,7 @@ func (a *Server) channelModelData(r *http.Request, parts []string, channelID int
 }
 
 func (a *Server) createChannel(r *http.Request) (any, bool, int, string) {
-	var req domain.ChannelInput
+	var req ChannelInput
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
@@ -118,7 +117,7 @@ func (a *Server) createChannel(r *http.Request) (any, bool, int, string) {
 }
 
 func (a *Server) updateChannel(r *http.Request, id int) (any, bool, int, string) {
-	var req domain.ChannelInput
+	var req ChannelInput
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}

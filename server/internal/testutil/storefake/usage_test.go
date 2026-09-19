@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"testing"
 
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/store"
+	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
 func seedLog(st *Store, userID, channelID *int, model, status, cost string, tokens int, createdAt string) {

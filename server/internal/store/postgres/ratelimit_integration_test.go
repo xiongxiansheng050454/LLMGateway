@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/store"
+	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
 func TestPGRateLimitCRUDAndFilter(t *testing.T) {

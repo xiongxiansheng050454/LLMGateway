@@ -7,7 +7,7 @@ import (
 	"strconv"
 	"strings"
 
-	"LLMGateway/server/internal/store"
+	apperrors "LLMGateway/server/internal/errors"
 )
 
 // ReadJSON decodes a request body into value.
@@ -46,11 +46,11 @@ func NoBody(err error) (any, bool, int, string) {
 
 func StatusFor(err error) int {
 	switch {
-	case errors.Is(err, store.ErrNotFound):
+	case errors.Is(err, apperrors.ErrNotFound):
 		return http.StatusNotFound
-	case errors.Is(err, store.ErrInvalid):
+	case errors.Is(err, apperrors.ErrInvalid):
 		return http.StatusBadRequest
-	case errors.Is(err, store.ErrNotImplemented):
+	case errors.Is(err, apperrors.ErrNotImplemented):
 		return http.StatusNotImplemented
 	default:
 		return http.StatusInternalServerError
@@ -58,7 +58,7 @@ func StatusFor(err error) int {
 }
 
 func MessageFor(err error) string {
-	return strings.TrimPrefix(err.Error(), store.ErrInvalid.Error()+": ")
+	return strings.TrimPrefix(err.Error(), apperrors.ErrInvalid.Error()+": ")
 }
 
 func positiveInt(value string, fallback int) int {

@@ -9,8 +9,10 @@ import (
 	"sync"
 	"time"
 
-	"LLMGateway/server/internal/domain"
-	"LLMGateway/server/internal/store"
+	"LLMGateway/server/internal/accounts"
+	"LLMGateway/server/internal/catalog"
+	apperrors "LLMGateway/server/internal/errors"
+	usagecontracts "LLMGateway/server/internal/usage"
 )
 
 var errDownstreamWrite = errors.New("downstream stream write failed")
@@ -20,8 +22,8 @@ type completionStream struct {
 	body                  io.ReadCloser
 	ctx                   context.Context
 	requestID             string
-	auth                  *domain.AuthContext
-	candidate             domain.RouteCandidate
+	auth                  *accounts.AuthContext
+	candidate             catalog.RouteCandidate
 	publicModel           string
 	clientIP              string
 	start                 time.Time
@@ -92,11 +94,11 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 			}
 			return err
 		}
-		reason := domain.FailureUpstreamUnreachable
+		reason := catalog.FailureUpstreamUnreachable
 		code := "upstream_stream_interrupted"
 		message := "upstream stream was interrupted"
 		if errors.Is(err, ErrInvalidStream) {
-			reason = domain.FailureUpstreamProtocol
+			reason = catalog.FailureUpstreamProtocol
 			code = "upstream_stream_protocol_error"
 			message = "upstream stream contained invalid data"
 		}
@@ -114,7 +116,7 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 			}
 			return s.ctx.Err()
 		}
-		s.service.recordChannelHealth(s.candidate.ChannelID, false, domain.FailureUpstreamProtocol)
+		s.service.recordChannelHealth(s.candidate.ChannelID, false, catalog.FailureUpstreamProtocol)
 		if s.settlePartial(forwardedText.String(), ttft, "partial_estimated_upstream_stream_interrupted") {
 			settled = true
 		}
@@ -122,7 +124,7 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 		return ErrUpstream
 	}
 	if usage == nil {
-		s.service.recordChannelHealth(s.candidate.ChannelID, false, domain.FailureUpstreamProtocol)
+		s.service.recordChannelHealth(s.candidate.ChannelID, false, catalog.FailureUpstreamProtocol)
 		s.logError(nil, ttft, "upstream_usage_missing")
 		s.emitError(emit, "upstream_usage_missing", "upstream stream did not include usage")
 		return ErrUpstream
@@ -138,7 +140,7 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 	s.service.recordChannelHealth(s.candidate.ChannelID, true, "")
 	usageLog := s.service.usageLogInput(s.requestID, s.auth, &s.candidate.ChannelID, s.candidate.UpstreamModel, s.publicModel, usage, cost, inputPrice, outputPrice, durationMs, s.clientIP, "success", "")
 	usageLog.TTFTMs = ttft
-	_, err = s.service.store.SettleChatCompletion(domain.ChatSettlementInput{
+	_, err = s.service.store.SettleChatCompletion(usagecontracts.ChatSettlementInput{
 		ReservationID: s.reservationID,
 		UserID:        s.auth.UserID, APIKeyID: s.auth.KeyID, ChannelID: &s.candidate.ChannelID, Cost: cost,
 		DebitChannel: s.candidate.Balance != nil, Description: "chat completion " + s.requestID, UsageLog: usageLog,
@@ -146,7 +148,7 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 	if err != nil {
 		code := "settlement_failed"
 		message := "unable to settle completion"
-		if errors.Is(err, store.ErrInvalid) {
+		if errors.Is(err, apperrors.ErrInvalid) {
 			code = "insufficient_balance"
 			message = "insufficient balance"
 		}
@@ -198,7 +200,7 @@ func (s *completionStream) settlePartial(text string, ttft *int, code string) bo
 	}
 	input := s.service.usageLogInput(s.requestID, s.auth, &s.candidate.ChannelID, s.candidate.UpstreamModel, s.publicModel, usage, cost, inputPrice, outputPrice, elapsedMs(s.start, s.service.now()), s.clientIP, "error", code)
 	input.TTFTMs = ttft
-	if _, err := s.service.store.SettleChatCompletion(domain.ChatSettlementInput{
+	if _, err := s.service.store.SettleChatCompletion(usagecontracts.ChatSettlementInput{
 		ReservationID: s.reservationID,
 		UserID:        s.auth.UserID,
 		APIKeyID:      s.auth.KeyID,

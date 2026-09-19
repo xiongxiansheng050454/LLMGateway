@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"LLMGateway/server/internal/db/sqlc"
-	"LLMGateway/server/internal/domain"
+	domain "LLMGateway/server/internal/ratelimit"
 	"LLMGateway/server/internal/store"
 
 	"github.com/jackc/pgx/v5/pgtype"

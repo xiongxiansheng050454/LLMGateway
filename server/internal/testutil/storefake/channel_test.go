@@ -4,8 +4,8 @@ import (
 	"errors"
 	"testing"
 
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/store"
+	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
 func strPtr(value string) *string {

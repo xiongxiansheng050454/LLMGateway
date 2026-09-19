@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"time"
 
+	domain "LLMGateway/server/internal/catalog"
 	"LLMGateway/server/internal/crypto"
 	"LLMGateway/server/internal/db/sqlc"
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/store"
 
 	"github.com/jackc/pgx/v5"
@@ -16,7 +16,7 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 
-// Store is the PostgreSQL-backed implementation of store.Store.
+// Store is the PostgreSQL-backed implementation of the module-owned ports.
 //
 // SQL access uses sqlc-generated queries from db/queries. The cipher is
 // required to encrypt upstream channel api keys into api_key_ciphertext and to
@@ -30,9 +30,12 @@ type Store struct {
 }
 
 var (
-	_ store.Store              = (*Store)(nil)
-	_ store.ChannelStore       = (*Store)(nil)
-	_ store.ChannelHealthStore = (*Store)(nil)
+	_ interface {
+		GetChannelSecret(int) (*domain.Channel, error)
+	} = (*Store)(nil)
+	_ interface {
+		GetChannelHealth(int) (domain.ChannelHealth, error)
+	} = (*Store)(nil)
 )
 
 func New(pool *pgxpool.Pool, cipher *crypto.Cipher) *Store {

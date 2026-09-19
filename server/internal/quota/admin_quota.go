@@ -6,7 +6,6 @@ import (
 	"strconv"
 	"strings"
 
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/httpcommon"
 )
 
@@ -50,7 +49,7 @@ func (a *Server) Data(r *http.Request) (any, bool, int, string) {
 
 func (a *Server) listPolicies(r *http.Request) (any, bool, int, string) {
 	page, pageSize := httpcommon.ParsePagination(r)
-	filter := domain.QuotaPolicyFilter{ScopeType: r.URL.Query().Get("scope_type"), Page: page, PageSize: pageSize}
+	filter := QuotaPolicyFilter{ScopeType: r.URL.Query().Get("scope_type"), Page: page, PageSize: pageSize}
 	filter.ScopeID, _ = strconv.Atoi(r.URL.Query().Get("scope_id"))
 	if value := r.URL.Query().Get("enabled"); value == "true" || value == "false" {
 		enabled := value == "true"
@@ -61,13 +60,13 @@ func (a *Server) listPolicies(r *http.Request) (any, bool, int, string) {
 
 func (a *Server) listUsage(r *http.Request) (any, bool, int, string) {
 	page, pageSize := httpcommon.ParsePagination(r)
-	filter := domain.QuotaPolicyFilter{ScopeType: r.URL.Query().Get("scope_type"), Page: page, PageSize: pageSize}
+	filter := QuotaPolicyFilter{ScopeType: r.URL.Query().Get("scope_type"), Page: page, PageSize: pageSize}
 	filter.ScopeID, _ = strconv.Atoi(r.URL.Query().Get("scope_id"))
 	return httpcommon.Result(a.store.ListQuotaUsage(context.Background(), filter))
 }
 
 func (a *Server) createPolicy(r *http.Request) (any, bool, int, string) {
-	var input domain.QuotaPolicyInput
+	var input QuotaPolicyInput
 	if err := httpcommon.ReadJSON(r, &input); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
@@ -75,7 +74,7 @@ func (a *Server) createPolicy(r *http.Request) (any, bool, int, string) {
 }
 
 func (a *Server) updatePolicy(r *http.Request, id int) (any, bool, int, string) {
-	var input domain.QuotaPolicyInput
+	var input QuotaPolicyInput
 	if err := httpcommon.ReadJSON(r, &input); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}

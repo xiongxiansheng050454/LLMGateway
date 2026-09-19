@@ -16,7 +16,6 @@ import (
 	openaiwire "LLMGateway/server/internal/proxy/openai"
 	"LLMGateway/server/internal/quota"
 	"LLMGateway/server/internal/ratelimit"
-	"LLMGateway/server/internal/store"
 	"LLMGateway/server/internal/usage"
 )
 
@@ -30,7 +29,7 @@ type adminResponse struct {
 }
 
 type Server struct {
-	store        store.Store
+	store        Port
 	client       *http.Client
 	proxy        *proxy.Service
 	catalog      *catalog.Server
@@ -40,6 +39,18 @@ type Server struct {
 	quota        *quota.Server
 	dashboardDir string
 	dashboard    http.Handler
+}
+
+// Port is the process assembly contract. Each business server receives its
+// own narrower module port during construction.
+type Port interface {
+	accounts.Port
+	catalog.Port
+	catalog.HealthPort
+	quota.Port
+	ratelimit.Port
+	usage.Port
+	proxy.Port
 }
 
 type options struct {
@@ -109,7 +120,7 @@ func WithClock(fn func() time.Time) Option {
 
 // NewServer builds the HTTP entry points around an injected store. Route
 // registration is done by cmd/llmgateway/router.go.
-func NewServer(dashboardDir string, st store.Store, opts ...Option) *Server {
+func NewServer(dashboardDir string, st Port, opts ...Option) *Server {
 	settings := options{
 		upstreamTimeout:       60 * time.Second,
 		randIntN:              rand.Intn,

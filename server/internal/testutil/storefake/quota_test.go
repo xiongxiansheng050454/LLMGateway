@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"LLMGateway/server/internal/domain"
+	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
 func TestQuotaReaperReleasesExpiredReservation(t *testing.T) {

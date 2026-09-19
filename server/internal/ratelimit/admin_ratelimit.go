@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"strings"
 
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/httpcommon"
 )
 
@@ -57,7 +56,7 @@ func (a *Server) listRateLimits(r *http.Request) (any, bool, int, string) {
 }
 
 func (a *Server) createRateLimit(r *http.Request) (any, bool, int, string) {
-	var req domain.RateLimitInput
+	var req RateLimitInput
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
@@ -65,7 +64,7 @@ func (a *Server) createRateLimit(r *http.Request) (any, bool, int, string) {
 }
 
 func (a *Server) updateRateLimit(r *http.Request, id int) (any, bool, int, string) {
-	var req domain.RateLimitInput
+	var req RateLimitInput
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}

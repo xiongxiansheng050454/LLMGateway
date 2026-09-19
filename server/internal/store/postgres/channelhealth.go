@@ -5,8 +5,8 @@ import (
 	"errors"
 	"time"
 
+	domain "LLMGateway/server/internal/catalog"
 	"LLMGateway/server/internal/db/sqlc"
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/store"
 
 	"github.com/jackc/pgx/v5/pgtype"

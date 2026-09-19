@@ -12,14 +12,17 @@ import (
 	"strings"
 	"time"
 
-	"LLMGateway/server/internal/domain"
+	"LLMGateway/server/internal/accounts"
+	"LLMGateway/server/internal/catalog"
+	apperrors "LLMGateway/server/internal/errors"
 	"LLMGateway/server/internal/money"
-	"LLMGateway/server/internal/store"
+	"LLMGateway/server/internal/ratelimit"
+	usagecontracts "LLMGateway/server/internal/usage"
 )
 
 // models returns the OpenAI-style model list visible to the key, filtered by
 // its permissions.
-func (a *Service) Models(auth *domain.AuthContext) (ModelList, error) {
+func (a *Service) Models(auth *accounts.AuthContext) (ModelList, error) {
 	result, err := a.store.ListCatalogModels(true)
 	if err != nil {
 		return ModelList{}, err
@@ -41,7 +44,7 @@ func (a *Service) Models(auth *domain.AuthContext) (ModelList, error) {
 
 // ChatCompletions prepares a buffered or streaming chat completion. A non-nil
 // error is a pre-flight/transport failure the handler maps to an OpenAI error.
-func (a *Service) ChatCompletions(ctx context.Context, auth *domain.AuthContext, req ChatRequest, clientIP string) (ChatResponse, error) {
+func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContext, req ChatRequest, clientIP string) (ChatResponse, error) {
 	requestCtx, cancel := context.WithTimeout(ctx, a.requestTimeout)
 	streamOwnsCancel := false
 	defer func() {
@@ -58,7 +61,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *domain.AuthContext,
 	}
 	balance, err := money.Parse6(auth.AvailableBalance)
 	if err != nil {
-		return ChatResponse{}, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
+		return ChatResponse{}, fmt.Errorf("%w: invalid balance", apperrors.ErrInvalid)
 	}
 	if balance.Cmp(0) <= 0 {
 		return ChatResponse{}, ErrInsufficientBalance
@@ -81,7 +84,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *domain.AuthContext,
 	if estimateErr != nil {
 		return ChatResponse{}, ErrRateLimited
 	}
-	rateReservation, rateErr := a.store.ReserveRateLimit(ctx, domain.RateLimitReservationInput{RequestID: requestID, UserID: auth.UserID, APIKeyID: auth.KeyID, Model: req.Model, EstimatedTokens: int64(estimate.TotalTokens), ExpiresAt: a.now().Add(a.requestTimeout)})
+	rateReservation, rateErr := a.store.ReserveRateLimit(ctx, ratelimit.RateLimitReservationInput{RequestID: requestID, UserID: auth.UserID, APIKeyID: auth.KeyID, Model: req.Model, EstimatedTokens: int64(estimate.TotalTokens), ExpiresAt: a.now().Add(a.requestTimeout)})
 	if rateErr != nil {
 		return ChatResponse{}, ErrRateLimited
 	}
@@ -136,7 +139,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *domain.AuthContext,
 		candidate = next
 		if err := a.checkChannelRateLimit(auth, req.Model, candidate.ChannelID, *estimatedTokens); err != nil {
 			if errors.Is(err, ErrRateLimited) {
-				a.recordChannelHealth(candidate.ChannelID, false, domain.FailureUpstreamUnreachable)
+				a.recordChannelHealth(candidate.ChannelID, false, catalog.FailureUpstreamUnreachable)
 				if attempt+1 < len(candidates) {
 					continue
 				}
@@ -189,7 +192,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *domain.AuthContext,
 			if ctx.Err() != nil {
 				return ChatResponse{}, ctx.Err()
 			}
-			a.recordChannelHealth(candidate.ChannelID, false, domain.FailureUpstreamUnreachable)
+			a.recordChannelHealth(candidate.ChannelID, false, catalog.FailureUpstreamUnreachable)
 			if attempt+1 < len(candidates) {
 				continue
 			}
@@ -237,7 +240,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *domain.AuthContext,
 	durationMs := elapsedMs(start, a.now())
 	if readErr != nil {
 		if !errors.Is(readErr, context.Canceled) && !errors.Is(ctx.Err(), context.Canceled) {
-			a.recordChannelHealth(candidate.ChannelID, false, domain.FailureUpstreamUnreachable)
+			a.recordChannelHealth(candidate.ChannelID, false, catalog.FailureUpstreamUnreachable)
 		}
 		a.logUsage(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", durationMs, clientIP, "error", "upstream_stream_interrupted")
 		return ChatResponse{}, ErrUpstream
@@ -256,7 +259,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *domain.AuthContext,
 	}
 	usage := a.adapter.ParseUsage(responseBody)
 	if usage == nil {
-		a.recordChannelHealth(candidate.ChannelID, false, domain.FailureUpstreamProtocol)
+		a.recordChannelHealth(candidate.ChannelID, false, catalog.FailureUpstreamProtocol)
 		a.logUsage(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", durationMs, clientIP, "error", "upstream_usage_missing")
 		return ChatResponse{}, ErrUpstream
 	}
@@ -267,7 +270,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *domain.AuthContext,
 	}
 
 	usageLog := a.usageLogInput(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, usage, cost, inputPrice, outputPrice, durationMs, clientIP, "success", "")
-	_, err = a.store.SettleChatCompletion(domain.ChatSettlementInput{
+	_, err = a.store.SettleChatCompletion(usagecontracts.ChatSettlementInput{
 		ReservationID: reservation.ID,
 		UserID:        auth.UserID,
 		APIKeyID:      auth.KeyID,
@@ -278,7 +281,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *domain.AuthContext,
 		UsageLog:      usageLog,
 	})
 	if err != nil {
-		if errors.Is(err, store.ErrInvalid) {
+		if errors.Is(err, apperrors.ErrInvalid) {
 			a.logUsage(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, usage, "0.000000", inputPrice, outputPrice, durationMs, clientIP, "error", "insufficient_balance")
 			return ChatResponse{}, ErrInsufficientBalance
 		}
@@ -299,39 +302,39 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *domain.AuthContext,
 // channel failure. Only transport errors, upstream 429/401/403/402 and 5xx are
 // penalised; other client errors (400/404/...) are passed through without
 // tripping the breaker, so a bad caller cannot open a healthy channel.
-func classifyUpstreamResult(statusCode int, err error) (domain.FailureReason, bool) {
+func classifyUpstreamResult(statusCode int, err error) (catalog.FailureReason, bool) {
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			return domain.FailureUpstreamTimeout, true
+			return catalog.FailureUpstreamTimeout, true
 		}
-		return domain.FailureUpstreamUnreachable, true
+		return catalog.FailureUpstreamUnreachable, true
 	}
 	switch statusCode {
 	case http.StatusTooManyRequests:
-		return domain.FailureUpstream429, true
+		return catalog.FailureUpstream429, true
 	case http.StatusUnauthorized:
-		return domain.FailureUpstream401, true
+		return catalog.FailureUpstream401, true
 	case http.StatusForbidden:
-		return domain.FailureUpstream403, true
+		return catalog.FailureUpstream403, true
 	case http.StatusPaymentRequired:
-		return domain.FailureUpstream402, true
+		return catalog.FailureUpstream402, true
 	}
 	if statusCode >= 500 && statusCode <= 599 {
-		return domain.FailureUpstream5xx, true
+		return catalog.FailureUpstream5xx, true
 	}
 	return "", false
 }
 
 // recordChannelHealth drives the circuit breaker state machine. It is
 // best-effort: a recording failure must never change the response.
-func (a *Service) recordChannelHealth(channelID int, success bool, reason domain.FailureReason) {
+func (a *Service) recordChannelHealth(channelID int, success bool, reason catalog.FailureReason) {
 	_, _ = a.store.RecordChannelAttempt(context.Background(), channelID, success, reason)
 }
 
 func (a *Service) priceFor(channelID int, model string, usage *Usage) (string, string, string, error) {
 	pricing, err := a.store.GetPricing(channelID, model)
 	if err != nil {
-		if errors.Is(err, store.ErrNotFound) {
+		if errors.Is(err, catalog.ErrNotFound) {
 			// Known behaviour: a channel+model without pricing is served for
 			// free (cost 0). Documented in docs/backend-structure.md; operators
 			// should configure pricing for every routable model.
@@ -355,15 +358,15 @@ func (a *Service) priceFor(channelID int, model string, usage *Usage) (string, s
 	return cost, inputPrice, outputPrice, nil
 }
 
-func (a *Service) logUsage(requestID string, auth *domain.AuthContext, channelID *int, upstreamModel, model string, usage *Usage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) {
+func (a *Service) logUsage(requestID string, auth *accounts.AuthContext, channelID *int, upstreamModel, model string, usage *Usage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) {
 	_, _ = a.store.InsertUsageLog(a.usageLogInput(requestID, auth, channelID, upstreamModel, model, usage, cost, inputPrice, outputPrice, durationMs, clientIP, status, errorCode))
 }
 
-func (a *Service) usageLogInput(requestID string, auth *domain.AuthContext, channelID *int, upstreamModel, model string, usage *Usage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) domain.UsageLogInput {
+func (a *Service) usageLogInput(requestID string, auth *accounts.AuthContext, channelID *int, upstreamModel, model string, usage *Usage, cost, inputPrice, outputPrice string, durationMs int, clientIP, status, errorCode string) usagecontracts.UsageLogInput {
 	userID := auth.UserID
 	keyID := auth.KeyID
 
-	input := domain.UsageLogInput{
+	input := usagecontracts.UsageLogInput{
 		RequestID:            requestID,
 		UserID:               &userID,
 		APIKeyID:             &keyID,

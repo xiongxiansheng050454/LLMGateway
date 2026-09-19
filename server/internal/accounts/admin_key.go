@@ -3,7 +3,6 @@ package accounts
 import (
 	"net/http"
 
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/httpcommon"
 )
 
@@ -18,7 +17,7 @@ func (a *Server) listUserKeys(r *http.Request, userID int) (any, bool, int, stri
 }
 
 func (a *Server) createKey(r *http.Request, userID int) (any, bool, int, string) {
-	var req domain.KeyInput
+	var req KeyInput
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
@@ -26,7 +25,7 @@ func (a *Server) createKey(r *http.Request, userID int) (any, bool, int, string)
 }
 
 func (a *Server) updateKey(r *http.Request, userID, keyID int) (any, bool, int, string) {
-	var req domain.KeyUpdateInput
+	var req KeyUpdateInput
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}

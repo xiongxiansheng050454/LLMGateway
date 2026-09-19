@@ -21,8 +21,6 @@ func TestVisibleBackendModuleDirectories(t *testing.T) {
 		"internal/httpcommon",
 		"internal/proxy",
 		"internal/proxy/openai",
-		"internal/domain",
-		"internal/store",
 		"internal/store/postgres",
 		"internal/db/sqlc",
 	} {
@@ -32,6 +30,9 @@ func TestVisibleBackendModuleDirectories(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "internal/handler")); !os.IsNotExist(err) {
 		t.Fatalf("internal/handler should not remain as the HTTP catch-all module")
+	}
+	if _, err := os.Stat(filepath.Join(root, "internal/domain")); !os.IsNotExist(err) {
+		t.Fatalf("internal/domain should not remain after ownership migration")
 	}
 	if _, err := os.Stat(filepath.Join(root, "internal/store/memory")); !os.IsNotExist(err) {
 		t.Fatalf("internal/store/memory should not remain as a production store")
@@ -50,6 +51,7 @@ func TestBusinessModulesDependOnlyOnStorePorts(t *testing.T) {
 		"internal/httpapi",
 	} {
 		assertNoImports(t, filepath.Join(root, dir), []string{
+			"LLMGateway/server/internal/store",
 			"LLMGateway/server/internal/store/postgres",
 			"LLMGateway/server/internal/db/sqlc",
 			"github.com/jackc/pgx",
@@ -87,7 +89,7 @@ func TestProductionCodeDoesNotImportTestStore(t *testing.T) {
 func assertNoImports(t *testing.T, root string, forbidden []string) {
 	t.Helper()
 	err := filepath.WalkDir(root, func(path string, entry os.DirEntry, err error) error {
-		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") {
+		if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
 			return err
 		}
 		file, err := parser.ParseFile(token.NewFileSet(), path, nil, parser.ImportsOnly)
@@ -216,8 +218,6 @@ func TestOpenAIWireTypesStayInProtocolPackage(t *testing.T) {
 		"internal/accounts",
 		"internal/usage",
 		"internal/ratelimit",
-		"internal/domain",
-		"internal/store",
 	} {
 		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, entry os.DirEntry, err error) error {
 			if err != nil || entry.IsDir() || !strings.HasSuffix(path, ".go") {

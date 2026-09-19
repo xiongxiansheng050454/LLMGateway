@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"LLMGateway/server/internal/money"
-	"LLMGateway/server/internal/store"
 )
 
 var (
@@ -22,7 +21,7 @@ var (
 )
 
 type Service struct {
-	store            store.Store
+	store            Port
 	client           *http.Client
 	randIntN         func(int) int
 	now              func() time.Time
@@ -34,7 +33,7 @@ type Service struct {
 	maxAttempts      int
 }
 
-func NewService(st store.Store, client *http.Client, randIntN func(int) int, now func() time.Time, adapters ...ProtocolAdapter) *Service {
+func NewService(st Port, client *http.Client, randIntN func(int) int, now func() time.Time, adapters ...ProtocolAdapter) *Service {
 	adapter := ProtocolAdapter{}
 	if len(adapters) > 0 {
 		adapter = adapters[0]

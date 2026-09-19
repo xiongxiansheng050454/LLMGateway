@@ -4,11 +4,10 @@ import (
 	"net/http"
 
 	"LLMGateway/server/internal/httpapi"
-	"LLMGateway/server/internal/store"
 )
 
 // newRouter is the single place where HTTP paths are mapped to handlers.
-func newRouter(dashboardDir string, st store.Store, opts ...httpapi.Option) http.Handler {
+func newRouter(dashboardDir string, st httpapi.Port, opts ...httpapi.Option) http.Handler {
 	server := httpapi.NewServer(dashboardDir, st, opts...)
 
 	mux := http.NewServeMux()

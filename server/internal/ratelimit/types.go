@@ -1,4 +1,4 @@
-package domain
+package ratelimit
 
 import (
 	"encoding/json"
@@ -6,6 +6,10 @@ import (
 	"strings"
 	"time"
 )
+
+import "LLMGateway/server/internal/pagination"
+
+type ListResponse[T any] = pagination.List[T]
 
 type RateLimitRule struct {
 	ID            int

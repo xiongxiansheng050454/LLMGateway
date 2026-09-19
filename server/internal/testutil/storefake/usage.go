@@ -5,9 +5,11 @@ import (
 	"sort"
 	"time"
 
-	"LLMGateway/server/internal/domain"
+	accounts "LLMGateway/server/internal/accounts"
+	catalog "LLMGateway/server/internal/catalog"
 	"LLMGateway/server/internal/money"
 	"LLMGateway/server/internal/store"
+	domain "LLMGateway/server/internal/usage"
 )
 
 func (s *Store) InsertUsageLog(in domain.UsageLogInput) (int, error) {
@@ -86,7 +88,7 @@ func (s *Store) SettleChatCompletion(in domain.ChatSettlementInput) (int, error)
 		return 0, fmt.Errorf("%w: insufficient balance", store.ErrInvalid)
 	}
 
-	var channel *domain.Channel
+	var channel *catalog.Channel
 	var nextChannelBalance *string
 	if in.DebitChannel && parsedCost.Cmp(0) > 0 {
 		channel = s.channels[*in.ChannelID]
@@ -108,7 +110,7 @@ func (s *Store) SettleChatCompletion(in domain.ChatSettlementInput) (int, error)
 	if parsedCost.Cmp(0) > 0 {
 		next := money.Format6(currentUserBalance.Sub(parsedCost))
 		user.AvailableBalance = next
-		tx := domain.BalanceTransaction{ID: s.nextTxID, TxType: "consume", Amount: money.Format6(parsedCost), BalanceAfter: next, Description: in.Description, CreatedAt: nowRFC3339()}
+		tx := accounts.BalanceTransaction{ID: s.nextTxID, TxType: "consume", Amount: money.Format6(parsedCost), BalanceAfter: next, Description: in.Description, CreatedAt: nowRFC3339()}
 		s.nextTxID++
 		s.transactions[in.UserID] = append(s.transactions[in.UserID], tx)
 	}

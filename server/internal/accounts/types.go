@@ -1,6 +1,10 @@
-package domain
+package accounts
 
 import "encoding/json"
+
+import "LLMGateway/server/internal/pagination"
+
+type ListResponse[T any] = pagination.List[T]
 
 type User struct {
 	ID               int

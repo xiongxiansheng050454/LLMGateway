@@ -1,7 +1,7 @@
 package proxy
 
 import (
-	"LLMGateway/server/internal/domain"
+	"LLMGateway/server/internal/catalog"
 	"LLMGateway/server/internal/money"
 	"context"
 	"crypto/sha256"
@@ -13,30 +13,30 @@ import (
 // ordered by priority desc, weight desc, channel id; channels with a non-nil
 // balance below the configured reserve are excluded. Within the highest priority
 // group the choice is weighted-random using the injected source.
-func (a *Service) selectChannel(model string) (domain.RouteCandidate, error) {
+func (a *Service) selectChannel(model string) (catalog.RouteCandidate, error) {
 	candidates, err := a.orderedCandidates(model)
 	if err != nil {
-		return domain.RouteCandidate{}, err
+		return catalog.RouteCandidate{}, err
 	}
 	if len(candidates) == 0 {
-		return domain.RouteCandidate{}, ErrNoHealthyChannel
+		return catalog.RouteCandidate{}, ErrNoHealthyChannel
 	}
 	return candidates[0], nil
 }
 
-func (a *Service) orderedCandidates(model string, stickyKey ...int) ([]domain.RouteCandidate, error) {
+func (a *Service) orderedCandidates(model string, stickyKey ...int) ([]catalog.RouteCandidate, error) {
 	result, err := a.store.RouteCandidates(model)
 	if err != nil {
 		return nil, err
 	}
-	candidates := []domain.RouteCandidate{}
+	candidates := []catalog.RouteCandidate{}
 	seen := map[int]bool{}
 	for _, candidate := range result.List {
 		if seen[candidate.ChannelID] {
 			continue
 		}
 		health, healthErr := a.store.GetChannelHealth(candidate.ChannelID)
-		if healthErr == nil && health.State == domain.HealthHalfOpen {
+		if healthErr == nil && health.State == catalog.HealthHalfOpen {
 			allowed, probeErr := a.store.AcquireChannelProbe(context.Background(), candidate.ChannelID, a.requestTimeout)
 			if probeErr != nil || !allowed {
 				continue
@@ -56,7 +56,7 @@ func (a *Service) orderedCandidates(model string, stickyKey ...int) ([]domain.Ro
 	}
 
 	highest := candidates[0].Priority
-	group := []domain.RouteCandidate{}
+	group := []catalog.RouteCandidate{}
 	for _, candidate := range candidates {
 		if candidate.Priority == highest {
 			group = append(group, candidate)
@@ -80,7 +80,7 @@ func (a *Service) orderedCandidates(model string, stickyKey ...int) ([]domain.Ro
 		}
 		pick -= candidate.Weight
 		if pick < 0 {
-			ordered := []domain.RouteCandidate{candidate}
+			ordered := []catalog.RouteCandidate{candidate}
 			for _, rest := range group {
 				if rest.ChannelID != candidate.ChannelID {
 					ordered = append(ordered, rest)

@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/testutil/storefake"
+	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
 func newProtocolSeamService(t *testing.T, transport http.RoundTripper, adapter ProtocolAdapter) (*Service, *storefake.Store, *domain.AuthContext) {

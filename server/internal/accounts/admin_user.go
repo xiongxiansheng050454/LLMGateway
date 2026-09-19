@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"strings"
 
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/httpcommon"
 )
 
@@ -117,7 +116,7 @@ func (a *Server) listUsers(r *http.Request) (any, bool, int, string) {
 }
 
 func (a *Server) createUser(r *http.Request) (any, bool, int, string) {
-	var req domain.UserInput
+	var req UserInput
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
@@ -125,7 +124,7 @@ func (a *Server) createUser(r *http.Request) (any, bool, int, string) {
 }
 
 func (a *Server) updateUser(r *http.Request, id int) (any, bool, int, string) {
-	var req domain.UserInput
+	var req UserInput
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
@@ -133,7 +132,7 @@ func (a *Server) updateUser(r *http.Request, id int) (any, bool, int, string) {
 }
 
 func (a *Server) updateUserStatus(r *http.Request, id int) (any, bool, int, string) {
-	var req domain.UserStatusInput
+	var req UserStatusInput
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
@@ -141,7 +140,7 @@ func (a *Server) updateUserStatus(r *http.Request, id int) (any, bool, int, stri
 }
 
 func (a *Server) rechargeUser(r *http.Request, id int) (any, bool, int, string) {
-	var req domain.RechargeInput
+	var req RechargeInput
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}

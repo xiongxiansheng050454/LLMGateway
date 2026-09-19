@@ -10,7 +10,6 @@ import (
 	"strings"
 	"time"
 
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/httpcommon"
 )
 
@@ -33,7 +32,7 @@ func (a *Server) testChannel(r *http.Request, channelID int) (any, bool, int, st
 		return httpcommon.Result(nil, err)
 	}
 	sort.Slice(models.List, func(i, j int) bool { return models.List[i].ID < models.List[j].ID })
-	items := []domain.ChannelTestItemDTO{}
+	items := []ChannelTestItemDTO{}
 	for _, model := range models.List {
 		if !model.Enabled {
 			continue
@@ -43,11 +42,23 @@ func (a *Server) testChannel(r *http.Request, channelID int) (any, bool, int, st
 			break
 		}
 	}
-	return domain.ChannelTestResultDTO{List: items}, true, 0, ""
+	return ChannelTestResultDTO{List: items}, true, 0, ""
 }
 
-func (a *Server) testModel(parent context.Context, channel *domain.Channel, model domain.ChannelModel) domain.ChannelTestItemDTO {
-	item := domain.ChannelTestItemDTO{ModelAlias: model.ModelName, UpstreamModel: model.UpstreamModel}
+// TestChannel exposes the admin channel probe to external package tests.
+func (a *Server) TestChannel(r *http.Request, channelID int) (any, bool, int, string) {
+	return a.testChannel(r, channelID)
+}
+
+// ConfigureTestTimeout changes the probe timeout for deterministic tests.
+func (a *Server) ConfigureTestTimeout(timeout time.Duration) {
+	if timeout > 0 {
+		a.testTimeout = timeout
+	}
+}
+
+func (a *Server) testModel(parent context.Context, channel *Channel, model ChannelModel) ChannelTestItemDTO {
+	item := ChannelTestItemDTO{ModelAlias: model.ModelName, UpstreamModel: model.UpstreamModel}
 	body, err := json.Marshal(map[string]any{
 		"model":      model.UpstreamModel,
 		"messages":   []map[string]string{{"role": "user", "content": "hi"}},

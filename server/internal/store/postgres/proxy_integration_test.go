@@ -6,12 +6,20 @@ import (
 	"sync"
 	"testing"
 
+	"LLMGateway/server/internal/accounts"
+	"LLMGateway/server/internal/catalog"
+	"LLMGateway/server/internal/quota"
+	"LLMGateway/server/internal/ratelimit"
+	"LLMGateway/server/internal/usage"
+
 	"LLMGateway/server/internal/crypto"
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/store"
+	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
-func createKeyAndHash(t *testing.T, st store.Store, userID int) (int, string) {
+func createKeyAndHash(t *testing.T, st interface {
+	accounts.Port
+}, userID int) (int, string) {
 	t.Helper()
 	created, err := st.CreateKey(userID, domain.KeyInput{KeyName: "default", Prefix: "sk-"})
 	if err != nil {
@@ -202,7 +210,14 @@ type proxySnapshot struct {
 	countAll         int
 }
 
-func runProxyScenario(t *testing.T, st store.Store) proxySnapshot {
+func runProxyScenario(t *testing.T, st interface {
+	accounts.Port
+	catalog.Port
+	catalog.HealthPort
+	quota.Port
+	ratelimit.Port
+	usage.Port
+}) proxySnapshot {
 	t.Helper()
 
 	if _, err := st.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {

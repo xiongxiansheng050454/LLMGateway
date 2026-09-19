@@ -1,7 +1,5 @@
 package quota
 
-import "LLMGateway/server/internal/store"
+type Server struct{ store Port }
 
-type Server struct{ store store.Store }
-
-func New(st store.Store) *Server { return &Server{store: st} }
+func New(st Port) *Server { return &Server{store: st} }

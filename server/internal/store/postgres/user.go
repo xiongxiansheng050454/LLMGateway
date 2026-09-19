@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"strings"
 
+	domain "LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/crypto"
 	"LLMGateway/server/internal/db/sqlc"
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/money"
 	"LLMGateway/server/internal/store"
 
@@ -379,8 +379,8 @@ func (s *Store) AuthenticateKey(keyHash string) (*domain.AuthContext, error) {
 		KeyName:            row.KeyName,
 		KeyActive:          row.KeyActive,
 		ExpiresAt:          optionalTimestamp(row.ExpiresAt),
-		Permissions:        store.CanonicalJSON(json.RawMessage(row.Permissions)),
-		RateLimitOverrides: store.CanonicalJSON(json.RawMessage(row.RateLimitOverrides)),
+		Permissions:        canonicalJSON(json.RawMessage(row.Permissions)),
+		RateLimitOverrides: canonicalJSON(json.RawMessage(row.RateLimitOverrides)),
 		UserStatus:         row.UserStatus,
 		AvailableBalance:   textValue(row.AvailableBalance),
 		FrozenBalance:      textValue(row.FrozenBalance),

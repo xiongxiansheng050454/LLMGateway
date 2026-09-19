@@ -6,9 +6,10 @@ import (
 	"time"
 
 	"LLMGateway/server/internal/db/sqlc"
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/money"
 	"LLMGateway/server/internal/store"
+	domain "LLMGateway/server/internal/usage"
+	usage "LLMGateway/server/internal/usage"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -71,7 +72,7 @@ func (s *Store) InsertUsageLog(in domain.UsageLogInput) (int, error) {
 	return id, nil
 }
 
-func (s *Store) SettleChatCompletion(in domain.ChatSettlementInput) (int, error) {
+func (s *Store) SettleChatCompletion(in usage.ChatSettlementInput) (int, error) {
 	parsedCost, err := money.Parse6(in.Cost)
 	if err != nil || parsedCost.Cmp(0) < 0 {
 		return 0, fmt.Errorf("%w: invalid cost", store.ErrInvalid)

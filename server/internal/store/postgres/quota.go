@@ -6,9 +6,10 @@ import (
 	"time"
 
 	"LLMGateway/server/internal/db/sqlc"
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/money"
+	domain "LLMGateway/server/internal/quota"
 	"LLMGateway/server/internal/store"
+	usage "LLMGateway/server/internal/usage"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -396,7 +397,7 @@ func quotaReservationItems(ctx context.Context, tx pgx.Tx, reservationID int64) 
 	return items, mapError(rows.Err())
 }
 
-func settleQuotaTx(ctx context.Context, tx pgx.Tx, in domain.ChatSettlementInput, actualTokens int64, actualCost string, now time.Time) error {
+func settleQuotaTx(ctx context.Context, tx pgx.Tx, in usage.ChatSettlementInput, actualTokens int64, actualCost string, now time.Time) error {
 	reservationID := in.ReservationID
 	if reservationID == 0 {
 		return nil

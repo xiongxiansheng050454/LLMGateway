@@ -1,9 +1,7 @@
-package store
+package accounts
 
 import (
 	"encoding/json"
-
-	"LLMGateway/server/internal/domain"
 )
 
 // CanonicalJSON is a serialization-consistency helper (not a business rule):
@@ -30,30 +28,30 @@ func CanonicalJSON(value json.RawMessage) json.RawMessage {
 //
 // Implementations must never return a gateway key's plaintext after creation or
 // reset, and must never persist the plaintext key (only its hash).
-type UserStore interface {
-	ListUsers(page, pageSize int) (domain.ListResponse[domain.UserDTO], error)
-	CreateUser(domain.UserInput) (domain.UserDTO, error)
-	UpdateUser(int, domain.UserInput) (domain.UserDTO, error)
-	UpdateUserStatus(int, string) (domain.UserDTO, error)
+type Port interface {
+	ListUsers(page, pageSize int) (ListResponse[UserDTO], error)
+	CreateUser(UserInput) (UserDTO, error)
+	UpdateUser(int, UserInput) (UserDTO, error)
+	UpdateUserStatus(int, string) (UserDTO, error)
 	DeleteUser(int) error
-	RechargeUser(int, domain.RechargeInput) (domain.BalanceUpdateDTO, error)
-	GetUserBalance(int) (domain.BalanceDTO, error)
-	ListBalanceTransactions(userID, page, pageSize int) (domain.ListResponse[domain.BalanceTransactionDTO], error)
+	RechargeUser(int, RechargeInput) (BalanceUpdateDTO, error)
+	GetUserBalance(int) (BalanceDTO, error)
+	ListBalanceTransactions(userID, page, pageSize int) (ListResponse[BalanceTransactionDTO], error)
 
-	ListUserKeys(userID, page, pageSize int) (domain.ListResponse[domain.ClientKeyDTO], error)
-	ListKeys(page, pageSize int) (domain.ListResponse[domain.ClientKeyDTO], error)
-	CreateKey(userID int, in domain.KeyInput) (domain.KeySecretDTO, error)
-	UpdateKey(userID, keyID int, in domain.KeyUpdateInput) (domain.ClientKeyDTO, error)
+	ListUserKeys(userID, page, pageSize int) (ListResponse[ClientKeyDTO], error)
+	ListKeys(page, pageSize int) (ListResponse[ClientKeyDTO], error)
+	CreateKey(userID int, in KeyInput) (KeySecretDTO, error)
+	UpdateKey(userID, keyID int, in KeyUpdateInput) (ClientKeyDTO, error)
 	DeleteKey(userID, keyID int) error
-	ResetKey(userID, keyID int) (domain.KeySecretDTO, error)
+	ResetKey(userID, keyID int) (KeySecretDTO, error)
 
 	// AuthenticateKey looks up a gateway key by its hash and returns the raw
 	// key + user authentication state. Missing keys return ErrNotFound.
-	AuthenticateKey(keyHash string) (*domain.AuthContext, error)
+	AuthenticateKey(keyHash string) (*AuthContext, error)
 	// UpdateKeyLastUsed records key usage. Missing keys return ErrNotFound.
 	UpdateKeyLastUsed(keyID int) error
 	// DebitUserBalance deducts amount (6 decimals) from the available balance
 	// inside a transaction and records a consume transaction. Insufficient
 	// balance returns ErrInvalid; a missing user returns ErrNotFound.
-	DebitUserBalance(userID int, amount string, description string) (domain.BalanceUpdateDTO, error)
+	DebitUserBalance(userID int, amount string, description string) (BalanceUpdateDTO, error)
 }

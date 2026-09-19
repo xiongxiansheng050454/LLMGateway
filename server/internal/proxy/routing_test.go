@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"LLMGateway/server/internal/domain"
 	"LLMGateway/server/internal/testutil/storefake"
+	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
 func newRouteTestApp(st *storefake.Store, randIntN func(int) int) *Service {

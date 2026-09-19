@@ -15,10 +15,10 @@ server/internal/httpapi/            顶层 HTTP 装配、响应 envelope、Dashb
 server/internal/httpcommon/         共享 HTTP 请求解析、路径、分页、存储错误映射和删除响应 helper 的唯一归属
 server/internal/proxy/              下游代理业务：OpenAI 适配、路由、计费、限流、熔断、结算和上游调用
 server/internal/proxy/openai/       OpenAI 兼容 wire DTO 与协议适配；归属 proxy 业务模块
-server/internal/domain/             API 与业务共享类型，不依赖 HTTP 或数据库
+server/internal/errors/             跨模块通用错误
 server/internal/money/              定点金额（int64 最小单位）解析与格式化
 server/internal/crypto/             渠道 api_key 加解密、网关 Key 生成与哈希
-server/internal/store/              存储接口（Store）与通用存储错误
+server/internal/store/              仅保留错误兼容别名，不定义业务端口
 server/internal/store/postgres/     唯一生产 Store 实现
 server/internal/testutil/storefake/ 不需要数据库的测试专用 fake，生产代码不得导入
 server/internal/db/migrate/         最小迁移 runner，按文件名顺序应用 server/db/migrations/*.sql
@@ -43,10 +43,10 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
 - 业务模块按能力纵向组织：`catalog`、`accounts`、`usage`、`ratelimit`、`quota`、`proxy` 各自聚合规则、端口使用和 HTTP 入口契约；这不是按 HTTP/store/protocol 的横向分层。
 - `rate_limit_rules` 只表达短窗口速率控制；`quota_policies` 独立表达用户/Key 的 UTC 自然日/月 token 与费用预算，两者在 proxy 准入阶段统一执行但不共用持久化模型。
 - `server/internal/httpapi` 只负责顶层 HTTP 装配、通用响应和委托，不作为跨业务 admin 文件集中地。
-- 业务模块只依赖 `server/internal/store.Store` 接口，不直接访问 PostgreSQL 或 sqlc。
-- 代理编排位于 `server/internal/proxy`，依赖 `store.Store` 端口、`domain`、`money`、`crypto` 和协议中立的代理 contract，不直接访问 PostgreSQL 或 sqlc；OpenAI wire 转换只在 `server/internal/proxy/openai` 完成。
-- 业务/API 共享结构放在 `server/internal/domain`，避免 httpapi、proxy 与 postgres store 互相引用具体实现。
-- OpenAI 兼容 JSON wire type 放在 `server/internal/proxy/openai`；`catalog`、`accounts`、`usage`、`ratelimit`、`domain` 与 `store` 不依赖 OpenAI 协议 DTO。
+- 每个业务模块在自身包内拥有类型、规则和窄 port，不直接访问 PostgreSQL、sqlc 或 `internal/store`。
+- 代理编排位于 `server/internal/proxy`，依赖各业务模块 port 和自身协议中立 contract；OpenAI wire 转换只在 `server/internal/proxy/openai` 完成。
+- `internal/domain` 已删除，避免跨业务共享类型重新形成隐式 aggregate。
+- OpenAI 兼容 JSON wire type 放在 `server/internal/proxy/openai`；业务模块不依赖 OpenAI 协议 DTO。
 - PostgreSQL 是唯一运行时存储；`DATABASE_URL` 与 `CHANNEL_KEY_ENCRYPTION_KEY` 均为必填配置，缺失或非法时进程启动失败。
 - sqlc 查询写在 `server/db/queries/*.sql`，schema 写在 `server/db/migrations/*.sql`，生成代码输出到 `server/internal/db/sqlc`。
 - 不要手改 `server/internal/db/sqlc` 生成文件；修改 SQL 后运行 `sqlc generate`。
@@ -70,8 +70,13 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
 目录保持较浅层级：包内按领域拆文件，仅在协议与存储实现处使用子包，使目录能直接呈现模块边界。
 
 - 每个包内按领域命名文件，禁止把多个领域堆进同一个文件：
-  - `server/internal/domain/`：`common.go`、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`、`channelhealth.go`、`failurereason.go`；纯规则（熔断状态机、限流规范化 `NormalizeRateLimit`、时间校验 `Validate*`、`FailureReason`）归位此处
-  - `server/internal/store/`：`store.go`（错误别名 + 组合接口）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`、`channelhealth.go`（仅端口接口）；`CanonicalJSON` 为序列化一致性辅助，非业务规则
+  - `server/internal/catalog/`：渠道、模型、定价、健康、失败原因、路由 DTO 和 catalog/health ports
+  - `server/internal/accounts/`：用户、余额、Key、认证 DTO 和 accounts port
+  - `server/internal/usage/`：usage DTO、时间校验、结算输入和 usage port
+  - `server/internal/ratelimit/`：限流规则、reservation、规范化规则和 ratelimit port
+  - `server/internal/quota/`：配额策略、reservation、周期规则和 quota port
+  - `server/internal/proxy/`：代理请求/响应、失败、限流/配额编排和 settlement contract
+  - `server/internal/store/`：仅错误兼容别名，不定义业务 port 或 aggregate interface
   - `server/internal/store/postgres/`：`postgres.go`（结构体/构造函数）、`channel.go`、`user.go`、`usage.go`、`ratelimit.go`、`channelhealth.go`
   - `server/internal/testutil/storefake/`：测试专用 Store fake，仅供测试夹具使用
   - `server/cmd/llmgateway/`：`main.go`（装配与优雅关闭）、`router.go`（唯一 HTTP 路由表）
@@ -83,19 +88,22 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
   - `server/internal/httpcommon/`：共享 HTTP 请求解析、路径解析、分页、存储错误映射和删除响应 helper；这些通用行为只在此处实现
 - `server/internal/proxy/`：`proxy.go`（编排依赖装配与代理错误）、`contracts.go`（协议中立请求/响应/usage contract）、`auth.go`（认证）、`routing.go`（选路）、`billing.go`（计费）、`ratelimit.go`（限流）、`orchestration.go`（代理编排）
     - `server/internal/proxy/openai/`：`types.go`、`adapter.go`（OpenAI 兼容 wire DTO、请求解析和响应适配；proxy 业务模块的协议边界）
-- `store.Store` 由领域子接口组合而成，禁止继续往 `store.go` 堆方法：
+- 进程装配边界可以组合业务 port，但禁止在 `internal/store` 恢复 aggregate `Store`。
 
 ```text
-type Store interface {
-    ChannelStore
-    // UserStore / UsageStore / RateLimitStore 由对应 issue 加入
+type Port interface {
+    accounts.Port
+    catalog.Port
+    usage.Port
+    ratelimit.Port
+    quota.Port
 }
 ```
 
 - PostgreSQL 实现以编译期断言固定其端口契约：
 
 ```text
-var _ store.ChannelStore = (*postgres.Store)(nil)
+var _ catalog.Port = (*postgres.Store)(nil)
 ```
 
 - 领域文件边界与 `server/db/queries/*.sql` 的领域划分保持一致（channels/models/pricing/users/rate_limits/usage_logs）。
