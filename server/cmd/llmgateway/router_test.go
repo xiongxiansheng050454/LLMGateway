@@ -12,7 +12,7 @@ import (
 // TestNewRouterPaths exercises the production route table directly so drift
 // between cmd/llmgateway/router.go and the handler entry points is caught.
 func TestNewRouterPaths(t *testing.T) {
-	router := newRouter(filepath.Join("..", "..", "..", "dashboard"), storefake.New())
+	router := newRouter(filepath.Join("..", "..", "..", "dashboard-react", "dist"), storefake.New())
 
 	tests := []struct {
 		name   string
@@ -26,7 +26,8 @@ func TestNewRouterPaths(t *testing.T) {
 		{"v1 models requires auth", http.MethodGet, "/v1/models", http.StatusUnauthorized},
 		{"v1 chat requires auth", http.MethodPost, "/v1/chat/completions", http.StatusUnauthorized},
 		{"dashboard index", http.MethodGet, "/dashboard/index.html", http.StatusOK},
-		{"dashboard asset", http.MethodGet, "/dashboard/js/data.js", http.StatusOK},
+		{"dashboard client route", http.MethodGet, "/dashboard/channels", http.StatusOK},
+		{"dashboard nested client route", http.MethodGet, "/dashboard/users/keys", http.StatusOK},
 		{"root static", http.MethodGet, "/", http.StatusOK},
 		{"unknown path", http.MethodGet, "/does-not-exist", http.StatusNotFound},
 		{"unknown admin path", http.MethodGet, "/admin/does-not-exist", http.StatusNotFound},

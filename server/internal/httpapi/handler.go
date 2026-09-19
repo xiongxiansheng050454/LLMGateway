@@ -140,8 +140,28 @@ func NewServer(dashboardDir string, st store.Store, opts ...Option) *Server {
 	}
 }
 
-// Dashboard serves the static dashboard directory.
+// Dashboard serves static dashboard assets and falls back to index.html for
+// client-side routes handled by the React BrowserRouter.
 func (a *Server) Dashboard(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		writeMethodNotAllowed(w)
+		return
+	}
+
+	path := strings.TrimPrefix(filepath.Clean(r.URL.Path), string(filepath.Separator))
+	if path != "." && path != "" {
+		if file, err := os.Open(filepath.Join(a.dashboardDir, filepath.FromSlash(path))); err == nil {
+			file.Close()
+			a.dashboard.ServeHTTP(w, r)
+			return
+		}
+	}
+	a.DashboardIndex(w, r)
+}
+
+// DashboardRoot serves the legacy root mount without treating arbitrary root
+// paths as client-side dashboard routes.
+func (a *Server) DashboardRoot(w http.ResponseWriter, r *http.Request) {
 	a.dashboard.ServeHTTP(w, r)
 }
 

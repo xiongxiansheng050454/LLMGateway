@@ -26,7 +26,7 @@ server/internal/db/sqlc/            sqlc 生成代码输出目录，不手写业
 server/db/migrations/               PostgreSQL schema 迁移 SQL（SQL 资产）
 server/db/queries/                  sqlc 查询 SQL（SQL 资产）
 deployments/                        本地开发部署配置，如 PostgreSQL docker compose
-dashboard/                          静态前端控制台（仓库根，由 server 通过 ../dashboard 托管）
+dashboard-react/                    React + TypeScript + Vite 控制台源码，生产构建产物由 server 静态托管
 ```
 
 Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执行（或在仓库根使用 `go -C server ...`）。
@@ -134,7 +134,7 @@ postgres://llmgateway:llmgateway_dev@localhost:5432/llmgateway?sslmode=disable
 
 ```text
 ADDR=:8080
-DASHBOARD_DIR=../dashboard
+DASHBOARD_DIR=../dashboard-react/dist
 DATABASE_URL=postgres://llmgateway:llmgateway_dev@localhost:5432/llmgateway?sslmode=disable
 CHANNEL_KEY_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef
 MIGRATIONS_DIR=db/migrations
@@ -144,7 +144,7 @@ QUOTA_REAPER_INTERVAL_SECONDS=30
 QUOTA_REAPER_BATCH_SIZE=100
 ```
 
-路径均相对于运行目录 `server/`：`DASHBOARD_DIR` 默认 `../dashboard`，`MIGRATIONS_DIR` 默认 `db/migrations`。
+路径均相对于运行目录 `server/`：`DASHBOARD_DIR` 默认 `../dashboard-react/dist`，生产 Docker 使用 `/app/dashboard`；`MIGRATIONS_DIR` 默认 `db/migrations`。
 
 启动前必须设置 PostgreSQL URL 和 16/24/32 字节的渠道密钥加密密钥：
 

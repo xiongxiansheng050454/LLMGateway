@@ -1,4 +1,38 @@
-import { NavLink, Route, Routes, useLocation } from 'react-router-dom'; import { useQuery } from '@tanstack/react-query'; import { channels, health } from './api/channels'; import { overview } from './api/usage'; import { DashboardPage } from './pages/DashboardPage'; import { LogsPage } from './pages/LogsPage'; import { ChannelsPage } from './pages/ChannelsPage';
-const routes = [['/', '仪表盘'], ['/logs', '请求日志'], ['/channels', '渠道管理'], ['/models', '模型路由'], ['/users', '用户与 Key'], ['/limits', '限流规则'], ['/quotas', '周期配额'], ['/pricing', '计费定价'], ['/settings', '系统设置'], ['/docs', 'API 文档']]
-function Placeholder({ title }: { title: string }) { return <section className="panel"><h1>{title}</h1><p className="muted">页面已接入 React 路由与统一 API 层。</p></section> }
-export default function App() { const location = useLocation(); const core = useQuery({ queryKey: ['overview'], queryFn: overview }); const channelQuery = useQuery({ queryKey: ['channels'], queryFn: channels }); const healthQuery = useQuery({ queryKey: ['channel-health'], queryFn: health }); const title = routes.find(([path]) => path === location.pathname)?.[1] || '仪表盘'; return <div className="shell"><aside><div className="brand"><span>⚡</span><div><b>MyApi</b><small>LLM API 网关</small></div></div><nav>{routes.map(([path, label]) => <NavLink key={path} to={path} className={({ isActive }) => isActive ? 'active' : ''}>{label}</NavLink>)}</nav><div className="side-status"><i /> 网关运行正常</div></aside><main><header><div><span className="eyebrow">GATEWAY / CONTROL PLANE</span><h2>{title}</h2></div><span className="live">LIVE</span></header><div className="content"><Routes><Route path="/" element={<DashboardPage stats={core.data} channels={channelQuery.data?.list || []} health={healthQuery.data?.list || []} />} /><Route path="/logs" element={<LogsPage />} /><Route path="/channels" element={<ChannelsPage channels={channelQuery.data?.list || []} health={healthQuery.data?.list || []} />} />{routes.slice(3).map(([path, label]) => <Route key={path} path={path} element={<Placeholder title={label} />} />)}</Routes></div></main></div> }
+import { useEffect, useState } from 'react'
+import { NavLink, Route, Routes, useLocation, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
+import { channels, health } from './api/channels'
+import { overview, daily, logs } from './api/usage'
+import { DashboardPage } from './pages/DashboardPage'
+import { LogsPage } from './pages/LogsPage'
+import { ChannelsPage } from './pages/ChannelsPage'
+import { UsersPage } from './pages/UsersPage'
+import { ModelsPage } from './pages/ModelsPage'
+import { LimitsPage, QuotasPage, PricingPage, SettingsPage } from './pages/ConsolePages'
+import { UsagePage } from './pages/UsagePage'
+import { DocsPage } from './pages/DocsPage'
+
+const navGroups = [
+  { label: '总览', items: [['/', '仪表盘', '▦'], ['/usage', '用量统计', '⌁'], ['/logs', '请求日志', '☷'], ['/docs', 'API 文档', '▤']] },
+  { label: '资源管理', items: [['/channels', '渠道管理', '≋'], ['/models', '模型路由', '◈'], ['/users', '用户与 Key', '♙']] },
+  { label: '运营', items: [['/limits', '限流规则', '◴'], ['/quotas', '周期配额', '◉'], ['/pricing', '计费定价', '◈'], ['/settings', '系统设置', '⚙']] },
+] as const
+
+const titles: Record<string, [string, string]> = {
+  '/': ['运营仪表盘', '网关运行总览'], '/usage': ['用量统计', '按用户 / 模型聚合的 token 与费用'], '/logs': ['请求日志', 'usage_logs 明细'],
+  '/docs': ['API 文档', '下游与管理端接口文档（应用内阅读）'], '/channels': ['渠道管理', '上游渠道 · 健康 / 权重 / 余额'], '/models': ['模型路由', '对外模型目录与路由策略'],
+  '/users': ['用户与 Key', '下游用户余额与网关 Key'], '/limits': ['限流规则', 'rate_limit_rules · 短窗口速率控制'], '/quotas': ['周期配额', 'UTC 日/月 token 与费用额度'],
+  '/pricing': ['计费定价', '渠道×模型单价'], '/settings': ['系统设置', '控制台与网关信息'],
+}
+
+export default function App() {
+  const location = useLocation(); const navigate = useNavigate(); const [dark, setDark] = useState(true); const [notice, setNotice] = useState(false)
+  const core = useQuery({ queryKey: ['overview'], queryFn: overview }); const channelQuery = useQuery({ queryKey: ['channels'], queryFn: channels }); const healthQuery = useQuery({ queryKey: ['channel-health'], queryFn: health }); const dailyQuery = useQuery({ queryKey: ['daily'], queryFn: daily }); const logsQuery = useQuery({ queryKey: ['logs'], queryFn: logs })
+  useEffect(() => { document.documentElement.classList.toggle('light', !dark) }, [dark])
+  useEffect(() => { const onKey = (e: KeyboardEvent) => { if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); document.getElementById('global-search')?.focus() } }; window.addEventListener('keydown', onKey); return () => window.removeEventListener('keydown', onKey) }, [])
+  const [title, subtitle] = titles[location.pathname] || titles['/']
+  return <div className="app-shell">
+    <aside className="sidebar"><div className="brand"><span className="brand-mark">ϟ</span><div><b>MyApi</b><small>LLM API 网关</small></div></div><nav className="nav">{navGroups.map(group => <div className="nav-group" key={group.label}><div className="nav-label">{group.label}</div>{group.items.map(([path, label, icon]) => <NavLink key={path} to={path} className={({ isActive }) => `nav-item ${isActive ? 'active' : ''}`}><span className="nav-icon">{icon}</span><span>{label}</span>{path === '/logs' && <em>1.7k</em>}</NavLink>)}</div>)}</nav><div className="gateway-status"><div><i className="dot-live" />网关运行正常</div><div className="status-stats"><span><b>{core.data ? 'P95' : '—'}</b><small>TTFT</small></span><span><b className="green">99.98%</b><small>30 天可用性</small></span></div></div></aside>
+    <main className="main-area"><header className="topbar"><div className="crumb"><span>MyApi</span><b>/</b><span>Gateway</span><b>/</b><strong>{title}</strong></div><div className="top-actions"><div className="search"><span>⌕</span><input id="global-search" placeholder="搜索用户 / 渠道 / 模型…" /><kbd>⌘K</kbd></div><button className="icon-button" onClick={() => setDark(!dark)} aria-label="切换主题">{dark ? '☼' : '◐'}</button><div className="notice-wrap"><button className="icon-button" onClick={() => setNotice(!notice)} aria-label="通知">♧<i>3</i></button>{notice && <div className="notice-panel"><b>通知（3）</b><p><mark>警告</mark>渠道余额接近阈值</p><p><mark className="success">结算</mark>今日账单已完成</p><p><mark>路由</mark>模型路由策略已更新</p></div>}</div><button className="profile"><span>OP</span><label>Admin<small>平台运营</small></label></button></div></header><section className="page-content"><div className="page-heading"><div><h1>{title}</h1><p>{subtitle}{location.pathname === '/' && <> · 数据更新于 <b>实时</b></>}</p></div><div className="page-actions">{location.pathname !== '/docs' && <button className="button ghost" onClick={() => navigate('/docs')}>▤ 查看 API 文档</button>}<button className="button primary" onClick={() => navigate('/channels')}>ϟ 新建渠道</button></div></div><Routes><Route path="/" element={<DashboardPage stats={core.data} daily={dailyQuery.data?.list || []} channels={channelQuery.data?.list || []} health={healthQuery.data?.list || []} logs={logsQuery.data?.list || []} />} /><Route path="/usage" element={<UsagePage stats={core.data} daily={dailyQuery.data?.list || []} />} /><Route path="/logs" element={<LogsPage />} /><Route path="/channels" element={<ChannelsPage channels={channelQuery.data?.list || []} health={healthQuery.data?.list || []} />} /><Route path="/users" element={<UsersPage />} /><Route path="/models" element={<ModelsPage />} /><Route path="/limits" element={<LimitsPage />} /><Route path="/quotas" element={<QuotasPage />} /><Route path="/pricing" element={<PricingPage />} /><Route path="/settings" element={<SettingsPage />} /><Route path="/docs" element={<DocsPage />} /></Routes></section></main>
+  </div>
+}

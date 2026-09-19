@@ -21,7 +21,7 @@
 - `server/internal/store/postgres/` 是唯一生产 Store 实现；`server/internal/testutil/storefake/` 仅供不需要数据库的单元与 HTTP 契约测试使用，生产代码不得导入，运行时不得提供 memory fallback。
 - `server/db/migrations/` 放 schema 迁移，`server/db/queries/` 放 sqlc 查询，`server/internal/db/migrate/` 放迁移 runner，`server/internal/db/sqlc/` 放生成代码。禁止手改 sqlc 生成文件。
 - `server/internal/money/` 放定点金额能力，`server/internal/crypto/` 放密钥加密、生成与哈希，`server/internal/config/` 放环境变量名称、解析和默认值。
-- `dashboard/index.html` 是静态前端入口；`dashboard/js/data.js` 放 `/admin` 数据接入；`dashboard/js/core.js` 放导航、路由和启动逻辑；`dashboard/js/views/` 按页面放视图代码。
+- `dashboard-react/` 是 React + TypeScript + Vite 前端工程；`dashboard-react/src/api/` 放 `/admin` 数据接入，`dashboard-react/src/pages/` 按页面放视图代码，生产构建产物由 Go 静态托管。
 - `docs/api-requirements.md` 是管理端与下游 API 契约来源，`docs/backend-structure.md` 记录后端结构细节。接口或结构发生变化时同步更新对应文档。
 - `deployments/` 放本地部署配置。`communication/` 只用于本地协作，不得提交。
 - 新文件优先放入现有业务模块。只有出现独立、稳定且可清晰命名的业务能力时才新增顶层模块，禁止按 `service`、`handler`、`utils` 等泛化技术层创建兜底目录。

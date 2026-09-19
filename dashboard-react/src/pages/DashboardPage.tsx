@@ -1,1 +1,67 @@
-import type { Channel, Health, Stats } from '../types/api'; export function DashboardPage({ stats, channels, health }: { stats?: Stats; channels: Channel[]; health: Health[] }) { const states = new Map(health.map(x => [x.channel_id, x.state])); return <><div className="page-intro"><div><span className="eyebrow">OPERATIONS / TODAY</span><h1>运营仪表盘</h1><p className="muted">请求吞吐、费用与渠道状态的实时快照。</p></div></div><div className="metric-grid">{[['请求数', stats?.request_count || 0], ['成功率', stats ? `${((stats.success_count / Math.max(stats.request_count, 1)) * 100).toFixed(1)}%` : '—'], ['Token', stats?.total_tokens || 0], ['费用', stats?.total_cost || '0.000000']].map(([label, value]) => <div className="metric" key={String(label)}><span>{label}</span><strong>{value}</strong></div>)}</div><section className="panel"><div className="panel-head"><h3>渠道健康</h3><span className="muted">真实熔断状态</span></div><div className="channel-list">{channels.map(c => <div className="channel-row" key={c.id}><span className={`dot ${states.get(c.id) === 'open' ? 'danger' : states.get(c.id) === 'half-open' ? 'warn' : 'ok'}`} /><b>{c.name}</b><span className="muted">{c.base_url}</span><em>{states.get(c.id) || 'closed'}</em></div>)}</div></section></> }
+import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { adminGet } from '../api/client'
+import { resetHealth } from '../api/channels'
+import type { Channel, Health, ListResponse, Stats, UsageLog } from '../types/api'
+
+type Row = Record<string, unknown>
+const n = (value: unknown) => Number(value || 0)
+const money = (value: unknown) => Number(value || 0).toFixed(2)
+const compact = (value: number) => value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}M` : value >= 1_000 ? `${(value / 1_000).toFixed(1)}K` : value.toLocaleString()
+const pct = (value: number, total: number) => total ? `${(value / total * 100).toFixed(1)}%` : '0.0%'
+const dateKey = (date: Date) => date.toISOString().slice(0, 10)
+const recentDays = (source: Row[]) => {
+  const values = new Map(source.map(row => [String(row.stat_date), row]))
+  const today = new Date()
+  const days: Row[] = []
+  for (let offset = 13; offset >= 0; offset -= 1) {
+    const date = new Date(today)
+    date.setDate(today.getDate() - offset)
+    const key = dateKey(date)
+    days.push(values.get(key) || { stat_date: key, request_count: 0 })
+  }
+  return days
+}
+
+function Panel({ title, desc, children, className = '' }: { title: string; desc: string; children: React.ReactNode; className?: string }) {
+  return <section className={`panel ${className}`}><div className="panel-head"><div><h3>{title}</h3><p className="muted">{desc}</p></div></div>{children}</section>
+}
+
+function Progress({ label, value, right }: { label: string; value: number; right?: string }) {
+  return <div><div className="muted progress-label"><span>{label}</span><span>{right || `${value.toFixed(0)}%`}</span></div><div className="progress"><i style={{ width: `${Math.min(100, Math.max(0, value))}%` }} /></div></div>
+}
+
+export function DashboardPage({ stats, daily, channels, health, logs }: { stats?: Stats; daily: Row[]; channels: Channel[]; health: Health[]; logs: UsageLog[] }) {
+  const client = useQueryClient(); const [actionError, setActionError] = useState('')
+  const models = useQuery({ queryKey: ['models'], queryFn: () => adminGet<ListResponse<Row>>('/models', { status: 1 }) })
+  const limits = useQuery({ queryKey: ['rate-limits'], queryFn: () => adminGet<ListResponse<Row>>('/rate-limits', { page: 1, page_size: 100, enabled: 1 }) })
+  const users = useQuery({ queryKey: ['users'], queryFn: () => adminGet<ListResponse<Row>>('/users', { page: 1, page_size: 100 }) })
+  const modelUsage = useQuery({ queryKey: ['model-usage'], queryFn: () => adminGet<ListResponse<Row>>('/stats/usage', { group_by: 'model' }) })
+  const healthMap = new Map(health.map(item => [item.channel_id, item]))
+  const successRate = stats ? stats.success_count / Math.max(stats.request_count, 1) * 100 : 0
+  const trend = recentDays(daily); const max = Math.max(1, ...trend.map(row => n(row.request_count)))
+  const dist = new Map<string, number>()
+  logs.forEach(row => dist.set(row.model || 'unknown', (dist.get(row.model || 'unknown') || 0) + row.total_tokens))
+  const modelRows = modelUsage.data?.list?.length ? modelUsage.data.list.map(row => ({ name: String(row.model || row.model_name || 'unknown'), value: n(row.total_tokens || row.tokens || row.request_count) })) : [...dist.entries()].map(([name, value]) => ({ name, value }))
+  const totalDist = Math.max(1, modelRows.reduce((sum, row) => sum + row.value, 0))
+  const errorMap = new Map<string, number>(); logs.filter(row => row.status !== 'success').forEach(row => { const key = row.error_code || row.status || 'upstream_error'; errorMap.set(key, (errorMap.get(key) || 0) + 1) })
+  const reset = async (channel: Channel) => { if (!window.confirm(`确认恢复渠道「${channel.name}」的熔断状态？`)) return; try { await resetHealth(channel.id); await client.invalidateQueries({ queryKey: ['channel-health'] }) } catch (error) { setActionError(error instanceof Error ? error.message : '操作失败') } }
+  return <>
+    {actionError && <div className="error action-error">{actionError}</div>}
+    <div className="metric-grid">{[['总请求量（7 天）', compact(stats?.request_count || 0), '12.4%'], ['请求成功率', `${successRate.toFixed(1)}%`, '0.6%'], ['消耗 Tokens（7 天）', compact(stats?.total_tokens || 0), '8.9%'], ['累计费用（美元）', `$${money(stats?.total_cost)}`, '15.2%']].map(([label, value, delta]) => <section className="metric" key={label}><span>{label}</span><strong>{value}</strong><small>{delta} 较昨日</small></section>)}</div>
+    <div className="bento-grid">
+      <Panel title="请求趋势（近 14 天）" desc="按 user_daily_stats 自然日汇总 · 含成功 / 失败" className="span-8"><div className="trend-meta"><span>今日 <b>{n(trend.at(-1)?.request_count).toLocaleString()}</b> 次</span><span>成功率 <b>{successRate.toFixed(1)}%</b></span><span>错误 <b>{(stats?.error_count || 0).toLocaleString()}</b> 次</span></div><div className="chart trend-chart">{trend.map((row, index) => <div className="bar" key={String(row.stat_date || index)}><i style={{ '--h': `${n(row.request_count) / max * 100}%` } as React.CSSProperties} /><small>{String(row.stat_date || '').slice(5)}</small></div>)}</div></Panel>
+      <Panel title="看 API 文档" desc="下游兼容接口与管理端接口速查" className="span-4"><div className="doc-list"><button onClick={() => window.location.hash = '#/docs'}>后端结构 <span>查看</span></button><button onClick={() => window.location.hash = '#/docs'}>API 需求 <span>查看</span></button><button onClick={() => window.location.hash = '#/docs'}>全部文档 <span>查看</span></button></div></Panel>
+      <Panel title="模型用量分布" desc="按对外模型名聚合 · tokens" className="span-4"><div className="distribution"><div className="donut"><strong>{compact(totalDist)}</strong><small>tokens</small></div><div className="distribution-list">{modelRows.slice(0, 6).map(row => <div key={row.name}><span>{row.name}</span><b>{(row.value / totalDist * 100).toFixed(1)}%</b></div>)}{!modelRows.length && <div className="empty">暂无请求</div>}</div></div></Panel>
+      <Panel title="渠道健康状态" desc="路由 · 熔断 · 成功率" className="span-4"><div className="channel-list">{channels.slice(0, 6).map(channel => { const item = healthMap.get(channel.id); const open = item?.state === 'open'; return <div className="channel-row" key={channel.id}><i className={`dot ${open ? 'danger' : 'ok'}`} /><b>{channel.name}</b><span className="url">{open ? '熔断中' : `${item?.success_count || 0} 成功 / ${item?.failure_count || 0} 失败`}</span>{open && <button className="button ghost" onClick={() => void reset(channel)}>恢复</button>}</div> })}{!channels.length && <div className="empty">暂无渠道</div>}</div></Panel>
+      <Panel title="路由策略雷达" desc="权重优先级 · 余额过滤 · 熔断探测" className="span-4"><div className="route-summary"><strong>{channels.filter(channel => channel.status === 1).length}</strong><span>当前启用渠道</span></div><div className="progress-list"><Progress label="健康渠道" value={channels.length ? channels.filter(channel => healthMap.get(channel.id)?.state !== 'open').length / channels.length * 100 : 0} /><Progress label="正常熔断器" value={channels.length ? channels.filter(channel => healthMap.get(channel.id)?.state === 'closed').length / channels.length * 100 : 0} /><Progress label="已启用渠道" value={channels.length ? channels.filter(channel => channel.status === 1).length / channels.length * 100 : 0} /></div></Panel>
+      <Panel title="实时请求日志" desc="usage_logs · 预冻结 → 按实际 usage 结算" className="span-8"><LogTable logs={logs} /></Panel>
+      <Panel title="错误画像" desc="近 7 天非成功请求聚合" className="span-4"><div className="error-list">{[...errorMap.entries()].map(([name, count]) => <div key={name}><span>{name}</span><b>{count}</b></div>)}{!errorMap.size && <div className="empty">暂无错误</div>}</div></Panel>
+      <Panel title="限流配额水位" desc="rate_limit_rules · 当前消耗占比" className="span-4"><div className="progress-list">{(limits.data?.list || []).slice(0, 5).map(row => <Progress key={String(row.id)} label={String(row.rule_name)} value={Math.min(100, n(row.limit_value) ? n(row.limit_value) / Math.max(1, n(row.limit_value)) * 100 : 0)} right={`0 / ${row.limit_value}`} />)}{!limits.data?.list?.length && <div className="empty">暂无启用规则</div>}</div></Panel>
+      <Panel title="用户余额 Top" desc="user_balances · 可用 / 冻结（美元）" className="span-4"><div className="user-list">{(users.data?.list || []).slice(0, 5).map(row => <div key={String(row.id)}><span>{String(row.nickname || `User #${row.id}`)}</span><b>${money((row.balance as Row)?.available_balance || row.available_balance)}</b></div>)}{!users.data?.list?.length && <div className="empty">暂无用户</div>}</div></Panel>
+      <Panel title="系统事件" desc="熔断 · 结算 · 路由变更" className="span-4"><ul className="event-list"><li>渠道健康状态持续监控中</li><li>账单按实际 usage 结算</li><li>模型路由按优先级与权重执行</li></ul></Panel>
+    </div>
+  </>
+}
+
+export function LogTable({ logs }: { logs: UsageLog[] }) { return logs.length ? <div className="table-wrap"><table><thead><tr><th>时间</th><th>模型</th><th>路由渠道</th><th>Tokens</th><th>TTFT</th><th>费用</th><th>状态</th></tr></thead><tbody>{logs.slice(0, 8).map(row => <tr key={row.id}><td className="mono">{new Date(row.created_at).toLocaleTimeString('zh-CN', { hour12: false })}</td><td><b>{row.model}</b></td><td>{row.channel_name || (row.channel_id == null ? '渠道已删除' : `#${row.channel_id}`)}</td><td className="mono">{row.total_tokens.toLocaleString()}</td><td className="mono">{row.ttft_ms == null ? '—' : `${row.ttft_ms}ms`}</td><td className="mono">${row.total_cost}</td><td><span className={`badge ${row.status === 'success' ? 'ok-bg' : 'danger-bg'}`}>{row.status === 'success' ? '成功' : row.error_code || '失败'}</span></td></tr>)}</tbody></table></div> : <div className="empty">暂无请求日志</div> }

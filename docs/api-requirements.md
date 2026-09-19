@@ -1,6 +1,6 @@
 # API Requirements
 
-本文档整理当前 `dashboard/` 前端项目对后端 API 的要求。后端实现时优先保证本文档中的管理端接口可用，Dashboard 才能正常启动和操作。
+本文档整理当前 `dashboard-react/` 前端项目对后端 API 的要求。后端实现时优先保证本文档中的管理端接口可用，Dashboard 才能正常启动和操作。
 
 ## 基础约定
 
@@ -999,7 +999,6 @@ GET    /admin/quota-usage
 
 ## 前端相关注意事项
 
-- `dashboard/js/data.js` 中所有管理端写操作都会解析 `{code,message,data}`。
+- `dashboard-react/src/api/client.ts` 中所有管理端写操作都会解析 `{code,message,data}`。
 - `/admin` 当前前端文案说明“不设认证”，如果后端加入认证，需要同步修改前端请求头逻辑。
-- 文档页会加载 `docs/README.md`、`docs/01-下游接口/*`、`docs/02-管理端接口/*` 等路径；如果这些文件不存在，文档页会提示加载失败。
-- Dashboard 中成功率计算当前在请求量为 0 时可能显示 `NaN%`，后续可在前端修正。
+- 文档页加载仓库中的后端结构和 API 需求文档；如果静态文档未复制到 Dashboard 构建产物，文档页会提示加载失败。

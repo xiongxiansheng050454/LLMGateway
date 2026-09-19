@@ -19,6 +19,6 @@ func newRouter(dashboardDir string, st store.Store, opts ...httpapi.Option) http
 	mux.HandleFunc("/v1", server.OpenAI)
 	mux.HandleFunc("/dashboard/index.html", server.DashboardIndex)
 	mux.Handle("/dashboard/", http.StripPrefix("/dashboard", http.HandlerFunc(server.Dashboard)))
-	mux.Handle("/", http.HandlerFunc(server.Dashboard))
+	mux.Handle("/", http.HandlerFunc(server.DashboardRoot))
 	return mux
 }
