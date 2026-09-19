@@ -27,7 +27,6 @@ WORKDIR /app
 COPY --from=build /out/llmgateway /app/llmgateway
 COPY --chown=llmgateway:llmgateway server/db/migrations /app/migrations
 COPY --from=dashboard-build --chown=llmgateway:llmgateway /src/dashboard-react/dist /app/dashboard
-COPY --chown=llmgateway:llmgateway dashboard /app/dashboard/legacy
 COPY --chown=llmgateway:llmgateway docs /app/dashboard/docs
 
 USER llmgateway
