@@ -10,7 +10,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -86,7 +85,7 @@ func newProxyFixtureWithStore(t *testing.T, upstream http.Handler, st store.Stor
 	}
 
 	return &proxyFixture{
-		server:   NewServer(filepath.Join("..", "..", "..", "dashboard"), st, opts...),
+		server:   NewServer(testDashboardDir(), st, opts...),
 		store:    st,
 		fullKey:  created.FullKey,
 		upstream: server,

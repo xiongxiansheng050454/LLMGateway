@@ -131,7 +131,7 @@ func TestStaticDashboardServed(t *testing.T) {
 	}{
 		{"root", "/", server.Dashboard},
 		{"index", "/", server.DashboardIndex},
-		{"asset", "/js/data.js", server.Dashboard},
+		{"asset", "/assets/test.js", server.Dashboard},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -150,7 +150,11 @@ func TestStaticDashboardServed(t *testing.T) {
 }
 
 func newTestServer() *Server {
-	return NewServer(filepath.Join("..", "..", "..", "dashboard"), storefake.New())
+	return NewServer(testDashboardDir(), storefake.New())
+}
+
+func testDashboardDir() string {
+	return filepath.Join("..", "..", "..", "dashboard-react", "dist")
 }
 
 func assertListResponse(t *testing.T, data map[string]any) {

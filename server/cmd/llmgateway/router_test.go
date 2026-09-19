@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -12,7 +13,11 @@ import (
 // TestNewRouterPaths exercises the production route table directly so drift
 // between cmd/llmgateway/router.go and the handler entry points is caught.
 func TestNewRouterPaths(t *testing.T) {
-	router := newRouter(filepath.Join("..", "..", "..", "dashboard-react", "dist"), storefake.New())
+	dashboardDir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dashboardDir, "index.html"), []byte("<!doctype html>"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	router := newRouter(dashboardDir, storefake.New())
 
 	tests := []struct {
 		name   string
