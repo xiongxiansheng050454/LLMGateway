@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -154,7 +155,20 @@ func newTestServer() *Server {
 }
 
 func testDashboardDir() string {
-	return filepath.Join("..", "..", "..", "dashboard-react", "dist")
+	dir, err := os.MkdirTemp("", "llmgateway-dashboard-test-")
+	if err != nil {
+		panic(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<!doctype html>"), 0o644); err != nil {
+		panic(err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "assets"), 0o755); err != nil {
+		panic(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "assets", "test.js"), []byte("console.log('test')"), 0o644); err != nil {
+		panic(err)
+	}
+	return dir
 }
 
 func assertListResponse(t *testing.T, data map[string]any) {
