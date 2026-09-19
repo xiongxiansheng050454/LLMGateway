@@ -1,0 +1,6 @@
+.git
+.idea
+communication
+dashboard-react/node_modules
+dashboard-react/dist
+server/tmp

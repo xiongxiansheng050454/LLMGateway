@@ -1,0 +1,1 @@
+export function AsyncState({ loading, error }: { loading: boolean; error: unknown }) { if (loading) return <p className="muted">加载中…</p>; if (error) return <p className="error">加载失败，请重试。</p>; return null }
