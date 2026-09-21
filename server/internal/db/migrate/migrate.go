@@ -1,87 +1,138 @@
-// Package migrate applies the SQL files in db/migrations in lexical order.
-//
-// It is a deliberately small runner built on pgx so the project does not need
-// an extra migration dependency. Each file is applied inside a transaction and
-// recorded in schema_migrations; already-applied versions are skipped.
+// Package migrate runs PostgreSQL schema migrations with tern.
 package migrate
 
 import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
-	"sort"
-	"strings"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	tern "github.com/jackc/tern/v2/migrate"
 )
 
-const createMigrationsTable = `CREATE TABLE IF NOT EXISTS schema_migrations (
-	version TEXT PRIMARY KEY,
-	applied_at TIMESTAMPTZ NOT NULL DEFAULT now()
-)`
+const (
+	versionTable  = "public.schema_version"
+	legacyTable   = "public.schema_migrations"
+	bootstrapLock = int64(1876129820301756)
+)
+
+// legacyMigrationNames is the final sequence managed by the former runner.
+// Tern requires unique, contiguous numeric versions, so its migration 10 is
+// the file that previously shared the 000009 prefix.
+var legacyMigrationNames = []string{
+	"000001_init.sql",
+	"000002_usage_logs_user_cascade.sql",
+	"000003_balance_transactions_order_per_user.sql",
+	"000004_drop_daily_usage_stats.sql",
+	"000005_channel_health.sql",
+	"000006_quota_reservations.sql",
+	"000007_usage_logs_aggregate_indexes.sql",
+	"000008_rate_limit_counters.sql",
+	"000009_channel_breaker_windows.sql",
+	"000009_remove_rate_limit_queue.sql",
+}
 
 // Run applies every pending migration in dir.
 func Run(ctx context.Context, pool *pgxpool.Pool, dir string) error {
 	if pool == nil {
 		return fmt.Errorf("migrate: nil pool")
 	}
-	if _, err := pool.Exec(ctx, createMigrationsTable); err != nil {
-		return fmt.Errorf("migrate: ensure schema_migrations: %w", err)
-	}
 
-	files, err := MigrationFiles(dir)
+	acquired, err := pool.Acquire(ctx)
 	if err != nil {
+		return fmt.Errorf("migrate: acquire connection: %w", err)
+	}
+	defer acquired.Release()
+	conn := acquired.Conn()
+
+	if err := bootstrapLegacyVersion(ctx, conn); err != nil {
 		return err
 	}
-	for _, file := range files {
-		version := filepath.Base(file)
 
-		var applied bool
-		if err := pool.QueryRow(ctx, "SELECT EXISTS (SELECT 1 FROM schema_migrations WHERE version = $1)", version).Scan(&applied); err != nil {
-			return fmt.Errorf("migrate: check %s: %w", version, err)
-		}
-		if applied {
-			continue
-		}
-
-		statement, err := os.ReadFile(file)
-		if err != nil {
-			return fmt.Errorf("migrate: read %s: %w", version, err)
-		}
-
-		tx, err := pool.Begin(ctx)
-		if err != nil {
-			return fmt.Errorf("migrate: begin %s: %w", version, err)
-		}
-		if _, err := tx.Exec(ctx, string(statement)); err != nil {
-			_ = tx.Rollback(ctx)
-			return fmt.Errorf("migrate: apply %s: %w", version, err)
-		}
-		if _, err := tx.Exec(ctx, "INSERT INTO schema_migrations (version) VALUES ($1)", version); err != nil {
-			_ = tx.Rollback(ctx)
-			return fmt.Errorf("migrate: record %s: %w", version, err)
-		}
-		if err := tx.Commit(ctx); err != nil {
-			return fmt.Errorf("migrate: commit %s: %w", version, err)
-		}
+	migrator, err := tern.NewMigrator(ctx, conn, versionTable)
+	if err != nil {
+		return fmt.Errorf("migrate: initialize tern: %w", err)
+	}
+	if err := migrator.LoadMigrations(os.DirFS(dir)); err != nil {
+		return fmt.Errorf("migrate: load migrations: %w", err)
+	}
+	if err := migrator.Migrate(ctx); err != nil {
+		return fmt.Errorf("migrate: run tern: %w", err)
 	}
 	return nil
 }
 
-// MigrationFiles returns the *.sql files in dir sorted by name.
-func MigrationFiles(dir string) ([]string, error) {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return nil, fmt.Errorf("migrate: read dir %s: %w", dir, err)
+func bootstrapLegacyVersion(ctx context.Context, conn *pgx.Conn) (err error) {
+	if _, err := conn.Exec(ctx, "SELECT pg_advisory_lock($1)", bootstrapLock); err != nil {
+		return fmt.Errorf("migrate: acquire bootstrap lock: %w", err)
 	}
-	files := []string{}
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".sql") {
-			continue
+	defer func() {
+		_, unlockErr := conn.Exec(ctx, "SELECT pg_advisory_unlock($1)", bootstrapLock)
+		if err == nil && unlockErr != nil {
+			err = fmt.Errorf("migrate: release bootstrap lock: %w", unlockErr)
 		}
-		files = append(files, filepath.Join(dir, entry.Name()))
+	}()
+
+	var ternTableExists bool
+	if err := conn.QueryRow(ctx, "SELECT to_regclass($1) IS NOT NULL", versionTable).Scan(&ternTableExists); err != nil {
+		return fmt.Errorf("migrate: check tern version table: %w", err)
 	}
-	sort.Strings(files)
-	return files, nil
+	if ternTableExists {
+		return nil
+	}
+
+	var legacyTableExists bool
+	if err := conn.QueryRow(ctx, "SELECT to_regclass($1) IS NOT NULL", legacyTable).Scan(&legacyTableExists); err != nil {
+		return fmt.Errorf("migrate: check legacy version table: %w", err)
+	}
+	if !legacyTableExists {
+		return nil
+	}
+
+	rows, err := conn.Query(ctx, "SELECT version FROM "+legacyTable)
+	if err != nil {
+		return fmt.Errorf("migrate: read legacy migration versions: %w", err)
+	}
+	defer rows.Close()
+
+	applied := make(map[string]struct{})
+	for rows.Next() {
+		var version string
+		if err := rows.Scan(&version); err != nil {
+			return fmt.Errorf("migrate: scan legacy migration version: %w", err)
+		}
+		applied[version] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("migrate: iterate legacy migration versions: %w", err)
+	}
+
+	if len(applied) == 0 {
+		return nil
+	}
+	for _, name := range legacyMigrationNames {
+		if _, ok := applied[name]; !ok {
+			return fmt.Errorf("migrate: legacy schema_migrations is incomplete; missing %s", name)
+		}
+	}
+	if len(applied) != len(legacyMigrationNames) {
+		return fmt.Errorf("migrate: legacy schema_migrations contains unknown versions")
+	}
+
+	tx, err := conn.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("migrate: begin tern version bootstrap: %w", err)
+	}
+	defer tx.Rollback(ctx)
+	if _, err := tx.Exec(ctx, "CREATE TABLE "+versionTable+" (version INT4 NOT NULL)"); err != nil {
+		return fmt.Errorf("migrate: create tern version table: %w", err)
+	}
+	if _, err := tx.Exec(ctx, "INSERT INTO "+versionTable+" (version) VALUES ($1)", len(legacyMigrationNames)); err != nil {
+		return fmt.Errorf("migrate: bootstrap tern version: %w", err)
+	}
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("migrate: commit tern version bootstrap: %w", err)
+	}
+	return nil
 }
