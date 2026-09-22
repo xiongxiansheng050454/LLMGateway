@@ -11,12 +11,14 @@ import (
 
 func newRouteTestApp(st *storefake.Store, randIntN func(int) int) *Service {
 	return &Service{
-		store:    st,
-		catalog:  newTestCatalog(st),
-		settleTx: st.SettlementTx(),
-		client:   &http.Client{},
-		randIntN: randIntN,
-		now:      time.Now,
+		store:     st,
+		catalog:   newTestCatalog(st),
+		quota:     newTestQuota(st, nil),
+		ratelimit: newTestRateLimit(st, nil),
+		settleTx:  st.SettlementTx(),
+		client:    &http.Client{},
+		randIntN:  randIntN,
+		now:       time.Now,
 	}
 }
 
@@ -150,7 +152,7 @@ func TestOrderedCandidatesDeduplicateChannelsAndKeepPriorityFallbacks(t *testing
 			t.Fatal(err)
 		}
 	}
-	service := NewService(st, cat, nil, func(int) int { return 0 }, time.Now)
+	service := NewService(st, cat, newTestQuota(st, nil), newTestRateLimit(st, nil), nil, func(int) int { return 0 }, time.Now)
 	candidates, err := service.orderedCandidates("gpt")
 	if err != nil {
 		t.Fatal(err)

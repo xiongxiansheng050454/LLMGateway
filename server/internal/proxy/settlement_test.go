@@ -13,7 +13,7 @@ import (
 )
 
 func newSettlementService(st *storefake.Store) *Service {
-	return NewService(st, newTestCatalog(st), nil, func(int) int { return 0 }, time.Now)
+	return NewService(st, newTestCatalog(st), newTestQuota(st, nil), newTestRateLimit(st, nil), nil, func(int) int { return 0 }, time.Now)
 }
 
 func TestSettleDebitsUserChannelAndWritesUsage(t *testing.T) {

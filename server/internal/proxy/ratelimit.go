@@ -85,7 +85,7 @@ func (a *Service) checkRateLimit(auth *accounts.AuthContext, model string, estim
 	}
 
 	enabled := true
-	result, err := a.store.ListRateLimits(&enabled, 1, 1000)
+	result, err := a.ratelimit.ListRateLimits(&enabled, 1, 1000)
 	if err != nil {
 		return err
 	}
@@ -141,7 +141,7 @@ func (a *Service) checkRateLimit(auth *accounts.AuthContext, model string, estim
 			}
 			count = tokenCount + *estimatedTokens
 		} else if item.Metric == "concurrency" {
-			current, countErr := a.store.CountActiveRateLimitReservations(context.Background(), auth.UserID, &auth.KeyID, filter.Model, nil)
+			current, countErr := a.ratelimit.CountActiveRateLimitReservations(context.Background(), auth.UserID, &auth.KeyID, filter.Model, nil)
 			if countErr != nil {
 				return countErr
 			}
@@ -166,7 +166,7 @@ func metricSince(now time.Time, metric string, windowSeconds int) string {
 
 func (a *Service) checkChannelRateLimit(auth *accounts.AuthContext, model string, channelID int, estimatedTokens int64) error {
 	enabled := true
-	result, err := a.store.ListRateLimits(&enabled, 1, 1000)
+	result, err := a.ratelimit.ListRateLimits(&enabled, 1, 1000)
 	if err != nil {
 		return err
 	}
@@ -191,7 +191,7 @@ func (a *Service) checkChannelRateLimit(auth *accounts.AuthContext, model string
 			err = countErr
 			count = current + estimatedTokens
 		} else if item.Metric == "concurrency" {
-			current, countErr := a.store.CountActiveRateLimitReservations(context.Background(), auth.UserID, &auth.KeyID, model, &channelID)
+			current, countErr := a.ratelimit.CountActiveRateLimitReservations(context.Background(), auth.UserID, &auth.KeyID, model, &channelID)
 			err = countErr
 			count = current + 1
 		} else {

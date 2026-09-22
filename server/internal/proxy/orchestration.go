@@ -85,14 +85,14 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 	if estimateErr != nil {
 		return ChatResponse{}, ErrRateLimited
 	}
-	rateReservation, rateErr := a.store.ReserveRateLimit(ctx, ratelimit.RateLimitReservationInput{RequestID: requestID, UserID: auth.UserID, APIKeyID: auth.KeyID, Model: req.Model, EstimatedTokens: int64(estimate.TotalTokens), ExpiresAt: a.now().Add(a.requestTimeout)})
+	rateReservation, rateErr := a.ratelimit.ReserveRateLimit(ctx, ratelimit.RateLimitReservationInput{RequestID: requestID, UserID: auth.UserID, APIKeyID: auth.KeyID, Model: req.Model, EstimatedTokens: int64(estimate.TotalTokens), ExpiresAt: a.now().Add(a.requestTimeout)})
 	if rateErr != nil {
 		return ChatResponse{}, ErrRateLimited
 	}
 	rateReservationOpen := true
 	defer func() {
 		if rateReservationOpen {
-			_ = a.store.ReleaseRateLimit(context.Background(), rateReservation.ID)
+			_ = a.ratelimit.ReleaseRateLimit(context.Background(), rateReservation.ID)
 		}
 	}()
 
@@ -122,7 +122,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 	releaseReservation := reservation.ID != 0
 	defer func() {
 		if releaseReservation {
-			_ = a.store.ReleaseQuota(context.Background(), reservation.ID)
+			_ = a.quota.ReleaseQuota(context.Background(), reservation.ID)
 		}
 	}()
 
@@ -289,7 +289,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 		return ChatResponse{}, err
 	}
 	releaseReservation = false
-	_ = a.store.FinalizeRateLimit(context.Background(), rateReservation.ID, int64(usage.TotalTokens))
+	_ = a.ratelimit.FinalizeRateLimit(context.Background(), rateReservation.ID, int64(usage.TotalTokens))
 	rateReservationOpen = false
 
 	// Best-effort: the request already succeeded and was charged, so a

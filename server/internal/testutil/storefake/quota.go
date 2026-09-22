@@ -43,48 +43,51 @@ func (s *Store) ListQuotaPolicies(filter domain.QuotaPolicyFilter) (domain.ListR
 	return domain.ListResponse[domain.QuotaPolicyDTO]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) CreateQuotaPolicy(in domain.QuotaPolicyInput) (domain.QuotaPolicyDTO, error) {
-	policy, err := domain.NormalizeQuotaPolicy(in, nil)
-	if err != nil {
-		return domain.QuotaPolicyDTO{}, err
+func (s *Store) GetQuotaPolicy(id int) (domain.QuotaPolicy, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	policy, ok := s.quotaPolicies[id]
+	if !ok {
+		return domain.QuotaPolicy{}, store.ErrNotFound
 	}
+	return *policy, nil
+}
+
+func (s *Store) InsertQuotaPolicy(policy domain.QuotaPolicy) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, current := range s.quotaPolicies {
 		if current.ScopeType == policy.ScopeType && current.ScopeID == policy.ScopeID && current.PeriodType == policy.PeriodType {
-			return domain.QuotaPolicyDTO{}, fmt.Errorf("%w: duplicate quota policy", store.ErrInvalid)
+			return 0, fmt.Errorf("%w: duplicate quota policy", store.ErrInvalid)
 		}
 	}
 	policy.ID = s.nextQuotaPolicyID
 	s.nextQuotaPolicyID++
-	s.quotaPolicies[policy.ID] = &policy
-	return domain.QuotaPolicyToDTO(policy), nil
+	stored := policy
+	s.quotaPolicies[stored.ID] = &stored
+	return stored.ID, nil
 }
 
-func (s *Store) UpdateQuotaPolicy(id int, in domain.QuotaPolicyInput) (domain.QuotaPolicyDTO, error) {
+func (s *Store) UpdateQuotaPolicyRecord(id int, policy domain.QuotaPolicy) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	existing := s.quotaPolicies[id]
-	if existing == nil {
-		return domain.QuotaPolicyDTO{}, store.ErrNotFound
-	}
-	policy, err := domain.NormalizeQuotaPolicy(in, existing)
-	if err != nil {
-		return domain.QuotaPolicyDTO{}, err
+	if _, ok := s.quotaPolicies[id]; !ok {
+		return false, nil
 	}
 	policy.ID = id
-	s.quotaPolicies[id] = &policy
-	return domain.QuotaPolicyToDTO(policy), nil
+	stored := policy
+	s.quotaPolicies[id] = &stored
+	return true, nil
 }
 
-func (s *Store) DeleteQuotaPolicy(id int) error {
+func (s *Store) DeleteQuotaPolicy(id int) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.quotaPolicies[id] == nil {
-		return store.ErrNotFound
+	if _, ok := s.quotaPolicies[id]; !ok {
+		return false, nil
 	}
 	delete(s.quotaPolicies, id)
-	return nil
+	return true, nil
 }
 
 func (s *Store) ListQuotaUsage(_ context.Context, filter domain.QuotaPolicyFilter) (domain.ListResponse[domain.QuotaUsageDTO], error) {
@@ -102,64 +105,136 @@ func (s *Store) ListQuotaUsage(_ context.Context, filter domain.QuotaPolicyFilte
 	return domain.ListResponse[domain.QuotaUsageDTO]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) ReserveQuota(_ context.Context, in domain.QuotaReserveInput) (domain.QuotaReservation, error) {
-	cost, err := money.Parse6(in.EstimatedCost)
-	if err != nil {
-		return domain.QuotaReservation{}, store.ErrInvalid
-	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.reapQuotaLocked(16, in.UserID, in.APIKeyID)
-	policies := []*domain.QuotaPolicy{}
-	for _, policy := range s.quotaPolicies {
-		if policy.Enabled && (policy.ScopeType == domain.QuotaScopeUser && policy.ScopeID == in.UserID || policy.ScopeType == domain.QuotaScopeAPIKey && policy.ScopeID == in.APIKeyID) {
-			policies = append(policies, policy)
-		}
-	}
-	if len(policies) == 0 {
-		return domain.QuotaReservation{}, nil
-	}
-	sort.Slice(policies, func(i, j int) bool { return policies[i].ID < policies[j].ID })
-	keys := []string{}
-	for _, policy := range policies {
-		start, end, _ := domain.QuotaPeriodBounds(s.now(), policy.PeriodType)
-		key := fakeQuotaBucketKey(policy.ID, start)
-		bucket := s.quotaBuckets[key]
-		if bucket == nil {
-			bucket = &fakeQuotaBucket{policyID: policy.ID, start: start, end: end}
-			s.quotaBuckets[key] = bucket
-		}
-		if policy.TokenLimit != nil && bucket.usedTokens+bucket.reservedTokens+in.EstimatedTokens > *policy.TokenLimit {
-			return domain.QuotaReservation{}, store.ErrQuotaExceeded
-		}
-		if policy.CostLimit != nil {
-			limit, _ := money.Parse6(*policy.CostLimit)
-			if bucket.usedCost.Add(bucket.reservedCost).Add(cost).Cmp(limit) > 0 {
-				return domain.QuotaReservation{}, store.ErrQuotaExceeded
-			}
-		}
-		keys = append(keys, key)
-	}
-	id := s.nextQuotaReservationID
-	s.nextQuotaReservationID++
-	for _, key := range keys {
-		b := s.quotaBuckets[key]
-		b.reservedTokens += in.EstimatedTokens
-		b.reservedCost = b.reservedCost.Add(cost)
-	}
-	s.quotaReservations[id] = &fakeQuotaReservation{id: id, requestID: in.RequestID, userID: in.UserID, keyID: in.APIKeyID, estimatedTokens: in.EstimatedTokens, estimatedCost: cost, status: "pending", expiresAt: in.ExpiresAt, items: keys}
-	return domain.QuotaReservation{ID: id, RequestID: in.RequestID, EstimatedTokens: in.EstimatedTokens, EstimatedCost: money.Format6(cost)}, nil
+// --- Tx primitives ---
+
+type quotaRunner struct {
+	store *Store
 }
 
-func (s *Store) ReleaseQuota(_ context.Context, id int64) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.releaseQuotaLocked(id, "released")
+func (s *Store) QuotaTx() domain.TxManager { return quotaRunner{store: s} }
+
+func (r quotaRunner) InTx(_ context.Context, fn func(domain.Tx) error) error {
+	r.store.mu.Lock()
+	defer r.store.mu.Unlock()
+	snapshot := r.store.snapshotQuota()
+	if err := fn(&quotaTx{s: r.store}); err != nil {
+		r.store.restoreQuota(snapshot)
+		return err
+	}
+	return nil
 }
-func (s *Store) ReapExpiredQuotaReservations(_ context.Context, limit int) (int, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.reapQuotaLocked(limit, 0, 0), nil
+
+type quotaSnapshot struct {
+	buckets           map[string]*fakeQuotaBucket
+	reservations      map[int64]*fakeQuotaReservation
+	nextReservationID int64
+}
+
+func (s *Store) snapshotQuota() quotaSnapshot {
+	snapshot := quotaSnapshot{
+		buckets:           make(map[string]*fakeQuotaBucket, len(s.quotaBuckets)),
+		reservations:      make(map[int64]*fakeQuotaReservation, len(s.quotaReservations)),
+		nextReservationID: s.nextQuotaReservationID,
+	}
+	for key, bucket := range s.quotaBuckets {
+		copied := *bucket
+		snapshot.buckets[key] = &copied
+	}
+	for id, reservation := range s.quotaReservations {
+		copied := *reservation
+		copied.items = append([]string(nil), reservation.items...)
+		snapshot.reservations[id] = &copied
+	}
+	return snapshot
+}
+
+func (s *Store) restoreQuota(snapshot quotaSnapshot) {
+	s.quotaBuckets = snapshot.buckets
+	s.quotaReservations = snapshot.reservations
+	s.nextQuotaReservationID = snapshot.nextReservationID
+}
+
+type quotaTx struct {
+	s *Store
+}
+
+func (t *quotaTx) ApplicablePolicies(userID, keyID int) ([]domain.QuotaPolicy, error) {
+	policies := []domain.QuotaPolicy{}
+	for _, policy := range t.s.quotaPolicies {
+		if !policy.Enabled {
+			continue
+		}
+		if policy.ScopeType == domain.QuotaScopeUser && policy.ScopeID == userID || policy.ScopeType == domain.QuotaScopeAPIKey && policy.ScopeID == keyID {
+			policies = append(policies, *policy)
+		}
+	}
+	sort.Slice(policies, func(i, j int) bool { return policies[i].ID < policies[j].ID })
+	return policies, nil
+}
+
+func (t *quotaTx) ReapExpired(now time.Time, limit, userID, keyID int) (int, error) {
+	return t.s.reapQuotaLocked(now, limit, userID, keyID), nil
+}
+
+func (t *quotaTx) InsertReservation(in domain.QuotaReservationInsert) (int64, error) {
+	cost, err := money.Parse6(in.EstimatedCost)
+	if err != nil {
+		return 0, store.ErrInvalid
+	}
+	id := t.s.nextQuotaReservationID
+	t.s.nextQuotaReservationID++
+	t.s.quotaReservations[id] = &fakeQuotaReservation{id: id, requestID: in.RequestID, userID: in.UserID, keyID: in.APIKeyID, estimatedTokens: in.EstimatedTokens, estimatedCost: cost, status: "pending", expiresAt: in.ExpiresAt}
+	return id, nil
+}
+
+func (t *quotaTx) UpsertBucket(policyID int, start, end time.Time) error {
+	key := fakeQuotaBucketKey(policyID, start)
+	if t.s.quotaBuckets[key] == nil {
+		t.s.quotaBuckets[key] = &fakeQuotaBucket{policyID: policyID, start: start, end: end}
+	}
+	return nil
+}
+
+func (t *quotaTx) LockBucket(int, time.Time) error { return nil }
+
+func (t *quotaTx) ReserveBucket(policyID int, start time.Time, tokens int64, cost string) (bool, error) {
+	policy := t.s.quotaPolicies[policyID]
+	if policy == nil {
+		return false, store.ErrNotFound
+	}
+	parsedCost, err := money.Parse6(cost)
+	if err != nil {
+		return false, store.ErrInvalid
+	}
+	bucket := t.s.quotaBuckets[fakeQuotaBucketKey(policyID, start)]
+	if bucket == nil {
+		return false, store.ErrNotFound
+	}
+	if policy.TokenLimit != nil && bucket.usedTokens+bucket.reservedTokens+tokens > *policy.TokenLimit {
+		return false, nil
+	}
+	if policy.CostLimit != nil {
+		limit, _ := money.Parse6(*policy.CostLimit)
+		if bucket.usedCost.Add(bucket.reservedCost).Add(parsedCost).Cmp(limit) > 0 {
+			return false, nil
+		}
+	}
+	bucket.reservedTokens += tokens
+	bucket.reservedCost = bucket.reservedCost.Add(parsedCost)
+	return true, nil
+}
+
+func (t *quotaTx) InsertReservationItem(reservationID int64, policyID int, start time.Time, _ int64, _ string) error {
+	reservation := t.s.quotaReservations[reservationID]
+	if reservation == nil {
+		return store.ErrNotFound
+	}
+	reservation.items = append(reservation.items, fakeQuotaBucketKey(policyID, start))
+	return nil
+}
+
+func (t *quotaTx) ReleaseReservation(reservationID int64, status string, _ time.Time) error {
+	return t.s.releaseQuotaLocked(reservationID, status)
 }
 
 func (s *Store) releaseQuotaLocked(id int64, status string) error {
@@ -175,7 +250,8 @@ func (s *Store) releaseQuotaLocked(id int64, status string) error {
 	r.status = status
 	return nil
 }
-func (s *Store) reapQuotaLocked(limit, userID, keyID int) int {
+
+func (s *Store) reapQuotaLocked(now time.Time, limit, userID, keyID int) int {
 	if limit <= 0 {
 		limit = 100
 	}
@@ -184,13 +260,14 @@ func (s *Store) reapQuotaLocked(limit, userID, keyID int) int {
 		if count >= limit {
 			break
 		}
-		if r.status == "pending" && !r.expiresAt.After(s.now()) && (userID == 0 || r.userID == userID || r.keyID == keyID) {
+		if r.status == "pending" && !r.expiresAt.After(now) && (userID == 0 || r.userID == userID || r.keyID == keyID) {
 			_ = s.releaseQuotaLocked(id, "expired")
 			count++
 		}
 	}
 	return count
 }
+
 func fakeQuotaBucketKey(policyID int, start time.Time) string {
 	return fmt.Sprintf("%d:%s", policyID, start.UTC().Format(time.RFC3339))
 }

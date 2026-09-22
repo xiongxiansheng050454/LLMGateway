@@ -41,7 +41,7 @@ func (s *completionStream) Close() error {
 		s.cancel()
 	}
 	if s.rateReservationID != 0 {
-		_ = s.service.store.ReleaseRateLimit(context.Background(), s.rateReservationID)
+		_ = s.service.ratelimit.ReleaseRateLimit(context.Background(), s.rateReservationID)
 	}
 	return s.body.Close()
 }
@@ -61,7 +61,7 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 	settled := false
 	defer func() {
 		if !settled && s.reservationID != 0 {
-			_ = s.service.store.ReleaseQuota(context.Background(), s.reservationID)
+			_ = s.service.quota.ReleaseQuota(context.Background(), s.reservationID)
 		}
 	}()
 
@@ -158,7 +158,7 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 	}
 	settled = true
 	if s.rateReservationID != 0 {
-		_ = s.service.store.FinalizeRateLimit(context.Background(), s.rateReservationID, int64(usage.TotalTokens))
+		_ = s.service.ratelimit.FinalizeRateLimit(context.Background(), s.rateReservationID, int64(usage.TotalTokens))
 		s.rateReservationID = 0
 	}
 	_ = s.service.store.UpdateKeyLastUsed(s.auth.KeyID)
@@ -221,7 +221,7 @@ func (s *completionStream) settlePartial(text string, ttft *int, code string) bo
 		return false
 	}
 	if s.rateReservationID != 0 {
-		_ = s.service.store.FinalizeRateLimit(context.Background(), s.rateReservationID, int64(usage.TotalTokens))
+		_ = s.service.ratelimit.FinalizeRateLimit(context.Background(), s.rateReservationID, int64(usage.TotalTokens))
 		s.rateReservationID = 0
 	}
 	_ = s.service.store.UpdateKeyLastUsed(s.auth.KeyID)

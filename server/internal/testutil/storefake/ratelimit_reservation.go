@@ -2,45 +2,42 @@ package storefake
 
 import (
 	domain "LLMGateway/server/internal/ratelimit"
-	"LLMGateway/server/internal/store"
-	"context"
-	"time"
 )
 
-func (s *Store) ReserveRateLimit(_ context.Context, in domain.RateLimitReservationInput) (domain.RateLimitReservation, error) {
-	if in.RequestID == "" || in.UserID <= 0 || in.APIKeyID <= 0 || in.EstimatedTokens < 0 || !in.ExpiresAt.After(s.now()) {
-		return domain.RateLimitReservation{}, store.ErrInvalid
-	}
+func (s *Store) InsertRateLimitReservation(in domain.RateLimitReservationInput) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id := s.nextRateLimitReservationID
 	s.nextRateLimitReservationID++
 	s.rateLimitReservations[id] = in
-	return domain.RateLimitReservation{ID: id}, nil
+	return id, nil
 }
-func (s *Store) FinalizeRateLimit(_ context.Context, id int64, _ int64) error {
+
+func (s *Store) FinalizeRateLimitReservation(id int64) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.rateLimitReservations[id]; !ok {
-		return store.ErrNotFound
+		return false, nil
 	}
 	delete(s.rateLimitReservations, id)
-	return nil
+	return true, nil
 }
-func (s *Store) ReleaseRateLimit(_ context.Context, id int64) error {
+
+func (s *Store) ReleaseRateLimitReservation(id int64) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.rateLimitReservations[id]; !ok {
-		return store.ErrNotFound
+		return false, nil
 	}
 	delete(s.rateLimitReservations, id)
-	return nil
+	return true, nil
 }
-func (s *Store) ReapRateLimitReservations(_ context.Context, limit int) (int, error) {
+
+func (s *Store) ReapRateLimitReservations(limit int) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	n := 0
-	now := time.Now()
+	now := s.now()
 	for id, in := range s.rateLimitReservations {
 		if n >= limit {
 			break
@@ -53,7 +50,7 @@ func (s *Store) ReapRateLimitReservations(_ context.Context, limit int) (int, er
 	return n, nil
 }
 
-func (s *Store) CountActiveRateLimitReservations(_ context.Context, userID int, apiKeyID *int, model string, channelID *int) (int64, error) {
+func (s *Store) CountActiveRateLimitReservations(userID int, apiKeyID *int, model string, channelID *int) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var count int64

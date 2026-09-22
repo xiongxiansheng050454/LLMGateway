@@ -8,6 +8,8 @@ import (
 	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/catalog"
 	"LLMGateway/server/internal/crypto"
+	"LLMGateway/server/internal/quota"
+	"LLMGateway/server/internal/ratelimit"
 	"LLMGateway/server/internal/testutil/storefake"
 )
 
@@ -15,9 +17,11 @@ const testEncryptionKey = "0123456789abcdef0123456789abcdef"
 
 // Deps holds the fake store and the module servers wired over it.
 type Deps struct {
-	Store    *storefake.Store
-	Accounts *accounts.Server
-	Catalog  *catalog.Server
+	Store     *storefake.Store
+	Accounts  *accounts.Server
+	Catalog   *catalog.Server
+	Quota     *quota.Server
+	RateLimit *ratelimit.Server
 }
 
 // New builds a Deps over a fresh fake store.
@@ -40,5 +44,7 @@ func NewWithStore(st *storefake.Store) *Deps {
 			Cipher: cipher,
 			Client: &http.Client{},
 		}),
+		Quota:     quota.New(st, st.QuotaTx(), nil),
+		RateLimit: ratelimit.New(st, nil),
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"LLMGateway/server/internal/db/migrate"
 	"LLMGateway/server/internal/httpapi"
 	"LLMGateway/server/internal/quota"
+	"LLMGateway/server/internal/ratelimit"
 	"LLMGateway/server/internal/store/postgres"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -53,7 +54,7 @@ func run() error {
 	workers.Add(1)
 	go func() {
 		defer workers.Done()
-		runQuotaReaper(ctx, st, time.Duration(cfg.QuotaReaperIntervalSeconds)*time.Second, cfg.QuotaReaperBatchSize)
+		runQuotaReaper(ctx, quota.New(st, st.QuotaTx(), time.Now), ratelimit.New(st, time.Now), time.Duration(cfg.QuotaReaperIntervalSeconds)*time.Second, cfg.QuotaReaperBatchSize)
 	}()
 
 	serveErr := make(chan error, 1)
@@ -80,12 +81,7 @@ func run() error {
 	return err
 }
 
-type reaperPort interface {
-	quota.Port
-	ReapRateLimitReservations(context.Context, int) (int, error)
-}
-
-func runQuotaReaper(ctx context.Context, st reaperPort, interval time.Duration, batchSize int) {
+func runQuotaReaper(ctx context.Context, quotaServer *quota.Server, rateServer *ratelimit.Server, interval time.Duration, batchSize int) {
 	if interval <= 0 {
 		interval = 30 * time.Second
 	}
@@ -96,10 +92,10 @@ func runQuotaReaper(ctx context.Context, st reaperPort, interval time.Duration, 
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if _, err := st.ReapRateLimitReservations(ctx, batchSize); err != nil && !errors.Is(err, context.Canceled) {
+			if _, err := rateServer.ReapRateLimitReservations(ctx, batchSize); err != nil && !errors.Is(err, context.Canceled) {
 				log.Printf("reap rate limit reservations: %v", err)
 			}
-			if _, err := st.ReapExpiredQuotaReservations(ctx, batchSize); err != nil && !errors.Is(err, context.Canceled) {
+			if _, err := quotaServer.ReapExpiredQuotaReservations(ctx, batchSize); err != nil && !errors.Is(err, context.Canceled) {
 				log.Printf("reap expired quota reservations: %v", err)
 			}
 		}

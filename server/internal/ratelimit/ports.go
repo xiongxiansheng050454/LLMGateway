@@ -1,19 +1,17 @@
 package ratelimit
 
-import (
-	"context"
-)
-
-// RateLimitStore manages rate limit rules. This issue only stores rules; it does
-// not enforce them at request time.
+// Port is the rate-limit persistence primitive surface. It exposes only CRUD
+// and query primitives: normalization and validation live on Server.
 type Port interface {
 	ListRateLimits(enabled *bool, page, pageSize int) (ListResponse[RateLimitRuleDTO], error)
-	CreateRateLimit(RateLimitInput) (RateLimitRuleDTO, error)
-	UpdateRateLimit(int, RateLimitInput) (RateLimitRuleDTO, error)
-	DeleteRateLimit(int) error
-	ReserveRateLimit(context.Context, RateLimitReservationInput) (RateLimitReservation, error)
-	FinalizeRateLimit(context.Context, int64, int64) error
-	ReleaseRateLimit(context.Context, int64) error
-	ReapRateLimitReservations(context.Context, int) (int, error)
-	CountActiveRateLimitReservations(context.Context, int, *int, string, *int) (int64, error)
+	GetRateLimit(id int) (RateLimitRule, error)
+	InsertRateLimit(rule RateLimitRule) (int, error)
+	UpdateRateLimitRecord(id int, rule RateLimitRule) (bool, error)
+	DeleteRateLimit(id int) (bool, error)
+
+	InsertRateLimitReservation(in RateLimitReservationInput) (int64, error)
+	FinalizeRateLimitReservation(id int64) (bool, error)
+	ReleaseRateLimitReservation(id int64) (bool, error)
+	ReapRateLimitReservations(limit int) (int, error)
+	CountActiveRateLimitReservations(userID int, apiKeyID *int, model string, channelID *int) (int64, error)
 }

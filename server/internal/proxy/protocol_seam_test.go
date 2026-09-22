@@ -44,7 +44,7 @@ func newProtocolSeamService(t *testing.T, transport http.RoundTripper, adapter P
 		t.Fatal(err)
 	}
 
-	service := NewService(st, cat, &http.Client{Transport: transport}, func(int) int { return 0 }, time.Now, adapter)
+	service := NewService(st, cat, newTestQuota(st, nil), newTestRateLimit(st, nil), &http.Client{Transport: transport}, func(int) int { return 0 }, time.Now, adapter)
 	auth := &domain.AuthContext{KeyID: createdKey.ID, UserID: 1, KeyActive: true, UserStatus: "active", AvailableBalance: "10.000000"}
 	return service, st, auth
 }

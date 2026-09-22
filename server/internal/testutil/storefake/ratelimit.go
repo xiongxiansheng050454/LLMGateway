@@ -28,53 +28,49 @@ func (s *Store) ListRateLimits(enabled *bool, page, pageSize int) (domain.ListRe
 	start, end := pageBounds(len(rules), page, pageSize)
 	list := []domain.RateLimitRuleDTO{}
 	for _, rule := range rules[start:end] {
-		list = append(list, rateLimitDTO(rule))
+		list = append(list, domain.RateLimitRuleToDTO(*rule))
 	}
 	return domain.ListResponse[domain.RateLimitRuleDTO]{List: list, Total: len(rules)}, nil
 }
 
-func (s *Store) CreateRateLimit(in domain.RateLimitInput) (domain.RateLimitRuleDTO, error) {
-	rule, err := domain.NormalizeRateLimit(in, nil)
-	if err != nil {
-		return domain.RateLimitRuleDTO{}, err
+func (s *Store) GetRateLimit(id int) (domain.RateLimitRule, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	rule, ok := s.rateLimits[id]
+	if !ok {
+		return domain.RateLimitRule{}, store.ErrNotFound
 	}
+	return *rule, nil
+}
 
+func (s *Store) InsertRateLimit(rule domain.RateLimitRule) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rule.ID = s.nextRateLimitID
 	s.nextRateLimitID++
 	stored := rule
 	s.rateLimits[stored.ID] = &stored
-	return rateLimitDTO(&stored), nil
+	return stored.ID, nil
 }
 
-func (s *Store) UpdateRateLimit(id int, in domain.RateLimitInput) (domain.RateLimitRuleDTO, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	existing, ok := s.rateLimits[id]
-	if !ok {
-		return domain.RateLimitRuleDTO{}, store.ErrNotFound
-	}
-
-	rule, err := domain.NormalizeRateLimit(in, existing)
-	if err != nil {
-		return domain.RateLimitRuleDTO{}, err
-	}
-	rule.ID = id
-	*s.rateLimits[id] = rule
-	return rateLimitDTO(&rule), nil
-}
-
-func (s *Store) DeleteRateLimit(id int) error {
+func (s *Store) UpdateRateLimitRecord(id int, rule domain.RateLimitRule) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.rateLimits[id]; !ok {
-		return store.ErrNotFound
+		return false, nil
 	}
-	delete(s.rateLimits, id)
-	return nil
+	rule.ID = id
+	stored := rule
+	s.rateLimits[id] = &stored
+	return true, nil
 }
 
-func rateLimitDTO(rule *domain.RateLimitRule) domain.RateLimitRuleDTO {
-	return domain.RateLimitRuleDTO{ID: rule.ID, RuleName: rule.RuleName, TargetType: rule.TargetType, TargetValue: rule.TargetValue, Metric: rule.Metric, LimitValue: rule.LimitValue, WindowSeconds: rule.WindowSeconds, Action: rule.Action, Priority: rule.Priority, Enabled: rule.Enabled, Extras: rule.Extras}
+func (s *Store) DeleteRateLimit(id int) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if _, ok := s.rateLimits[id]; !ok {
+		return false, nil
+	}
+	delete(s.rateLimits, id)
+	return true, nil
 }
