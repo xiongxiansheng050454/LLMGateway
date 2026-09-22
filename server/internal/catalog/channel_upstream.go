@@ -10,7 +10,7 @@ import (
 )
 
 func (a *Server) remoteModels(channelID int) (any, bool, int, string) {
-	ch, err := a.store.GetChannelSecret(channelID)
+	ch, err := a.GetChannelSecret(channelID)
 	if err != nil {
 		return httpcommon.Result(nil, err)
 	}

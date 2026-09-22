@@ -2,10 +2,13 @@ package postgres
 
 import (
 	"context"
+	"net/http"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
+	"LLMGateway/server/internal/catalog"
 	"LLMGateway/server/internal/crypto"
 	"LLMGateway/server/internal/db/migrate"
 
@@ -48,9 +51,28 @@ func testStore(t *testing.T) *Store {
 		t.Fatalf("truncate business tables: %v", err)
 	}
 
+	return New(pool)
+}
+
+func testCipher(t *testing.T) *crypto.Cipher {
+	t.Helper()
 	cipher, err := crypto.NewCipher([]byte(testEncryptionKey))
 	if err != nil {
 		t.Fatalf("build cipher: %v", err)
 	}
-	return New(pool, cipher)
+	return cipher
+}
+
+// testCatalog wires a catalog server over the integration store. It shares the
+// store clock so clock-injection tests keep working.
+func testCatalog(t *testing.T, st *Store) *catalog.Server {
+	t.Helper()
+	return catalog.New(catalog.Deps{
+		Store:  st,
+		Health: st,
+		Tx:     st.CatalogTx(),
+		Cipher: testCipher(t),
+		Client: &http.Client{},
+		Now:    func() time.Time { return st.now() },
+	})
 }

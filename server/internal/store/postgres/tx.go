@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"LLMGateway/server/internal/accounts"
+	"LLMGateway/server/internal/catalog"
 	"LLMGateway/server/internal/db/sqlc"
 	settlement "LLMGateway/server/internal/proxy/settlement"
 
@@ -61,6 +62,26 @@ func (m settlementTxManager) InTx(ctx context.Context, fn func(settlement.Tx) er
 
 // SettlementTx exposes transaction-scoped settlement primitives.
 func (s *Store) SettlementTx() settlement.TxManager { return settlementTxManager{store: s} }
+
+// catalogTxManager adapts Store to catalog.TxManager.
+type catalogTxManager struct {
+	store *Store
+}
+
+func (m catalogTxManager) InTx(ctx context.Context, fn func(catalog.Tx) error) error {
+	tx, err := m.store.pool.Begin(ctx)
+	if err != nil {
+		return mapError(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := fn(m.store.newTx(tx)); err != nil {
+		return err
+	}
+	return mapError(tx.Commit(ctx))
+}
+
+// CatalogTx exposes transaction-scoped catalog primitives.
+func (s *Store) CatalogTx() catalog.TxManager { return catalogTxManager{store: s} }
 
 func (s *Store) newTx(tx pgx.Tx) *Tx {
 	return &Tx{tx: tx, queries: sqlc.New(tx), now: s.now}

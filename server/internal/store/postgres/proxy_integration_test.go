@@ -24,6 +24,7 @@ func createKeyAndHash(t *testing.T, acc *accounts.Server, userID int) (int, stri
 
 func TestPGProxyStoreCapabilities(t *testing.T) {
 	st := testStore(t)
+	cat := testCatalog(t, st)
 	acc := accounts.New(st, st.AccountsTx())
 
 	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
@@ -74,7 +75,7 @@ func TestPGProxyStoreCapabilities(t *testing.T) {
 
 	// Pricing + route candidates.
 	create := func(name string, status, priority, weight int, balance string) int {
-		created, err := st.CreateChannel(domain.ChannelInput{Name: name, BaseURL: "https://" + name + ".test", APIKey: "sk", Status: status, Priority: priority, Weight: weight, Balance: strPtr(balance)})
+		created, err := cat.CreateChannel(domain.ChannelInput{Name: name, BaseURL: "https://" + name + ".test", APIKey: "sk", Status: status, Priority: priority, Weight: weight, Balance: strPtr(balance)})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -85,11 +86,11 @@ func TestPGProxyStoreCapabilities(t *testing.T) {
 	channelC := create("C", 1, 5, 100, "")
 	disabledChannel := create("D", 0, 99, 999, "")
 	for _, id := range []int{channelA, channelB, channelC, disabledChannel} {
-		if _, err := st.CreateChannelModel(id, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
+		if _, err := cat.CreateChannelModel(id, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := st.UpsertPricing(domain.PricingInput{ChannelID: channelA, ModelName: "gpt", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000", Currency: "USD"}); err != nil {
+	if _, err := cat.UpsertPricing(domain.PricingInput{ChannelID: channelA, ModelName: "gpt", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000", Currency: "USD"}); err != nil {
 		t.Fatal(err)
 	}
 	pricing, err := st.GetPricing(channelA, "gpt")
@@ -103,7 +104,7 @@ func TestPGProxyStoreCapabilities(t *testing.T) {
 		t.Fatalf("missing pricing err = %v, want ErrNotFound", err)
 	}
 
-	candidates, err := st.RouteCandidates("gpt")
+	candidates, err := cat.RouteCandidates("gpt")
 	if err != nil {
 		t.Fatalf("RouteCandidates: %v", err)
 	}
@@ -208,6 +209,7 @@ type proxySnapshot struct {
 
 func runProxyScenario(t *testing.T, st *Store) proxySnapshot {
 	t.Helper()
+	cat := testCatalog(t, st)
 	acc := accounts.New(st, st.AccountsTx())
 
 	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
@@ -228,7 +230,7 @@ func runProxyScenario(t *testing.T, st *Store) proxySnapshot {
 		if balance != "" {
 			balancePtr = &balance
 		}
-		created, err := st.CreateChannel(domain.ChannelInput{Name: name, BaseURL: "https://" + name + ".test", APIKey: "sk", Status: 1, Priority: priority, Weight: weight, Balance: balancePtr})
+		created, err := cat.CreateChannel(domain.ChannelInput{Name: name, BaseURL: "https://" + name + ".test", APIKey: "sk", Status: 1, Priority: priority, Weight: weight, Balance: balancePtr})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -237,11 +239,11 @@ func runProxyScenario(t *testing.T, st *Store) proxySnapshot {
 	channelA := create("A", 10, 100, "5.000000")
 	channelB := create("B", 10, 200, "")
 	for _, id := range []int{channelA, channelB} {
-		if _, err := st.CreateChannelModel(id, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
+		if _, err := cat.CreateChannelModel(id, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := st.UpsertPricing(domain.PricingInput{ChannelID: channelA, ModelName: "gpt", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000", CachedInputPricePer1M: "0.05000000", Currency: "USD"}); err != nil {
+	if _, err := cat.UpsertPricing(domain.PricingInput{ChannelID: channelA, ModelName: "gpt", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000", CachedInputPricePer1M: "0.05000000", Currency: "USD"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -251,7 +253,7 @@ func runProxyScenario(t *testing.T, st *Store) proxySnapshot {
 	}
 	_, missingPricingErr := st.GetPricing(channelA, "missing")
 
-	candidates, err := st.RouteCandidates("gpt")
+	candidates, err := cat.RouteCandidates("gpt")
 	if err != nil {
 		t.Fatal(err)
 	}

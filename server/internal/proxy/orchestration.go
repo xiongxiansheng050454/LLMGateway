@@ -24,7 +24,7 @@ import (
 // models returns the OpenAI-style model list visible to the key, filtered by
 // its permissions.
 func (a *Service) Models(auth *accounts.AuthContext) (ModelList, error) {
-	result, err := a.store.ListCatalogModels(true)
+	result, err := a.catalog.ListCatalogModels(true)
 	if err != nil {
 		return ModelList{}, err
 	}
@@ -148,7 +148,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 			}
 			return ChatResponse{}, err
 		}
-		secret, secretErr := a.store.GetChannelSecret(candidate.ChannelID)
+		secret, secretErr := a.catalog.GetChannelSecret(candidate.ChannelID)
 		if secretErr != nil {
 			return ChatResponse{}, secretErr
 		}
@@ -329,11 +329,11 @@ func classifyUpstreamResult(statusCode int, err error) (catalog.FailureReason, b
 // recordChannelHealth drives the circuit breaker state machine. It is
 // best-effort: a recording failure must never change the response.
 func (a *Service) recordChannelHealth(channelID int, success bool, reason catalog.FailureReason) {
-	_, _ = a.store.RecordChannelAttempt(context.Background(), channelID, success, reason)
+	_, _ = a.catalog.RecordChannelAttempt(context.Background(), channelID, success, reason)
 }
 
 func (a *Service) priceFor(channelID int, model string, usage *Usage) (string, string, string, error) {
-	pricing, err := a.store.GetPricing(channelID, model)
+	pricing, err := a.catalog.GetPricing(channelID, model)
 	if err != nil {
 		if errors.Is(err, catalog.ErrNotFound) {
 			// Known behaviour: a channel+model without pricing is served for

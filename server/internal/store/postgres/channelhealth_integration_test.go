@@ -10,17 +10,14 @@ import (
 	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
-func createHealthTestChannel(t *testing.T, st interface {
-	CreateChannel(domain.ChannelInput) (domain.ChannelDTO, error)
-	CreateChannelModel(int, domain.ChannelModel) (domain.ChannelModel, error)
-}) int {
+func createHealthTestChannel(t *testing.T, cat *catalog.Server) int {
 	t.Helper()
-	created, err := st.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
+	created, err := cat.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
 	channelID := created.ID
-	if _, err := st.CreateChannelModel(channelID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up", Enabled: true}); err != nil {
+	if _, err := cat.CreateChannelModel(channelID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	return channelID
@@ -28,10 +25,11 @@ func createHealthTestChannel(t *testing.T, st interface {
 
 func TestPGChannelHealthLifecycle(t *testing.T) {
 	st := testStore(t)
+	cat := testCatalog(t, st)
 	ctx := context.Background()
-	channelID := createHealthTestChannel(t, st)
+	channelID := createHealthTestChannel(t, cat)
 
-	health, err := st.GetChannelHealth(channelID)
+	health, err := cat.GetChannelHealth(channelID)
 	if err != nil {
 		t.Fatalf("GetChannelHealth: %v", err)
 	}
@@ -40,7 +38,7 @@ func TestPGChannelHealthLifecycle(t *testing.T) {
 	}
 
 	for i := 0; i < 5; i++ {
-		health, err = st.RecordChannelFailure(channelID, domain.FailureUpstream5xx)
+		health, err = cat.RecordChannelFailure(channelID, domain.FailureUpstream5xx)
 		if err != nil {
 			t.Fatalf("RecordChannelFailure: %v", err)
 		}
@@ -49,7 +47,7 @@ func TestPGChannelHealthLifecycle(t *testing.T) {
 		t.Fatalf("state = %s, want open with opened_at", health.State)
 	}
 
-	candidates, err := st.RouteCandidates("gpt")
+	candidates, err := cat.RouteCandidates("gpt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,7 +59,7 @@ func TestPGChannelHealthLifecycle(t *testing.T) {
 	if _, err := st.pool.Exec(ctx, "UPDATE channel_health SET opened_at = now() - interval '1 minute' WHERE channel_id = $1", channelID); err != nil {
 		t.Fatal(err)
 	}
-	candidates, err = st.RouteCandidates("gpt")
+	candidates, err = cat.RouteCandidates("gpt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,7 +67,7 @@ func TestPGChannelHealthLifecycle(t *testing.T) {
 		t.Fatalf("candidates total = %d, want 1 after cooldown", candidates.Total)
 	}
 
-	closed, err := st.RecordChannelSuccess(channelID)
+	closed, err := cat.RecordChannelSuccess(channelID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -77,10 +75,10 @@ func TestPGChannelHealthLifecycle(t *testing.T) {
 		t.Fatalf("unexpected closed state: %+v", closed)
 	}
 
-	if err := st.ResetChannelHealth(channelID); err != nil {
+	if err := cat.ResetChannelHealth(channelID); err != nil {
 		t.Fatalf("ResetChannelHealth: %v", err)
 	}
-	reset, _ := st.GetChannelHealth(channelID)
+	reset, _ := cat.GetChannelHealth(channelID)
 	if reset.State != domain.HealthClosed || reset.FailureCount != 0 {
 		t.Fatalf("after reset: %+v", reset)
 	}
@@ -88,11 +86,12 @@ func TestPGChannelHealthLifecycle(t *testing.T) {
 
 func TestPGChannelHealthHalfOpen(t *testing.T) {
 	st := testStore(t)
+	cat := testCatalog(t, st)
 	ctx := context.Background()
-	channelID := createHealthTestChannel(t, st)
+	channelID := createHealthTestChannel(t, cat)
 
 	for i := 0; i < 5; i++ {
-		if _, err := st.RecordChannelFailure(channelID, domain.FailureUpstream5xx); err != nil {
+		if _, err := cat.RecordChannelFailure(channelID, domain.FailureUpstream5xx); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -100,7 +99,7 @@ func TestPGChannelHealthHalfOpen(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	health, err := st.GetChannelHealth(channelID)
+	health, err := cat.GetChannelHealth(channelID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +107,7 @@ func TestPGChannelHealthHalfOpen(t *testing.T) {
 		t.Fatalf("state = %s, want half-open after cooldown", health.State)
 	}
 
-	reopened, err := st.RecordChannelFailure(channelID, domain.FailureUpstream5xx)
+	reopened, err := cat.RecordChannelFailure(channelID, domain.FailureUpstream5xx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -119,7 +118,8 @@ func TestPGChannelHealthHalfOpen(t *testing.T) {
 
 func TestPGChannelHealthConcurrentFailures(t *testing.T) {
 	st := testStore(t)
-	channelID := createHealthTestChannel(t, st)
+	cat := testCatalog(t, st)
+	channelID := createHealthTestChannel(t, cat)
 
 	const workers = 20
 	var wg sync.WaitGroup
@@ -128,7 +128,7 @@ func TestPGChannelHealthConcurrentFailures(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := st.RecordChannelFailure(channelID, domain.FailureUpstream5xx); err != nil {
+			if _, err := cat.RecordChannelFailure(channelID, domain.FailureUpstream5xx); err != nil {
 				errs <- err
 			}
 		}()
@@ -139,7 +139,7 @@ func TestPGChannelHealthConcurrentFailures(t *testing.T) {
 		t.Fatalf("concurrent RecordChannelFailure: %v", err)
 	}
 
-	health, err := st.GetChannelHealth(channelID)
+	health, err := cat.GetChannelHealth(channelID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -164,13 +164,10 @@ type healthSnapshot struct {
 	deterministicOpen string
 }
 
-func runHealthScenario(t *testing.T, st interface {
-	catalog.Port
-	catalog.HealthPort
-}, clock *time.Time) healthSnapshot {
+func runHealthScenario(t *testing.T, cat *catalog.Server, clock *time.Time) healthSnapshot {
 	t.Helper()
 
-	created, err := st.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
+	created, err := cat.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,7 +175,7 @@ func runHealthScenario(t *testing.T, st interface {
 
 	var health domain.ChannelHealth
 	for i := 0; i < 5; i++ {
-		health, err = st.RecordChannelFailure(channelID, domain.FailureUpstream5xx)
+		health, err = cat.RecordChannelFailure(channelID, domain.FailureUpstream5xx)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -193,18 +190,18 @@ func runHealthScenario(t *testing.T, st interface {
 	}
 
 	*clock = clock.Add(30 * time.Second)
-	afterCool, err := st.GetChannelHealth(channelID)
+	afterCool, err := cat.GetChannelHealth(channelID)
 	if err != nil {
 		t.Fatal(err)
 	}
 	snapshot.stateAfterCool = string(afterCool.State)
 
 	// Deterministic failure on a fresh channel opens immediately.
-	second, err := st.CreateChannel(domain.ChannelInput{Name: "Other", BaseURL: "https://other.test", APIKey: "sk", Status: 1})
+	second, err := cat.CreateChannel(domain.ChannelInput{Name: "Other", BaseURL: "https://other.test", APIKey: "sk", Status: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	det, err := st.RecordChannelFailure(second.ID, domain.FailureUpstream401)
+	det, err := cat.RecordChannelFailure(second.ID, domain.FailureUpstream401)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -218,7 +215,8 @@ func TestPGChannelHealthScenario(t *testing.T) {
 	pg := testStore(t)
 	pgClock := fixed
 	pg.now = func() time.Time { return pgClock }
-	got := runHealthScenario(t, pg, &pgClock)
+	cat := testCatalog(t, pg)
+	got := runHealthScenario(t, cat, &pgClock)
 
 	want := healthSnapshot{
 		state: "open", consecutive: 5, successCount: 0, failureCount: 5,

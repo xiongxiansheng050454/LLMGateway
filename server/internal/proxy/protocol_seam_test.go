@@ -17,6 +17,7 @@ import (
 func newProtocolSeamService(t *testing.T, transport http.RoundTripper, adapter ProtocolAdapter) (*Service, *storefake.Store, *domain.AuthContext) {
 	t.Helper()
 	st := storefake.New()
+	cat := newTestCatalog(st)
 	acc := accounts.New(st, st.AccountsTx())
 	if _, err := acc.CreateUser(domain.UserInput{Nickname: "seam-user"}); err != nil {
 		t.Fatal(err)
@@ -29,21 +30,21 @@ func newProtocolSeamService(t *testing.T, transport http.RoundTripper, adapter P
 		t.Fatal(err)
 	}
 	balance := "10.000000"
-	channel, err := st.CreateChannel(domain.ChannelInput{
+	channel, err := cat.CreateChannel(domain.ChannelInput{
 		Name: "seam-upstream", BaseURL: "http://upstream.test", APIKey: "secret", AuthType: "bearer",
 		Status: 1, Priority: 1, Weight: 1, Balance: &balance,
 	})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.CreateChannelModel(channel.ID, domain.ChannelModel{ModelName: "public-model", UpstreamModel: "configured-model", Enabled: true}); err != nil {
+	if _, err := cat.CreateChannelModel(channel.ID, domain.ChannelModel{ModelName: "public-model", UpstreamModel: "configured-model", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.UpsertPricing(domain.PricingInput{ChannelID: channel.ID, ModelName: "public-model", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
+	if _, err := cat.UpsertPricing(domain.PricingInput{ChannelID: channel.ID, ModelName: "public-model", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
 		t.Fatal(err)
 	}
 
-	service := NewService(st, &http.Client{Transport: transport}, func(int) int { return 0 }, time.Now, adapter)
+	service := NewService(st, cat, &http.Client{Transport: transport}, func(int) int { return 0 }, time.Now, adapter)
 	auth := &domain.AuthContext{KeyID: createdKey.ID, UserID: 1, KeyActive: true, UserStatus: "active", AvailableBalance: "10.000000"}
 	return service, st, auth
 }
@@ -146,23 +147,24 @@ func TestChatCompletionsFailsOverAndSettlesOnlyFinalSuccess(t *testing.T) {
 		}
 		return &http.Response{StatusCode: http.StatusOK, Body: io.NopCloser(strings.NewReader(`{"upstream":true}`)), Header: make(http.Header)}, nil
 	}), adapter)
+	cat := newTestCatalog(st)
 	secondBalance := "10.000000"
-	second, err := st.CreateChannel(domain.ChannelInput{Name: "second", BaseURL: "http://second.test", APIKey: "secret", AuthType: "bearer", Status: 1, Priority: 1, Weight: 1, Balance: &secondBalance})
+	second, err := cat.CreateChannel(domain.ChannelInput{Name: "second", BaseURL: "http://second.test", APIKey: "secret", AuthType: "bearer", Status: 1, Priority: 1, Weight: 1, Balance: &secondBalance})
 	if err != nil {
 		t.Fatal(err)
 	}
-	first, err := st.GetChannelSecret(1)
+	first, err := cat.GetChannelSecret(1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	first.BaseURL = "http://first.test"
-	if _, err := st.UpdateChannel(1, domain.ChannelInput{Name: first.Name, BaseURL: first.BaseURL, APIKey: first.APIKey, AuthType: first.AuthType, Status: 1, Priority: 2, Weight: 1, Balance: first.Balance}); err != nil {
+	if _, err := cat.UpdateChannel(1, domain.ChannelInput{Name: first.Name, BaseURL: first.BaseURL, APIKey: first.APIKey, AuthType: first.AuthType, Status: 1, Priority: 2, Weight: 1, Balance: first.Balance}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.CreateChannelModel(second.ID, domain.ChannelModel{ModelName: "public-model", UpstreamModel: "configured-model", Enabled: true}); err != nil {
+	if _, err := cat.CreateChannelModel(second.ID, domain.ChannelModel{ModelName: "public-model", UpstreamModel: "configured-model", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.UpsertPricing(domain.PricingInput{ChannelID: second.ID, ModelName: "public-model", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
+	if _, err := cat.UpsertPricing(domain.PricingInput{ChannelID: second.ID, ModelName: "public-model", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
 		t.Fatal(err)
 	}
 	response, err := service.ChatCompletions(context.Background(), auth, ChatRequest{Model: "public-model", Body: []byte(`{"model":"public-model"}`)}, "127.0.0.1")
@@ -192,11 +194,12 @@ func TestChatCompletionsDoesNotFailOverCallerHTTPError(t *testing.T) {
 		calls++
 		return &http.Response{StatusCode: http.StatusBadRequest, Body: io.NopCloser(strings.NewReader(`bad request`)), Header: make(http.Header)}, nil
 	}), adapter)
-	second, err := st.CreateChannel(domain.ChannelInput{Name: "second", BaseURL: "http://second.test", APIKey: "secret", AuthType: "bearer", Status: 1, Priority: 1, Weight: 1})
+	cat := newTestCatalog(st)
+	second, err := cat.CreateChannel(domain.ChannelInput{Name: "second", BaseURL: "http://second.test", APIKey: "secret", AuthType: "bearer", Status: 1, Priority: 1, Weight: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.CreateChannelModel(second.ID, domain.ChannelModel{ModelName: "public-model", UpstreamModel: "configured-model", Enabled: true}); err != nil {
+	if _, err := cat.CreateChannelModel(second.ID, domain.ChannelModel{ModelName: "public-model", UpstreamModel: "configured-model", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	response, err := service.ChatCompletions(context.Background(), auth, ChatRequest{Model: "public-model", Body: []byte(`{"model":"public-model"}`)}, "127.0.0.1")
@@ -221,11 +224,12 @@ func TestChatCompletionsPreservesFinalCallerErrorAfterEarlierRetryableFailure(t 
 		}
 		return &http.Response{StatusCode: status, Body: io.NopCloser(strings.NewReader(body)), Header: make(http.Header)}, nil
 	}), adapter)
-	second, err := st.CreateChannel(domain.ChannelInput{Name: "second", BaseURL: "http://second.test", APIKey: "secret", AuthType: "bearer", Status: 1, Priority: 1, Weight: 1})
+	cat := newTestCatalog(st)
+	second, err := cat.CreateChannel(domain.ChannelInput{Name: "second", BaseURL: "http://second.test", APIKey: "secret", AuthType: "bearer", Status: 1, Priority: 1, Weight: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.CreateChannelModel(second.ID, domain.ChannelModel{ModelName: "public-model", UpstreamModel: "configured-model", Enabled: true}); err != nil {
+	if _, err := cat.CreateChannelModel(second.ID, domain.ChannelModel{ModelName: "public-model", UpstreamModel: "configured-model", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	response, err := service.ChatCompletions(context.Background(), auth, ChatRequest{Model: "public-model", Body: []byte(`{"model":"public-model"}`)}, "127.0.0.1")

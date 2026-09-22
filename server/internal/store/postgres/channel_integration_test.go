@@ -16,8 +16,9 @@ func strPtr(value string) *string {
 
 func TestPGChannelCRUDAndSecretEncryption(t *testing.T) {
 	st := testStore(t)
+	cat := testCatalog(t, st)
 
-	created, err := st.CreateChannel(domain.ChannelInput{
+	created, err := cat.CreateChannel(domain.ChannelInput{
 		Name: "OpenAI", BaseURL: "https://api.openai.test", APIKey: "sk-plaintext-secret", AuthType: "bearer", Status: 1, Weight: 100, Priority: 10, Balance: strPtr("100.000000"),
 	})
 	if err != nil {
@@ -38,11 +39,11 @@ func TestPGChannelCRUDAndSecretEncryption(t *testing.T) {
 	if ciphertext == "sk-plaintext-secret" || ciphertext == "" {
 		t.Fatalf("api_key stored in plaintext: %q", ciphertext)
 	}
-	if _, err := st.cipher.Decrypt(ciphertext); err != nil {
+	if _, err := testCipher(t).Decrypt(ciphertext); err != nil {
 		t.Fatalf("ciphertext not decryptable: %v", err)
 	}
 
-	secret, err := st.GetChannelSecret(1)
+	secret, err := cat.GetChannelSecret(1)
 	if err != nil {
 		t.Fatalf("GetChannelSecret: %v", err)
 	}
@@ -51,7 +52,7 @@ func TestPGChannelCRUDAndSecretEncryption(t *testing.T) {
 	}
 
 	// Updating without api_key must keep the existing ciphertext.
-	if _, err := st.UpdateChannel(1, domain.ChannelInput{Name: "OpenAI Updated", BaseURL: "https://api2.test", AuthType: "bearer", Status: 1, Weight: 50, Priority: 20, Balance: strPtr("")}); err != nil {
+	if _, err := cat.UpdateChannel(1, domain.ChannelInput{Name: "OpenAI Updated", BaseURL: "https://api2.test", AuthType: "bearer", Status: 1, Weight: 50, Priority: 20, Balance: strPtr("")}); err != nil {
 		t.Fatalf("UpdateChannel: %v", err)
 	}
 	var afterUpdate string
@@ -61,7 +62,7 @@ func TestPGChannelCRUDAndSecretEncryption(t *testing.T) {
 	if afterUpdate != ciphertext {
 		t.Fatalf("api_key changed on update without api_key")
 	}
-	updated, _ := st.GetChannelSecret(1)
+	updated, _ := cat.GetChannelSecret(1)
 	if updated.APIKey != "sk-plaintext-secret" {
 		t.Fatalf("api_key lost after update: %q", updated.APIKey)
 	}
@@ -70,15 +71,15 @@ func TestPGChannelCRUDAndSecretEncryption(t *testing.T) {
 	}
 
 	// Updating with api_key rotates the ciphertext.
-	if _, err := st.UpdateChannel(1, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", AuthType: "bearer", Status: 1, Weight: 100, Priority: 10, APIKey: "sk-rotated", Balance: strPtr("5.000000")}); err != nil {
+	if _, err := cat.UpdateChannel(1, domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", AuthType: "bearer", Status: 1, Weight: 100, Priority: 10, APIKey: "sk-rotated", Balance: strPtr("5.000000")}); err != nil {
 		t.Fatalf("UpdateChannel rotate: %v", err)
 	}
-	rotated, _ := st.GetChannelSecret(1)
+	rotated, _ := cat.GetChannelSecret(1)
 	if rotated.APIKey != "sk-rotated" {
 		t.Fatalf("api_key not rotated: %q", rotated.APIKey)
 	}
 
-	statusDTO, err := st.UpdateChannelStatus(1, 0)
+	statusDTO, err := cat.UpdateChannelStatus(1, 0)
 	if err != nil {
 		t.Fatalf("UpdateChannelStatus: %v", err)
 	}
@@ -94,22 +95,23 @@ func TestPGChannelCRUDAndSecretEncryption(t *testing.T) {
 		t.Fatalf("ListChannels total = %d, want 1", listed.Total)
 	}
 
-	if err := st.DeleteChannel(1); err != nil {
+	if err := cat.DeleteChannel(1); err != nil {
 		t.Fatalf("DeleteChannel: %v", err)
 	}
-	if err := st.DeleteChannel(1); !errors.Is(err, store.ErrNotFound) {
+	if err := cat.DeleteChannel(1); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("second DeleteChannel err = %v, want ErrNotFound", err)
 	}
 }
 
 func TestPGChannelBalanceMathAndInvalidInput(t *testing.T) {
 	st := testStore(t)
+	cat := testCatalog(t, st)
 
-	if _, err := st.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk-secret", Status: 1, Balance: strPtr("10.000000")}); err != nil {
+	if _, err := cat.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk-secret", Status: 1, Balance: strPtr("10.000000")}); err != nil {
 		t.Fatalf("CreateChannel: %v", err)
 	}
 
-	dto, err := st.UpdateChannelBalance(1, "", "2.500000")
+	dto, err := cat.UpdateChannelBalance(1, "", "2.500000")
 	if err != nil {
 		t.Fatalf("UpdateChannelBalance delta: %v", err)
 	}
@@ -117,7 +119,7 @@ func TestPGChannelBalanceMathAndInvalidInput(t *testing.T) {
 		t.Fatalf("balance after delta = %+v, want 12.500000", dto.Balance)
 	}
 
-	dto, err = st.UpdateChannelBalance(1, "1.000000", "-0.250000")
+	dto, err = cat.UpdateChannelBalance(1, "1.000000", "-0.250000")
 	if err != nil {
 		t.Fatalf("UpdateChannelBalance set+delta: %v", err)
 	}
@@ -125,25 +127,26 @@ func TestPGChannelBalanceMathAndInvalidInput(t *testing.T) {
 		t.Fatalf("balance = %+v, want 0.750000", dto.Balance)
 	}
 
-	if _, err := st.UpdateChannelBalance(1, "", "abc"); !errors.Is(err, store.ErrInvalid) {
+	if _, err := cat.UpdateChannelBalance(1, "", "abc"); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid delta err = %v, want ErrInvalid", err)
 	}
-	if _, err := st.UpdateChannelBalance(1, "", ""); !errors.Is(err, store.ErrInvalid) {
+	if _, err := cat.UpdateChannelBalance(1, "", ""); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("empty balance/delta err = %v, want ErrInvalid", err)
 	}
-	if _, err := st.UpdateChannelBalance(404, "", "1.000000"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := cat.UpdateChannelBalance(404, "", "1.000000"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing channel err = %v, want ErrNotFound", err)
 	}
 }
 
 func TestPGModelMappingsCatalogAndCascade(t *testing.T) {
 	st := testStore(t)
+	cat := testCatalog(t, st)
 
-	if _, err := st.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk-secret", Status: 1}); err != nil {
+	if _, err := cat.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk-secret", Status: 1}); err != nil {
 		t.Fatal(err)
 	}
 
-	mapping, err := st.CreateChannelModel(1, domain.ChannelModel{ModelName: "gpt-4o-mini", UpstreamModel: "gpt-4o-mini-up", Enabled: true})
+	mapping, err := cat.CreateChannelModel(1, domain.ChannelModel{ModelName: "gpt-4o-mini", UpstreamModel: "gpt-4o-mini-up", Enabled: true})
 	if err != nil {
 		t.Fatalf("CreateChannelModel: %v", err)
 	}
@@ -151,17 +154,17 @@ func TestPGModelMappingsCatalogAndCascade(t *testing.T) {
 		t.Fatalf("unexpected mapping: %+v", mapping)
 	}
 
-	if _, err := st.CreateChannelModel(1, domain.ChannelModel{ModelName: "gpt-4o-mini", UpstreamModel: "dup", Enabled: true}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := cat.CreateChannelModel(1, domain.ChannelModel{ModelName: "gpt-4o-mini", UpstreamModel: "dup", Enabled: true}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("duplicate mapping err = %v, want ErrInvalid", err)
 	}
-	if _, err := st.CreateChannelModel(404, domain.ChannelModel{ModelName: "x", UpstreamModel: "x"}); !errors.Is(err, store.ErrNotFound) {
+	if _, err := cat.CreateChannelModel(404, domain.ChannelModel{ModelName: "x", UpstreamModel: "x"}); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing channel err = %v, want ErrNotFound", err)
 	}
 
-	if _, err := st.UpdateChannelModel(1, mapping.ID, "gpt-4o-mini", true); err != nil {
+	if _, err := cat.UpdateChannelModel(1, mapping.ID, "gpt-4o-mini", true); err != nil {
 		t.Fatalf("UpdateChannelModel: %v", err)
 	}
-	if _, err := st.UpdateChannelModel(1, 404, "x", true); !errors.Is(err, store.ErrNotFound) {
+	if _, err := cat.UpdateChannelModel(1, 404, "x", true); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing mapping err = %v, want ErrNotFound", err)
 	}
 
@@ -182,10 +185,10 @@ func TestPGModelMappingsCatalogAndCascade(t *testing.T) {
 	}
 
 	// Pricing then cascade delete via channel.
-	if _, err := st.UpsertPricing(domain.PricingInput{ChannelID: 1, ModelName: "gpt-4o-mini", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
+	if _, err := cat.UpsertPricing(domain.PricingInput{ChannelID: 1, ModelName: "gpt-4o-mini", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
 		t.Fatalf("UpsertPricing: %v", err)
 	}
-	if err := st.DeleteChannel(1); err != nil {
+	if err := cat.DeleteChannel(1); err != nil {
 		t.Fatalf("DeleteChannel: %v", err)
 	}
 	if models, _ := st.ListChannelModels(1); models.Total != 0 {
@@ -198,22 +201,23 @@ func TestPGModelMappingsCatalogAndCascade(t *testing.T) {
 
 func TestPGPricingUpsertValidationAndDelete(t *testing.T) {
 	st := testStore(t)
+	cat := testCatalog(t, st)
 
-	if _, err := st.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk-secret", Status: 1}); err != nil {
+	if _, err := cat.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk-secret", Status: 1}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.UpsertPricing(domain.PricingInput{ChannelID: 404, ModelName: "x", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000"}); !errors.Is(err, store.ErrNotFound) {
+	if _, err := cat.UpsertPricing(domain.PricingInput{ChannelID: 404, ModelName: "x", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000"}); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing channel err = %v, want ErrNotFound", err)
 	}
-	if _, err := st.UpsertPricing(domain.PricingInput{ChannelID: 1, ModelName: "missing", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000"}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := cat.UpsertPricing(domain.PricingInput{ChannelID: 1, ModelName: "missing", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000"}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("missing mapping err = %v, want ErrInvalid", err)
 	}
 
-	if _, err := st.CreateChannelModel(1, domain.ChannelModel{ModelName: "gpt-4o-mini", UpstreamModel: "gpt-4o-mini-up", Enabled: true}); err != nil {
+	if _, err := cat.CreateChannelModel(1, domain.ChannelModel{ModelName: "gpt-4o-mini", UpstreamModel: "gpt-4o-mini-up", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 
-	dto, err := st.UpsertPricing(domain.PricingInput{ChannelID: 1, ModelName: "gpt-4o-mini", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", CachedInputPricePer1M: "0.07500000", Currency: "USD"})
+	dto, err := cat.UpsertPricing(domain.PricingInput{ChannelID: 1, ModelName: "gpt-4o-mini", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", CachedInputPricePer1M: "0.07500000", Currency: "USD"})
 	if err != nil {
 		t.Fatalf("UpsertPricing: %v", err)
 	}
@@ -225,7 +229,7 @@ func TestPGPricingUpsertValidationAndDelete(t *testing.T) {
 	}
 
 	// Overwrite (upsert) the same channel+model.
-	overwritten, err := st.UpsertPricing(domain.PricingInput{ChannelID: 1, ModelName: "gpt-4o-mini", InputPricePer1M: "0.20000000", OutputPricePer1M: "0.70000000", Currency: "USD"})
+	overwritten, err := cat.UpsertPricing(domain.PricingInput{ChannelID: 1, ModelName: "gpt-4o-mini", InputPricePer1M: "0.20000000", OutputPricePer1M: "0.70000000", Currency: "USD"})
 	if err != nil {
 		t.Fatalf("UpsertPricing overwrite: %v", err)
 	}
@@ -233,7 +237,7 @@ func TestPGPricingUpsertValidationAndDelete(t *testing.T) {
 		t.Fatalf("upsert did not overwrite: %+v", overwritten)
 	}
 
-	if _, err := st.UpsertPricing(domain.PricingInput{ChannelID: 1, ModelName: "gpt-4o-mini", InputPricePer1M: "bad", OutputPricePer1M: "0.20000000"}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := cat.UpsertPricing(domain.PricingInput{ChannelID: 1, ModelName: "gpt-4o-mini", InputPricePer1M: "bad", OutputPricePer1M: "0.20000000"}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid price err = %v, want ErrInvalid", err)
 	}
 
@@ -247,8 +251,9 @@ func TestPGPricingUpsertValidationAndDelete(t *testing.T) {
 
 func TestPGChannelBalanceConcurrentDeltas(t *testing.T) {
 	st := testStore(t)
+	cat := testCatalog(t, st)
 
-	if _, err := st.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk-secret", Status: 1, Balance: strPtr("0.000000")}); err != nil {
+	if _, err := cat.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk-secret", Status: 1, Balance: strPtr("0.000000")}); err != nil {
 		t.Fatalf("CreateChannel: %v", err)
 	}
 
@@ -259,7 +264,7 @@ func TestPGChannelBalanceConcurrentDeltas(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := st.UpdateChannelBalance(1, "", "1.000000"); err != nil {
+			if _, err := cat.UpdateChannelBalance(1, "", "1.000000"); err != nil {
 				errs <- err
 			}
 		}()
@@ -270,7 +275,7 @@ func TestPGChannelBalanceConcurrentDeltas(t *testing.T) {
 		t.Fatalf("concurrent UpdateChannelBalance: %v", err)
 	}
 
-	secret, err := st.GetChannelSecret(1)
+	secret, err := cat.GetChannelSecret(1)
 	if err != nil {
 		t.Fatalf("GetChannelSecret: %v", err)
 	}
@@ -281,17 +286,18 @@ func TestPGChannelBalanceConcurrentDeltas(t *testing.T) {
 
 func TestPGMissingResourcesReturnNotFound(t *testing.T) {
 	st := testStore(t)
+	cat := testCatalog(t, st)
 
-	if _, err := st.UpdateChannel(404, domain.ChannelInput{Name: "x"}); !errors.Is(err, store.ErrNotFound) {
+	if _, err := cat.UpdateChannel(404, domain.ChannelInput{Name: "x"}); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("UpdateChannel err = %v, want ErrNotFound", err)
 	}
-	if _, err := st.UpdateChannelStatus(404, 1); !errors.Is(err, store.ErrNotFound) {
+	if _, err := cat.UpdateChannelStatus(404, 1); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("UpdateChannelStatus err = %v, want ErrNotFound", err)
 	}
-	if _, err := st.GetChannelSecret(404); !errors.Is(err, store.ErrNotFound) {
+	if _, err := cat.GetChannelSecret(404); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("GetChannelSecret err = %v, want ErrNotFound", err)
 	}
-	if err := st.DeleteChannelModel(1, 1); !errors.Is(err, store.ErrNotFound) {
+	if err := cat.DeleteChannelModel(1, 1); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("DeleteChannelModel err = %v, want ErrNotFound", err)
 	}
 }

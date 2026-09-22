@@ -1,7 +1,9 @@
 package proxy
 
 import (
+	"context"
 	"io"
+	"time"
 
 	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/catalog"
@@ -15,12 +17,22 @@ import (
 // Business modules depend on their own narrower ports instead.
 type Port interface {
 	accounts.Port
-	catalog.Port
-	catalog.HealthPort
 	quota.Port
 	ratelimit.Port
 	usage.Port
 	SettlementTx() settlement.TxManager
+}
+
+// Catalog is the catalog surface proxy orchestration needs. catalog.Server
+// implements it, so proxy depends on catalog rules rather than raw primitives.
+type Catalog interface {
+	ListCatalogModels(enabledOnly bool) (catalog.ListResponse[catalog.CatalogModelDTO], error)
+	RouteCandidates(modelName string) (catalog.ListResponse[catalog.RouteCandidate], error)
+	GetChannelHealth(channelID int) (catalog.ChannelHealth, error)
+	AcquireChannelProbe(ctx context.Context, channelID int, lease time.Duration) (bool, error)
+	GetChannelSecret(channelID int) (*catalog.Channel, error)
+	RecordChannelAttempt(ctx context.Context, channelID int, success bool, reason catalog.FailureReason) (catalog.ChannelHealth, error)
+	GetPricing(channelID int, modelName string) (catalog.PricingDTO, error)
 }
 
 // ChatRequest is the protocol-neutral input needed by proxy orchestration.
