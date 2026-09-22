@@ -10,6 +10,8 @@ import (
 	"time"
 
 	"LLMGateway/server/internal/accounts"
+	"LLMGateway/server/internal/proxy"
+	settlement "LLMGateway/server/internal/proxy/settlement"
 	"LLMGateway/server/internal/store"
 	domain "LLMGateway/server/internal/testutil/testtypes"
 )
@@ -75,7 +77,8 @@ func TestPGQuotaReleaseAndSettlementMoveReservedToUsed(t *testing.T) {
 	usage.ChannelID = nil
 	usage.TotalTokens = 25
 	usage.TotalCost = "1.250000"
-	if _, err := st.SettleChatCompletion(domain.ChatSettlementInput{ReservationID: settled.ID, UserID: 1, APIKeyID: keyID, Cost: "1.250000", Description: "chat", UsageLog: usage}); err != nil {
+	service := proxy.NewService(st, nil, func(int) int { return 0 }, time.Now)
+	if _, err := service.Settle(settlement.Input{ReservationID: settled.ID, UserID: 1, APIKeyID: keyID, Cost: "1.250000", Description: "chat", UsageLog: usage}); err != nil {
 		t.Fatal(err)
 	}
 

@@ -12,7 +12,7 @@ import (
 	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/catalog"
 	apperrors "LLMGateway/server/internal/errors"
-	usagecontracts "LLMGateway/server/internal/usage"
+	settlement "LLMGateway/server/internal/proxy/settlement"
 )
 
 var errDownstreamWrite = errors.New("downstream stream write failed")
@@ -140,7 +140,7 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 	s.service.recordChannelHealth(s.candidate.ChannelID, true, "")
 	usageLog := s.service.usageLogInput(s.requestID, s.auth, &s.candidate.ChannelID, s.candidate.UpstreamModel, s.publicModel, usage, cost, inputPrice, outputPrice, durationMs, s.clientIP, "success", "")
 	usageLog.TTFTMs = ttft
-	_, err = s.service.store.SettleChatCompletion(usagecontracts.ChatSettlementInput{
+	_, err = s.service.Settle(settlement.Input{
 		ReservationID: s.reservationID,
 		UserID:        s.auth.UserID, APIKeyID: s.auth.KeyID, ChannelID: &s.candidate.ChannelID, Cost: cost,
 		DebitChannel: s.candidate.Balance != nil, Description: "chat completion " + s.requestID, UsageLog: usageLog,
@@ -200,7 +200,7 @@ func (s *completionStream) settlePartial(text string, ttft *int, code string) bo
 	}
 	input := s.service.usageLogInput(s.requestID, s.auth, &s.candidate.ChannelID, s.candidate.UpstreamModel, s.publicModel, usage, cost, inputPrice, outputPrice, elapsedMs(s.start, s.service.now()), s.clientIP, "error", code)
 	input.TTFTMs = ttft
-	if _, err := s.service.store.SettleChatCompletion(usagecontracts.ChatSettlementInput{
+	if _, err := s.service.Settle(settlement.Input{
 		ReservationID: s.reservationID,
 		UserID:        s.auth.UserID,
 		APIKeyID:      s.auth.KeyID,

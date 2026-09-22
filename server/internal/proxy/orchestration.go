@@ -16,6 +16,7 @@ import (
 	"LLMGateway/server/internal/catalog"
 	apperrors "LLMGateway/server/internal/errors"
 	"LLMGateway/server/internal/money"
+	settlement "LLMGateway/server/internal/proxy/settlement"
 	"LLMGateway/server/internal/ratelimit"
 	usagecontracts "LLMGateway/server/internal/usage"
 )
@@ -270,7 +271,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 	}
 
 	usageLog := a.usageLogInput(requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, usage, cost, inputPrice, outputPrice, durationMs, clientIP, "success", "")
-	_, err = a.store.SettleChatCompletion(usagecontracts.ChatSettlementInput{
+	_, err = a.Settle(settlement.Input{
 		ReservationID: reservation.ID,
 		UserID:        auth.UserID,
 		APIKeyID:      auth.KeyID,

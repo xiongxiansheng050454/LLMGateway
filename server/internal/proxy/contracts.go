@@ -5,6 +5,7 @@ import (
 
 	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/catalog"
+	settlement "LLMGateway/server/internal/proxy/settlement"
 	"LLMGateway/server/internal/quota"
 	"LLMGateway/server/internal/ratelimit"
 	"LLMGateway/server/internal/usage"
@@ -19,6 +20,7 @@ type Port interface {
 	quota.Port
 	ratelimit.Port
 	usage.Port
+	SettlementTx() settlement.TxManager
 }
 
 // ChatRequest is the protocol-neutral input needed by proxy orchestration.

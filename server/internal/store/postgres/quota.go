@@ -9,7 +9,6 @@ import (
 	"LLMGateway/server/internal/money"
 	domain "LLMGateway/server/internal/quota"
 	"LLMGateway/server/internal/store"
-	usage "LLMGateway/server/internal/usage"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
@@ -397,14 +396,13 @@ func quotaReservationItems(ctx context.Context, tx pgx.Tx, reservationID int64) 
 	return items, mapError(rows.Err())
 }
 
-func settleQuotaTx(ctx context.Context, tx pgx.Tx, in usage.ChatSettlementInput, actualTokens int64, actualCost string, now time.Time) error {
-	reservationID := in.ReservationID
+func settleQuotaTx(ctx context.Context, tx pgx.Tx, reservationID int64, requestID string, userID, keyID int, actualTokens int64, actualCost string, now time.Time) error {
 	if reservationID == 0 {
 		return nil
 	}
-	var status, requestID string
-	var userID, keyID int
-	if err := tx.QueryRow(ctx, `SELECT status, request_id, user_id, api_key_id FROM quota_reservations WHERE id=$1 FOR UPDATE`, reservationID).Scan(&status, &requestID, &userID, &keyID); err != nil {
+	var status, storedRequestID string
+	var storedUserID, storedKeyID int
+	if err := tx.QueryRow(ctx, `SELECT status, request_id, user_id, api_key_id FROM quota_reservations WHERE id=$1 FOR UPDATE`, reservationID).Scan(&status, &storedRequestID, &storedUserID, &storedKeyID); err != nil {
 		return mapError(err)
 	}
 	if status == "settled" {
@@ -413,7 +411,7 @@ func settleQuotaTx(ctx context.Context, tx pgx.Tx, in usage.ChatSettlementInput,
 	if status != "pending" {
 		return fmt.Errorf("%w: quota reservation is %s", store.ErrInvalid, status)
 	}
-	if requestID != in.UsageLog.RequestID || userID != in.UserID || keyID != in.APIKeyID {
+	if storedRequestID != requestID || storedUserID != userID || storedKeyID != keyID {
 		return fmt.Errorf("%w: quota reservation identity mismatch", store.ErrInvalid)
 	}
 	items, err := quotaReservationItems(ctx, tx, reservationID)

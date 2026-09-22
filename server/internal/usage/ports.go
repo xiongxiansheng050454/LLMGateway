@@ -8,7 +8,6 @@ type Port interface {
 	ListUsageLogs(UsageLogFilter) (ListResponse[UsageLogDTO], error)
 	GetUsageLog(int) (UsageLogDTO, error)
 	InsertUsageLog(UsageLogInput) (int, error)
-	SettleChatCompletion(ChatSettlementInput) (int, error)
 	StatsOverview(startTime, endTime string) (StatsOverviewDTO, error)
 	StatsDaily(dateFrom, dateTo string, page, pageSize int) (ListResponse[StatsDailyDTO], error)
 	StatsChannels(startTime, endTime string) (ListResponse[StatsChannelDTO], error)

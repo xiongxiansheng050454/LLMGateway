@@ -12,6 +12,7 @@ import (
 func newRouteTestApp(st *storefake.Store, randIntN func(int) int) *Service {
 	return &Service{
 		store:    st,
+		settleTx: st.SettlementTx(),
 		client:   &http.Client{},
 		randIntN: randIntN,
 		now:      time.Now,

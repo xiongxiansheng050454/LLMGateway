@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"LLMGateway/server/internal/money"
+	settlement "LLMGateway/server/internal/proxy/settlement"
 )
 
 var (
@@ -22,6 +23,7 @@ var (
 
 type Service struct {
 	store            Port
+	settleTx         settlement.TxManager
 	client           *http.Client
 	randIntN         func(int) int
 	now              func() time.Time
@@ -38,7 +40,7 @@ func NewService(st Port, client *http.Client, randIntN func(int) int, now func()
 	if len(adapters) > 0 {
 		adapter = adapters[0]
 	}
-	return &Service{store: st, client: client, randIntN: randIntN, now: now, adapter: adapter, defaultMaxTokens: 4096, reservationTTL: 2 * time.Minute, requestTimeout: 60 * time.Second, maxAttempts: 3}
+	return &Service{store: st, settleTx: st.SettlementTx(), client: client, randIntN: randIntN, now: now, adapter: adapter, defaultMaxTokens: 4096, reservationTTL: 2 * time.Minute, requestTimeout: 60 * time.Second, maxAttempts: 3}
 }
 
 func (a *Service) ConfigureRequest(timeout time.Duration, maxAttempts int) {

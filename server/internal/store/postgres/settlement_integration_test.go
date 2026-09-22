@@ -3,8 +3,11 @@ package postgres
 import (
 	"errors"
 	"testing"
+	"time"
 
 	"LLMGateway/server/internal/accounts"
+	"LLMGateway/server/internal/proxy"
+	settlement "LLMGateway/server/internal/proxy/settlement"
 	"LLMGateway/server/internal/store"
 	domain "LLMGateway/server/internal/testutil/testtypes"
 )
@@ -27,7 +30,8 @@ func TestPGSettleChatCompletionRollsBackOnUsageInsertFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err = st.SettleChatCompletion(domain.ChatSettlementInput{UserID: 1, ChannelID: &channel.ID, Cost: "1.000000", DebitChannel: true, Description: "chat", UsageLog: successUsageInput("dup-pg", 1, channel.ID)})
+	service := proxy.NewService(st, nil, func(int) int { return 0 }, time.Now)
+	_, err = service.Settle(settlement.Input{UserID: 1, ChannelID: &channel.ID, Cost: "1.000000", DebitChannel: true, Description: "chat", UsageLog: successUsageInput("dup-pg", 1, channel.ID)})
 	if !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("err = %v, want ErrInvalid", err)
 	}
@@ -61,7 +65,8 @@ func TestPGSettleChatCompletionPersistsTTFT(t *testing.T) {
 	ttft := 42
 	usage := successUsageInput("stream-ttft-pg", 1, channel.ID)
 	usage.TTFTMs = &ttft
-	if _, err := st.SettleChatCompletion(domain.ChatSettlementInput{UserID: 1, ChannelID: &channel.ID, Cost: "0.000100", Description: "stream chat", UsageLog: usage}); err != nil {
+	service := proxy.NewService(st, nil, func(int) int { return 0 }, time.Now)
+	if _, err := service.Settle(settlement.Input{UserID: 1, ChannelID: &channel.ID, Cost: "0.000100", Description: "stream chat", UsageLog: usage}); err != nil {
 		t.Fatal(err)
 	}
 	logs, err := st.ListUsageLogs(domain.UsageLogFilter{Page: 1, PageSize: 10})
