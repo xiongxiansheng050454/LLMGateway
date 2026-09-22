@@ -4,6 +4,7 @@ package testtypes
 import (
 	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/catalog"
+	settlement "LLMGateway/server/internal/proxy/settlement"
 	"LLMGateway/server/internal/quota"
 	"LLMGateway/server/internal/ratelimit"
 	"LLMGateway/server/internal/usage"
@@ -81,7 +82,7 @@ type UsageLogFilter = usage.UsageLogFilter
 type UsageCountFilter = usage.UsageCountFilter
 type TokenCountFilter = usage.TokenCountFilter
 type UsageLogInput = usage.UsageLogInput
-type ChatSettlementInput = usage.ChatSettlementInput
+type SettlementInput = settlement.Input
 type RateLimitRule = ratelimit.RateLimitRule
 type RateLimitRuleDTO = ratelimit.RateLimitRuleDTO
 type RateLimitInput = ratelimit.RateLimitInput

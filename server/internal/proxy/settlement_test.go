@@ -1,16 +1,24 @@
-package storefake
+package proxy
 
 import (
 	"errors"
 	"testing"
+	"time"
 
+	"LLMGateway/server/internal/accounts"
+	settlement "LLMGateway/server/internal/proxy/settlement"
 	"LLMGateway/server/internal/store"
+	"LLMGateway/server/internal/testutil/storefake"
 	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
-func TestSettleChatCompletionDebitsUserChannelAndWritesUsage(t *testing.T) {
-	st := New()
-	acc := newAccounts(st)
+func newSettlementService(st *storefake.Store) *Service {
+	return NewService(st, nil, func(int) int { return 0 }, time.Now)
+}
+
+func TestSettleDebitsUserChannelAndWritesUsage(t *testing.T) {
+	st := storefake.New()
+	acc := accounts.New(st, st.AccountsTx())
 	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
@@ -23,7 +31,7 @@ func TestSettleChatCompletionDebitsUserChannelAndWritesUsage(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	usageID, err := st.SettleChatCompletion(domain.ChatSettlementInput{
+	usageID, err := newSettlementService(st).Settle(settlement.Input{
 		UserID:       1,
 		ChannelID:    &channel.ID,
 		Cost:         "1.250000",
@@ -32,7 +40,7 @@ func TestSettleChatCompletionDebitsUserChannelAndWritesUsage(t *testing.T) {
 		UsageLog:     successUsageInput("req-1", 1, channel.ID),
 	})
 	if err != nil {
-		t.Fatalf("SettleChatCompletion: %v", err)
+		t.Fatalf("Settle: %v", err)
 	}
 	if usageID == 0 {
 		t.Fatal("usage id not returned")
@@ -55,9 +63,9 @@ func TestSettleChatCompletionDebitsUserChannelAndWritesUsage(t *testing.T) {
 	}
 }
 
-func TestSettleChatCompletionRejectsInsufficientBalanceWithoutSuccessLog(t *testing.T) {
-	st := New()
-	acc := newAccounts(st)
+func TestSettleRejectsInsufficientBalanceWithoutSuccessLog(t *testing.T) {
+	st := storefake.New()
+	acc := accounts.New(st, st.AccountsTx())
 	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
@@ -66,7 +74,7 @@ func TestSettleChatCompletionRejectsInsufficientBalanceWithoutSuccessLog(t *test
 	}
 	channel, _ := st.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
 
-	_, err := st.SettleChatCompletion(domain.ChatSettlementInput{UserID: 1, ChannelID: &channel.ID, Cost: "2.000000", Description: "chat", UsageLog: successUsageInput("req-2", 1, channel.ID)})
+	_, err := newSettlementService(st).Settle(settlement.Input{UserID: 1, ChannelID: &channel.ID, Cost: "2.000000", Description: "chat", UsageLog: successUsageInput("req-2", 1, channel.ID)})
 	if !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("err = %v, want ErrInvalid", err)
 	}
@@ -80,9 +88,9 @@ func TestSettleChatCompletionRejectsInsufficientBalanceWithoutSuccessLog(t *test
 	}
 }
 
-func TestSettleChatCompletionCostZeroWritesUsageWithoutDebit(t *testing.T) {
-	st := New()
-	acc := newAccounts(st)
+func TestSettleCostZeroWritesUsageWithoutDebit(t *testing.T) {
+	st := storefake.New()
+	acc := accounts.New(st, st.AccountsTx())
 	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
@@ -91,8 +99,8 @@ func TestSettleChatCompletionCostZeroWritesUsageWithoutDebit(t *testing.T) {
 	}
 	channel, _ := st.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
 
-	if _, err := st.SettleChatCompletion(domain.ChatSettlementInput{UserID: 1, ChannelID: &channel.ID, Cost: "0.000000", Description: "free", UsageLog: successUsageInput("req-free", 1, channel.ID)}); err != nil {
-		t.Fatalf("SettleChatCompletion: %v", err)
+	if _, err := newSettlementService(st).Settle(settlement.Input{UserID: 1, ChannelID: &channel.ID, Cost: "0.000000", Description: "free", UsageLog: successUsageInput("req-free", 1, channel.ID)}); err != nil {
+		t.Fatalf("Settle: %v", err)
 	}
 	balance, _ := st.GetUserBalance(1)
 	if balance.AvailableBalance != "1.000000" {
@@ -108,9 +116,9 @@ func TestSettleChatCompletionCostZeroWritesUsageWithoutDebit(t *testing.T) {
 	}
 }
 
-func TestSettleChatCompletionDuplicateUsageRollsBack(t *testing.T) {
-	st := New()
-	acc := newAccounts(st)
+func TestSettleDuplicateUsageRollsBack(t *testing.T) {
+	st := storefake.New()
+	acc := accounts.New(st, st.AccountsTx())
 	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
@@ -123,7 +131,7 @@ func TestSettleChatCompletionDuplicateUsageRollsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, err := st.SettleChatCompletion(domain.ChatSettlementInput{UserID: 1, ChannelID: &channel.ID, Cost: "1.000000", DebitChannel: true, Description: "chat", UsageLog: successUsageInput("dup", 1, channel.ID)})
+	_, err := newSettlementService(st).Settle(settlement.Input{UserID: 1, ChannelID: &channel.ID, Cost: "1.000000", DebitChannel: true, Description: "chat", UsageLog: successUsageInput("dup", 1, channel.ID)})
 	if !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("err = %v, want ErrInvalid", err)
 	}

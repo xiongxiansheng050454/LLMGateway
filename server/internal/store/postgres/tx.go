@@ -2,9 +2,11 @@ package postgres
 
 import (
 	"context"
+	"time"
 
 	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/db/sqlc"
+	settlement "LLMGateway/server/internal/proxy/settlement"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -15,6 +17,7 @@ import (
 type Tx struct {
 	tx      pgx.Tx
 	queries *sqlc.Queries
+	now     func() time.Time
 }
 
 // accountsTxManager adapts Store to accounts.TxManager. A distinct type per
@@ -30,7 +33,7 @@ func (m accountsTxManager) InTx(ctx context.Context, fn func(accounts.Tx) error)
 		return mapError(err)
 	}
 	defer func() { _ = tx.Rollback(ctx) }()
-	if err := fn(&Tx{tx: tx, queries: sqlc.New(tx)}); err != nil {
+	if err := fn(m.store.newTx(tx)); err != nil {
 		return err
 	}
 	return mapError(tx.Commit(ctx))
@@ -38,3 +41,27 @@ func (m accountsTxManager) InTx(ctx context.Context, fn func(accounts.Tx) error)
 
 // AccountsTx exposes transaction-scoped account primitives.
 func (s *Store) AccountsTx() accounts.TxManager { return accountsTxManager{store: s} }
+
+// settlementTxManager adapts Store to settlement.TxManager.
+type settlementTxManager struct {
+	store *Store
+}
+
+func (m settlementTxManager) InTx(ctx context.Context, fn func(settlement.Tx) error) error {
+	tx, err := m.store.pool.Begin(ctx)
+	if err != nil {
+		return mapError(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := fn(m.store.newTx(tx)); err != nil {
+		return err
+	}
+	return mapError(tx.Commit(ctx))
+}
+
+// SettlementTx exposes transaction-scoped settlement primitives.
+func (s *Store) SettlementTx() settlement.TxManager { return settlementTxManager{store: s} }
+
+func (s *Store) newTx(tx pgx.Tx) *Tx {
+	return &Tx{tx: tx, queries: sqlc.New(tx), now: s.now}
+}

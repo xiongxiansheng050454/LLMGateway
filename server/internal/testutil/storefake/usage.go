@@ -5,8 +5,6 @@ import (
 	"sort"
 	"time"
 
-	accounts "LLMGateway/server/internal/accounts"
-	catalog "LLMGateway/server/internal/catalog"
 	"LLMGateway/server/internal/money"
 	"LLMGateway/server/internal/store"
 	domain "LLMGateway/server/internal/usage"
@@ -51,73 +49,6 @@ func (s *Store) insertUsageLogLocked(in domain.UsageLogInput) (int, error) {
 	s.nextUsageLogID++
 	s.usageLogs = append(s.usageLogs, log)
 	return log.ID, nil
-}
-
-func (s *Store) SettleChatCompletion(in domain.ChatSettlementInput) (int, error) {
-	parsedCost, err := money.Parse6(in.Cost)
-	if err != nil || parsedCost.Cmp(0) < 0 {
-		return 0, fmt.Errorf("%w: invalid cost", store.ErrInvalid)
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	user, ok := s.users[in.UserID]
-	if !ok {
-		return 0, store.ErrNotFound
-	}
-	if in.DebitChannel {
-		if in.ChannelID == nil {
-			return 0, fmt.Errorf("%w: channel_id is required", store.ErrInvalid)
-		}
-		if _, ok := s.channels[*in.ChannelID]; !ok {
-			return 0, store.ErrNotFound
-		}
-	}
-	for _, log := range s.usageLogs {
-		if log.RequestID == in.UsageLog.RequestID {
-			return 0, fmt.Errorf("%w: duplicate request_id", store.ErrInvalid)
-		}
-	}
-
-	currentUserBalance, err := money.Parse6(user.AvailableBalance)
-	if err != nil {
-		return 0, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
-	}
-	if parsedCost.Cmp(0) > 0 && currentUserBalance.Cmp(parsedCost) < 0 {
-		return 0, fmt.Errorf("%w: insufficient balance", store.ErrInvalid)
-	}
-
-	var channel *catalog.Channel
-	var nextChannelBalance *string
-	if in.DebitChannel && parsedCost.Cmp(0) > 0 {
-		channel = s.channels[*in.ChannelID]
-		base := money.Amount(0)
-		if channel.Balance != nil {
-			parsed, err := money.Parse6(*channel.Balance)
-			if err != nil {
-				return 0, fmt.Errorf("%w: invalid channel balance", store.ErrInvalid)
-			}
-			base = parsed
-		}
-		formatted := money.Format6(base.Sub(parsedCost))
-		nextChannelBalance = &formatted
-	}
-	if err := s.settleQuotaLocked(in, int64(in.UsageLog.TotalTokens), parsedCost); err != nil {
-		return 0, err
-	}
-
-	if parsedCost.Cmp(0) > 0 {
-		next := money.Format6(currentUserBalance.Sub(parsedCost))
-		user.AvailableBalance = next
-		tx := accounts.BalanceTransaction{ID: s.nextTxID, TxType: "consume", Amount: money.Format6(parsedCost), BalanceAfter: next, Description: in.Description, CreatedAt: nowRFC3339()}
-		s.nextTxID++
-		s.transactions[in.UserID] = append(s.transactions[in.UserID], tx)
-	}
-	if channel != nil {
-		channel.Balance = nextChannelBalance
-	}
-	return s.insertUsageLogLocked(in.UsageLog)
 }
 
 func (s *Store) ListUsageLogs(filter domain.UsageLogFilter) (domain.ListResponse[domain.UsageLogDTO], error) {

@@ -17,6 +17,7 @@ import (
 
 	"LLMGateway/server/internal/accounts"
 	openaiwire "LLMGateway/server/internal/proxy/openai"
+	settlement "LLMGateway/server/internal/proxy/settlement"
 	"LLMGateway/server/internal/testutil/storefake"
 	domain "LLMGateway/server/internal/testutil/testtypes"
 )
@@ -786,9 +787,18 @@ type countingSettlementStore struct {
 	settlementCalls atomic.Int32
 }
 
-func (s *countingSettlementStore) SettleChatCompletion(in domain.ChatSettlementInput) (int, error) {
-	s.settlementCalls.Add(1)
-	return s.Port.SettleChatCompletion(in)
+func (s *countingSettlementStore) SettlementTx() settlement.TxManager {
+	return countingSettlementTx{inner: s.Port.SettlementTx(), calls: &s.settlementCalls}
+}
+
+type countingSettlementTx struct {
+	inner settlement.TxManager
+	calls *atomic.Int32
+}
+
+func (c countingSettlementTx) InTx(ctx context.Context, fn func(settlement.Tx) error) error {
+	c.calls.Add(1)
+	return c.inner.InTx(ctx, fn)
 }
 
 func (f failingHealthStore) RecordChannelSuccess(int) (domain.ChannelHealth, error) {
