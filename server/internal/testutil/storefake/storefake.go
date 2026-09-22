@@ -10,6 +10,7 @@ import (
 
 	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/catalog"
+	settlement "LLMGateway/server/internal/proxy/settlement"
 	"LLMGateway/server/internal/quota"
 	"LLMGateway/server/internal/ratelimit"
 	"LLMGateway/server/internal/usage"
@@ -52,12 +53,16 @@ type Store struct {
 }
 
 var (
-	_ accounts.Port      = (*Store)(nil)
-	_ catalog.Port       = (*Store)(nil)
-	_ catalog.HealthPort = (*Store)(nil)
-	_ ratelimit.Port     = (*Store)(nil)
-	_ usage.Port         = (*Store)(nil)
-	_ quota.Port         = (*Store)(nil)
+	_ accounts.Port        = (*Store)(nil)
+	_ catalog.Port         = (*Store)(nil)
+	_ catalog.HealthPort   = (*Store)(nil)
+	_ ratelimit.Port       = (*Store)(nil)
+	_ usage.Port           = (*Store)(nil)
+	_ quota.Port           = (*Store)(nil)
+	_ accounts.TxManager   = accountsRunner{}
+	_ catalog.TxManager    = catalogRunner{}
+	_ quota.TxManager      = quotaRunner{}
+	_ settlement.TxManager = settlementRunner{}
 )
 
 // memoryKey is the fake gateway key record. Only the hash is retained;
