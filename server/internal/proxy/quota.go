@@ -23,7 +23,7 @@ func (a *Service) reserveQuota(ctx context.Context, requestID string, auth *acco
 	if err != nil {
 		return quota.QuotaReservation{}, err
 	}
-	reservation, err := a.store.ReserveQuota(ctx, quota.QuotaReserveInput{
+	reservation, err := a.quota.ReserveQuota(ctx, quota.QuotaReserveInput{
 		RequestID: requestID, UserID: auth.UserID, APIKeyID: auth.KeyID, Model: req.Model,
 		EstimatedTokens: int64(estimate.TotalTokens), EstimatedCost: estimatedCost,
 		ExpiresAt: a.now().Add(a.reservationTTL),

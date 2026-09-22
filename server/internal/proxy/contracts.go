@@ -17,10 +17,24 @@ import (
 // Business modules depend on their own narrower ports instead.
 type Port interface {
 	accounts.Port
-	quota.Port
-	ratelimit.Port
 	usage.Port
 	SettlementTx() settlement.TxManager
+}
+
+// Quota is the quota surface proxy orchestration needs. quota.Server implements
+// it, so proxy depends on quota rules rather than raw primitives.
+type Quota interface {
+	ReserveQuota(ctx context.Context, in quota.QuotaReserveInput) (quota.QuotaReservation, error)
+	ReleaseQuota(ctx context.Context, reservationID int64) error
+}
+
+// RateLimit is the rate-limit surface proxy orchestration needs.
+type RateLimit interface {
+	ListRateLimits(enabled *bool, page, pageSize int) (ratelimit.ListResponse[ratelimit.RateLimitRuleDTO], error)
+	ReserveRateLimit(ctx context.Context, in ratelimit.RateLimitReservationInput) (ratelimit.RateLimitReservation, error)
+	FinalizeRateLimit(ctx context.Context, id int64, tokens int64) error
+	ReleaseRateLimit(ctx context.Context, id int64) error
+	CountActiveRateLimitReservations(ctx context.Context, userID int, apiKeyID *int, model string, channelID *int) (int64, error)
 }
 
 // Catalog is the catalog surface proxy orchestration needs. catalog.Server

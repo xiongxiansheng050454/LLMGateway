@@ -58,6 +58,7 @@ type Port interface {
 	proxy.Port
 	AccountsTx() accounts.TxManager
 	CatalogTx() catalog.TxManager
+	QuotaTx() quota.TxManager
 }
 
 type options struct {
@@ -156,7 +157,9 @@ func NewServer(dashboardDir string, st Port, opts ...Option) *Server {
 		Client: client,
 		Now:    settings.now,
 	})
-	proxyService := proxy.NewService(st, catalogServer, client, settings.randIntN, settings.now, openaiwire.Adapter())
+	quotaServer := quota.New(st, st.QuotaTx(), settings.now)
+	ratelimitServer := ratelimit.New(st, settings.now)
+	proxyService := proxy.NewService(st, catalogServer, quotaServer, ratelimitServer, client, settings.randIntN, settings.now, openaiwire.Adapter())
 	proxyService.ConfigureQuota(settings.quotaDefaultMaxTokens, settings.quotaReservationTTL)
 	proxyService.ConfigureRequest(settings.upstreamTimeout, settings.upstreamMaxAttempts)
 	proxyService.ConfigureMinimumRouteBalance(settings.minimumRouteBalance)
@@ -167,8 +170,8 @@ func NewServer(dashboardDir string, st Port, opts ...Option) *Server {
 		catalog:      catalogServer,
 		accounts:     accounts.New(st, st.AccountsTx()),
 		usage:        usage.New(st),
-		ratelimit:    ratelimit.New(st),
-		quota:        quota.New(st),
+		ratelimit:    ratelimitServer,
+		quota:        quotaServer,
 		dashboardDir: dashboardDir,
 		dashboard:    http.FileServer(http.Dir(dashboardDir)),
 	}

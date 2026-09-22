@@ -19,6 +19,8 @@ import (
 	"LLMGateway/server/internal/catalog"
 	openaiwire "LLMGateway/server/internal/proxy/openai"
 	settlement "LLMGateway/server/internal/proxy/settlement"
+	"LLMGateway/server/internal/quota"
+	"LLMGateway/server/internal/ratelimit"
 	"LLMGateway/server/internal/testutil/storefake"
 	domain "LLMGateway/server/internal/testutil/testtypes"
 )
@@ -45,12 +47,14 @@ func upstreamSuccess() http.Handler {
 }
 
 type proxyFixture struct {
-	server   *Server
-	store    Port
-	accounts *accounts.Server
-	catalog  *catalog.Server
-	fullKey  string
-	upstream *httptest.Server
+	server    *Server
+	store     Port
+	accounts  *accounts.Server
+	catalog   *catalog.Server
+	quota     *quota.Server
+	ratelimit *ratelimit.Server
+	fullKey   string
+	upstream  *httptest.Server
 }
 
 func newProxyFixture(t *testing.T, upstream http.Handler, opts ...Option) *proxyFixture {
@@ -91,12 +95,14 @@ func newProxyFixtureWithStore(t *testing.T, upstream http.Handler, st Port, opts
 	}
 
 	return &proxyFixture{
-		server:   handler,
-		store:    st,
-		accounts: acc,
-		catalog:  handler.catalog,
-		fullKey:  created.FullKey,
-		upstream: server,
+		server:    handler,
+		store:     st,
+		accounts:  acc,
+		catalog:   handler.catalog,
+		quota:     handler.quota,
+		ratelimit: handler.ratelimit,
+		fullKey:   created.FullKey,
+		upstream:  server,
 	}
 }
 
@@ -435,7 +441,7 @@ func TestChatCompletionsStreamingCancellationReachesUpstream(t *testing.T) {
 		close(upstreamCanceled)
 	}))
 	name, scope, period, scopeID, limit := "stream daily", "user", "day", 1, int64(10000)
-	if _, err := f.store.CreateQuotaPolicy(domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
+	if _, err := f.quota.CreateQuotaPolicy(domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
 		t.Fatal(err)
 	}
 	gateway := httptest.NewServer(http.HandlerFunc(f.server.OpenAI))
@@ -467,7 +473,7 @@ func TestChatCompletionsStreamingCancellationReachesUpstream(t *testing.T) {
 	}
 	deadline := time.Now().Add(2 * time.Second)
 	for {
-		usage, err := f.store.ListQuotaUsage(context.Background(), domain.QuotaPolicyFilter{Page: 1, PageSize: 10})
+		usage, err := f.quota.ListQuotaUsage(context.Background(), domain.QuotaPolicyFilter{Page: 1, PageSize: 10})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -504,7 +510,7 @@ func TestChatCompletionsTokenRateLimitRejectsConservatively(t *testing.T) {
 	f := newProxyFixture(t, upstreamSuccess())
 	metric, target, action := "tpm", "user", "reject"
 	limit, window, priority := int64(1), 60, 1
-	if _, err := f.store.CreateRateLimit(domain.RateLimitInput{RuleName: stringPointer("token limit"), TargetType: &target, TargetValue: stringPointer("1"), Metric: &metric, LimitValue: &limit, WindowSeconds: &window, Action: &action, Priority: &priority}); err != nil {
+	if _, err := f.ratelimit.CreateRateLimit(domain.RateLimitInput{RuleName: stringPointer("token limit"), TargetType: &target, TargetValue: stringPointer("1"), Metric: &metric, LimitValue: &limit, WindowSeconds: &window, Action: &action, Priority: &priority}); err != nil {
 		t.Fatal(err)
 	}
 	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","messages":[]}`)
@@ -547,7 +553,7 @@ func TestChatCompletionsUpstreamFailureDoesNotCharge(t *testing.T) {
 
 func TestChatCompletionsRateLimited(t *testing.T) {
 	f := newProxyFixture(t, upstreamSuccess())
-	rule, err := f.store.CreateRateLimit(domain.RateLimitInput{
+	rule, err := f.ratelimit.CreateRateLimit(domain.RateLimitInput{
 		RuleName: stringPointer("global rpm"), TargetType: stringPointer("global"), Metric: stringPointer("rpm"),
 		LimitValue: int64Pointer(1), WindowSeconds: intPointer(60), Action: stringPointer("reject"),
 	})
@@ -577,7 +583,7 @@ func TestChatCompletionsQuotaExceededBeforeUpstream(t *testing.T) {
 	}))
 	name, scope, period, scopeID := "key daily", "api_key", "day", 1
 	limit := int64(10)
-	if _, err := f.store.CreateQuotaPolicy(domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
+	if _, err := f.quota.CreateQuotaPolicy(domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -594,7 +600,7 @@ func TestChatCompletionsQuotaSettlementUsesActualUsage(t *testing.T) {
 	f := newProxyFixture(t, upstreamSuccess())
 	name, scope, period, scopeID := "user daily", "user", "day", 1
 	limit := int64(10000)
-	if _, err := f.store.CreateQuotaPolicy(domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
+	if _, err := f.quota.CreateQuotaPolicy(domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -602,7 +608,7 @@ func TestChatCompletionsQuotaSettlementUsesActualUsage(t *testing.T) {
 	if res.Code != http.StatusOK {
 		t.Fatalf("status = %d; body=%s", res.Code, res.Body.String())
 	}
-	usage, err := f.store.ListQuotaUsage(context.Background(), domain.QuotaPolicyFilter{Page: 1, PageSize: 10})
+	usage, err := f.quota.ListQuotaUsage(context.Background(), domain.QuotaPolicyFilter{Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -617,14 +623,14 @@ func TestChatCompletionsUpstreamFailureReleasesQuota(t *testing.T) {
 	}))
 	name, scope, period, scopeID := "user daily", "user", "day", 1
 	limit := int64(10000)
-	if _, err := f.store.CreateQuotaPolicy(domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
+	if _, err := f.quota.CreateQuotaPolicy(domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
 		t.Fatal(err)
 	}
 	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","max_tokens":100,"messages":[]}`)
 	if res.Code != http.StatusInternalServerError {
 		t.Fatalf("status = %d", res.Code)
 	}
-	usage, _ := f.store.ListQuotaUsage(context.Background(), domain.QuotaPolicyFilter{Page: 1, PageSize: 10})
+	usage, _ := f.quota.ListQuotaUsage(context.Background(), domain.QuotaPolicyFilter{Page: 1, PageSize: 10})
 	if usage.Total != 1 || usage.List[0].ReservedTokens != 0 || usage.List[0].UsedTokens != 0 {
 		t.Fatalf("quota usage = %+v", usage)
 	}
@@ -643,7 +649,7 @@ func TestChatCompletionsModelRateLimitCountsOnlySameModel(t *testing.T) {
 	if _, err := f.store.InsertUsageLog(domain.UsageLogInput{RequestID: "prior-other", UserID: intPointer(1), APIKeyID: intPointer(1), ChannelID: intPointer(1), Model: "gpt-other", Status: "success"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.store.CreateRateLimit(domain.RateLimitInput{RuleName: stringPointer("gpt rpm"), TargetType: stringPointer("model"), TargetValue: stringPointer("gpt"), Metric: stringPointer("rpm"), LimitValue: int64Pointer(1), WindowSeconds: intPointer(60), Action: stringPointer("reject")}); err != nil {
+	if _, err := f.ratelimit.CreateRateLimit(domain.RateLimitInput{RuleName: stringPointer("gpt rpm"), TargetType: stringPointer("model"), TargetValue: stringPointer("gpt"), Metric: stringPointer("rpm"), LimitValue: int64Pointer(1), WindowSeconds: intPointer(60), Action: stringPointer("reject")}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -664,7 +670,7 @@ func TestChatCompletionsChannelRateLimitAfterRouting(t *testing.T) {
 	if _, err := f.store.InsertUsageLog(domain.UsageLogInput{RequestID: "prior-channel", UserID: intPointer(1), APIKeyID: intPointer(1), ChannelID: intPointer(1), Model: "gpt", Status: "success"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.store.CreateRateLimit(domain.RateLimitInput{RuleName: stringPointer("channel rpm"), TargetType: stringPointer("channel"), TargetValue: stringPointer("1"), Metric: stringPointer("rpm"), LimitValue: int64Pointer(1), WindowSeconds: intPointer(60), Action: stringPointer("reject")}); err != nil {
+	if _, err := f.ratelimit.CreateRateLimit(domain.RateLimitInput{RuleName: stringPointer("channel rpm"), TargetType: stringPointer("channel"), TargetValue: stringPointer("1"), Metric: stringPointer("rpm"), LimitValue: int64Pointer(1), WindowSeconds: intPointer(60), Action: stringPointer("reject")}); err != nil {
 		t.Fatal(err)
 	}
 

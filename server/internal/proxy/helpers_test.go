@@ -2,9 +2,12 @@ package proxy
 
 import (
 	"net/http"
+	"time"
 
 	"LLMGateway/server/internal/catalog"
 	"LLMGateway/server/internal/crypto"
+	"LLMGateway/server/internal/quota"
+	"LLMGateway/server/internal/ratelimit"
 	"LLMGateway/server/internal/testutil/storefake"
 )
 
@@ -23,4 +26,18 @@ func newTestCatalog(st *storefake.Store) *catalog.Server {
 		Cipher: cipher,
 		Client: &http.Client{},
 	})
+}
+
+func newTestQuota(st *storefake.Store, now func() time.Time) *quota.Server {
+	if now == nil {
+		now = time.Now
+	}
+	return quota.New(st, st.QuotaTx(), now)
+}
+
+func newTestRateLimit(st *storefake.Store, now func() time.Time) *ratelimit.Server {
+	if now == nil {
+		now = time.Now
+	}
+	return ratelimit.New(st, now)
 }

@@ -2,4 +2,7 @@ package ratelimit
 
 import apperrors "LLMGateway/server/internal/errors"
 
-var ErrInvalid = apperrors.ErrInvalid
+var (
+	ErrNotFound = apperrors.ErrNotFound
+	ErrInvalid  = apperrors.ErrInvalid
+)

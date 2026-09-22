@@ -8,6 +8,7 @@ import (
 	"LLMGateway/server/internal/catalog"
 	"LLMGateway/server/internal/db/sqlc"
 	settlement "LLMGateway/server/internal/proxy/settlement"
+	"LLMGateway/server/internal/quota"
 
 	"github.com/jackc/pgx/v5"
 )
@@ -82,6 +83,26 @@ func (m catalogTxManager) InTx(ctx context.Context, fn func(catalog.Tx) error) e
 
 // CatalogTx exposes transaction-scoped catalog primitives.
 func (s *Store) CatalogTx() catalog.TxManager { return catalogTxManager{store: s} }
+
+// quotaTxManager adapts Store to quota.TxManager.
+type quotaTxManager struct {
+	store *Store
+}
+
+func (m quotaTxManager) InTx(ctx context.Context, fn func(quota.Tx) error) error {
+	tx, err := m.store.pool.Begin(ctx)
+	if err != nil {
+		return mapError(err)
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	if err := fn(m.store.newTx(tx)); err != nil {
+		return err
+	}
+	return mapError(tx.Commit(ctx))
+}
+
+// QuotaTx exposes transaction-scoped quota primitives.
+func (s *Store) QuotaTx() quota.TxManager { return quotaTxManager{store: s} }
 
 func (s *Store) newTx(tx pgx.Tx) *Tx {
 	return &Tx{tx: tx, queries: sqlc.New(tx), now: s.now}

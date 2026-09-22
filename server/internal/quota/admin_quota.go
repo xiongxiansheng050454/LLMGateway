@@ -41,7 +41,7 @@ func (a *Server) Data(r *http.Request) (any, bool, int, string) {
 	case http.MethodPut:
 		return a.updatePolicy(r, id)
 	case http.MethodDelete:
-		return httpcommon.NoBody(a.store.DeleteQuotaPolicy(id))
+		return httpcommon.NoBody(a.DeleteQuotaPolicy(id))
 	default:
 		return nil, true, http.StatusMethodNotAllowed, "method not allowed"
 	}
@@ -55,14 +55,14 @@ func (a *Server) listPolicies(r *http.Request) (any, bool, int, string) {
 		enabled := value == "true"
 		filter.Enabled = &enabled
 	}
-	return httpcommon.Result(a.store.ListQuotaPolicies(filter))
+	return httpcommon.Result(a.ListQuotaPolicies(filter))
 }
 
 func (a *Server) listUsage(r *http.Request) (any, bool, int, string) {
 	page, pageSize := httpcommon.ParsePagination(r)
 	filter := QuotaPolicyFilter{ScopeType: r.URL.Query().Get("scope_type"), Page: page, PageSize: pageSize}
 	filter.ScopeID, _ = strconv.Atoi(r.URL.Query().Get("scope_id"))
-	return httpcommon.Result(a.store.ListQuotaUsage(context.Background(), filter))
+	return httpcommon.Result(a.ListQuotaUsage(context.Background(), filter))
 }
 
 func (a *Server) createPolicy(r *http.Request) (any, bool, int, string) {
@@ -70,7 +70,7 @@ func (a *Server) createPolicy(r *http.Request) (any, bool, int, string) {
 	if err := httpcommon.ReadJSON(r, &input); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
-	return httpcommon.Result(a.store.CreateQuotaPolicy(input))
+	return httpcommon.Result(a.CreateQuotaPolicy(input))
 }
 
 func (a *Server) updatePolicy(r *http.Request, id int) (any, bool, int, string) {
@@ -78,5 +78,5 @@ func (a *Server) updatePolicy(r *http.Request, id int) (any, bool, int, string) 
 	if err := httpcommon.ReadJSON(r, &input); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
-	return httpcommon.Result(a.store.UpdateQuotaPolicy(id, input))
+	return httpcommon.Result(a.UpdateQuotaPolicy(id, input))
 }

@@ -31,7 +31,7 @@ func TestPGSettleChatCompletionRollsBackOnUsageInsertFailure(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	service := proxy.NewService(st, cat, nil, func(int) int { return 0 }, time.Now)
+	service := proxy.NewService(st, cat, testQuota(t, st), testRateLimit(t, st), nil, func(int) int { return 0 }, time.Now)
 	_, err = service.Settle(settlement.Input{UserID: 1, ChannelID: &channel.ID, Cost: "1.000000", DebitChannel: true, Description: "chat", UsageLog: successUsageInput("dup-pg", 1, channel.ID)})
 	if !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("err = %v, want ErrInvalid", err)
@@ -67,7 +67,7 @@ func TestPGSettleChatCompletionPersistsTTFT(t *testing.T) {
 	ttft := 42
 	usage := successUsageInput("stream-ttft-pg", 1, channel.ID)
 	usage.TTFTMs = &ttft
-	service := proxy.NewService(st, cat, nil, func(int) int { return 0 }, time.Now)
+	service := proxy.NewService(st, cat, testQuota(t, st), testRateLimit(t, st), nil, func(int) int { return 0 }, time.Now)
 	if _, err := service.Settle(settlement.Input{UserID: 1, ChannelID: &channel.ID, Cost: "0.000100", Description: "stream chat", UsageLog: usage}); err != nil {
 		t.Fatal(err)
 	}

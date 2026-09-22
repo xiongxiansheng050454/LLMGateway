@@ -24,6 +24,8 @@ var (
 type Service struct {
 	store            Port
 	catalog          Catalog
+	quota            Quota
+	ratelimit        RateLimit
 	settleTx         settlement.TxManager
 	client           *http.Client
 	randIntN         func(int) int
@@ -36,12 +38,12 @@ type Service struct {
 	maxAttempts      int
 }
 
-func NewService(st Port, catalog Catalog, client *http.Client, randIntN func(int) int, now func() time.Time, adapters ...ProtocolAdapter) *Service {
+func NewService(st Port, catalog Catalog, quota Quota, rateLimit RateLimit, client *http.Client, randIntN func(int) int, now func() time.Time, adapters ...ProtocolAdapter) *Service {
 	adapter := ProtocolAdapter{}
 	if len(adapters) > 0 {
 		adapter = adapters[0]
 	}
-	return &Service{store: st, catalog: catalog, settleTx: st.SettlementTx(), client: client, randIntN: randIntN, now: now, adapter: adapter, defaultMaxTokens: 4096, reservationTTL: 2 * time.Minute, requestTimeout: 60 * time.Second, maxAttempts: 3}
+	return &Service{store: st, catalog: catalog, quota: quota, ratelimit: rateLimit, settleTx: st.SettlementTx(), client: client, randIntN: randIntN, now: now, adapter: adapter, defaultMaxTokens: 4096, reservationTTL: 2 * time.Minute, requestTimeout: 60 * time.Second, maxAttempts: 3}
 }
 
 func (a *Service) ConfigureRequest(timeout time.Duration, maxAttempts int) {

@@ -33,7 +33,7 @@ func (a *Server) Data(r *http.Request) (any, bool, int, string) {
 		case http.MethodPut:
 			return a.updateRateLimit(r, id)
 		case http.MethodDelete:
-			return httpcommon.NoBody(a.store.DeleteRateLimit(id))
+			return httpcommon.NoBody(a.DeleteRateLimit(id))
 		}
 		return nil, true, http.StatusMethodNotAllowed, "method not allowed"
 	}
@@ -52,7 +52,7 @@ func (a *Server) listRateLimits(r *http.Request) (any, bool, int, string) {
 		value := false
 		enabled = &value
 	}
-	return httpcommon.Result(a.store.ListRateLimits(enabled, page, pageSize))
+	return httpcommon.Result(a.ListRateLimits(enabled, page, pageSize))
 }
 
 func (a *Server) createRateLimit(r *http.Request) (any, bool, int, string) {
@@ -60,7 +60,7 @@ func (a *Server) createRateLimit(r *http.Request) (any, bool, int, string) {
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
-	return httpcommon.Result(a.store.CreateRateLimit(req))
+	return httpcommon.Result(a.CreateRateLimit(req))
 }
 
 func (a *Server) updateRateLimit(r *http.Request, id int) (any, bool, int, string) {
@@ -68,5 +68,5 @@ func (a *Server) updateRateLimit(r *http.Request, id int) (any, bool, int, strin
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
-	return httpcommon.Result(a.store.UpdateRateLimit(id, req))
+	return httpcommon.Result(a.UpdateRateLimit(id, req))
 }

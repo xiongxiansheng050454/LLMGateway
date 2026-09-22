@@ -2,9 +2,12 @@ package storefake
 
 import (
 	"net/http"
+	"time"
 
 	"LLMGateway/server/internal/catalog"
 	"LLMGateway/server/internal/crypto"
+	"LLMGateway/server/internal/quota"
+	"LLMGateway/server/internal/ratelimit"
 )
 
 // testEncryptionKey is a fixed 32-byte key used only by tests.
@@ -28,4 +31,18 @@ func newCatalog(st *Store) *catalog.Server {
 		Cipher: testCipher(),
 		Client: &http.Client{},
 	})
+}
+
+func newQuota(st *Store, now func() time.Time) *quota.Server {
+	if now == nil {
+		now = time.Now
+	}
+	return quota.New(st, st.QuotaTx(), now)
+}
+
+func newRateLimit(st *Store, now func() time.Time) *ratelimit.Server {
+	if now == nil {
+		now = time.Now
+	}
+	return ratelimit.New(st, now)
 }

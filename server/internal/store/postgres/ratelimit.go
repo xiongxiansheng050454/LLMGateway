@@ -5,7 +5,6 @@ import (
 
 	"LLMGateway/server/internal/db/sqlc"
 	domain "LLMGateway/server/internal/ratelimit"
-	"LLMGateway/server/internal/store"
 
 	"github.com/jackc/pgx/v5/pgtype"
 )
@@ -30,17 +29,20 @@ func (s *Store) ListRateLimits(enabled *bool, page, pageSize int) (domain.ListRe
 
 	list := []domain.RateLimitRuleDTO{}
 	for _, row := range rows {
-		list = append(list, rateLimitDTO(row.ID, row.RuleName, row.TargetType, row.TargetValue, row.Metric, row.LimitValue, row.WindowSeconds, row.Action, row.Priority, row.Enabled, row.Extras))
+		list = append(list, domain.RateLimitRuleToDTO(rateLimitRule(row.ID, row.RuleName, row.TargetType, row.TargetValue, row.Metric, row.LimitValue, row.WindowSeconds, row.Action, row.Priority, row.Enabled, row.Extras)))
 	}
 	return domain.ListResponse[domain.RateLimitRuleDTO]{List: list, Total: int(total)}, nil
 }
 
-func (s *Store) CreateRateLimit(in domain.RateLimitInput) (domain.RateLimitRuleDTO, error) {
-	rule, err := domain.NormalizeRateLimit(in, nil)
+func (s *Store) GetRateLimit(id int) (domain.RateLimitRule, error) {
+	row, err := s.queries.GetRateLimitRule(context.Background(), int64(id))
 	if err != nil {
-		return domain.RateLimitRuleDTO{}, err
+		return domain.RateLimitRule{}, mapError(err)
 	}
+	return rateLimitRule(row.ID, row.RuleName, row.TargetType, row.TargetValue, row.Metric, row.LimitValue, row.WindowSeconds, row.Action, row.Priority, row.Enabled, row.Extras), nil
+}
 
+func (s *Store) InsertRateLimit(rule domain.RateLimitRule) (int, error) {
 	id, err := s.queries.CreateRateLimitRule(context.Background(), sqlc.CreateRateLimitRuleParams{
 		RuleName:      rule.RuleName,
 		TargetType:    rule.TargetType,
@@ -54,37 +56,13 @@ func (s *Store) CreateRateLimit(in domain.RateLimitInput) (domain.RateLimitRuleD
 		Extras:        rule.Extras,
 	})
 	if err != nil {
-		return domain.RateLimitRuleDTO{}, mapError(err)
+		return 0, mapError(err)
 	}
-	return s.getRateLimitDTO(id)
+	return int(id), nil
 }
 
-func (s *Store) UpdateRateLimit(id int, in domain.RateLimitInput) (domain.RateLimitRuleDTO, error) {
-	ctx := context.Background()
-	current, err := s.queries.GetRateLimitRule(ctx, int64(id))
-	if err != nil {
-		return domain.RateLimitRuleDTO{}, mapError(err)
-	}
-
-	existing := &domain.RateLimitRule{
-		ID:            int(current.ID),
-		RuleName:      current.RuleName,
-		TargetType:    current.TargetType,
-		TargetValue:   current.TargetValue,
-		Metric:        current.Metric,
-		LimitValue:    current.LimitValue,
-		WindowSeconds: int(current.WindowSeconds),
-		Action:        current.Action,
-		Priority:      int(current.Priority),
-		Enabled:       current.Enabled,
-		Extras:        current.Extras,
-	}
-	rule, err := domain.NormalizeRateLimit(in, existing)
-	if err != nil {
-		return domain.RateLimitRuleDTO{}, err
-	}
-
-	affected, err := s.queries.UpdateRateLimitRule(ctx, sqlc.UpdateRateLimitRuleParams{
+func (s *Store) UpdateRateLimitRecord(id int, rule domain.RateLimitRule) (bool, error) {
+	affected, err := s.queries.UpdateRateLimitRule(context.Background(), sqlc.UpdateRateLimitRuleParams{
 		RuleName:      rule.RuleName,
 		TargetType:    rule.TargetType,
 		TargetValue:   rule.TargetValue,
@@ -98,33 +76,19 @@ func (s *Store) UpdateRateLimit(id int, in domain.RateLimitInput) (domain.RateLi
 		ID:            int64(id),
 	})
 	if err != nil {
-		return domain.RateLimitRuleDTO{}, mapError(err)
+		return false, mapError(err)
 	}
-	if affected == 0 {
-		return domain.RateLimitRuleDTO{}, store.ErrNotFound
-	}
-	return s.getRateLimitDTO(int64(id))
+	return affected > 0, nil
 }
 
-func (s *Store) DeleteRateLimit(id int) error {
+func (s *Store) DeleteRateLimit(id int) (bool, error) {
 	affected, err := s.queries.DeleteRateLimitRule(context.Background(), int64(id))
 	if err != nil {
-		return mapError(err)
+		return false, mapError(err)
 	}
-	if affected == 0 {
-		return store.ErrNotFound
-	}
-	return nil
+	return affected > 0, nil
 }
 
-func (s *Store) getRateLimitDTO(id int64) (domain.RateLimitRuleDTO, error) {
-	row, err := s.queries.GetRateLimitRule(context.Background(), id)
-	if err != nil {
-		return domain.RateLimitRuleDTO{}, mapError(err)
-	}
-	return rateLimitDTO(row.ID, row.RuleName, row.TargetType, row.TargetValue, row.Metric, row.LimitValue, row.WindowSeconds, row.Action, row.Priority, row.Enabled, row.Extras), nil
-}
-
-func rateLimitDTO(id int64, ruleName, targetType, targetValue, metric string, limitValue int64, windowSeconds int32, action string, priority int32, enabled bool, extras []byte) domain.RateLimitRuleDTO {
-	return domain.RateLimitRuleDTO{ID: int(id), RuleName: ruleName, TargetType: targetType, TargetValue: targetValue, Metric: metric, LimitValue: limitValue, WindowSeconds: int(windowSeconds), Action: action, Priority: int(priority), Enabled: enabled, Extras: extras}
+func rateLimitRule(id int64, ruleName, targetType, targetValue, metric string, limitValue int64, windowSeconds int32, action string, priority int32, enabled bool, extras []byte) domain.RateLimitRule {
+	return domain.RateLimitRule{ID: int(id), RuleName: ruleName, TargetType: targetType, TargetValue: targetValue, Metric: metric, LimitValue: limitValue, WindowSeconds: int(windowSeconds), Action: action, Priority: int(priority), Enabled: enabled, Extras: extras}
 }

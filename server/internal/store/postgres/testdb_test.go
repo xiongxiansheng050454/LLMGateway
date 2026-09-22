@@ -11,6 +11,8 @@ import (
 	"LLMGateway/server/internal/catalog"
 	"LLMGateway/server/internal/crypto"
 	"LLMGateway/server/internal/db/migrate"
+	"LLMGateway/server/internal/quota"
+	"LLMGateway/server/internal/ratelimit"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 )
@@ -75,4 +77,14 @@ func testCatalog(t *testing.T, st *Store) *catalog.Server {
 		Client: &http.Client{},
 		Now:    func() time.Time { return st.now() },
 	})
+}
+
+func testQuota(t *testing.T, st *Store) *quota.Server {
+	t.Helper()
+	return quota.New(st, st.QuotaTx(), func() time.Time { return st.now() })
+}
+
+func testRateLimit(t *testing.T, st *Store) *ratelimit.Server {
+	t.Helper()
+	return ratelimit.New(st, func() time.Time { return st.now() })
 }

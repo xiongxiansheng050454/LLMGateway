@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"LLMGateway/server/internal/db/sqlc"
-	"LLMGateway/server/internal/money"
 	domain "LLMGateway/server/internal/quota"
 	"LLMGateway/server/internal/store"
 
@@ -32,12 +31,42 @@ type quotaItemRow struct {
 	reservedCost  string
 }
 
-func (s *Store) CreateQuotaPolicy(in domain.QuotaPolicyInput) (domain.QuotaPolicyDTO, error) {
-	policy, err := domain.NormalizeQuotaPolicy(in, nil)
+func (s *Store) GetQuotaPolicy(id int) (domain.QuotaPolicy, error) {
+	row, err := s.queries.GetQuotaPolicy(context.Background(), int64(id))
 	if err != nil {
-		return domain.QuotaPolicyDTO{}, err
+		return domain.QuotaPolicy{}, mapError(err)
 	}
-	params := sqlc.CreateQuotaPolicyParams{PolicyName: policy.PolicyName, ScopeType: string(policy.ScopeType), PeriodType: string(policy.PeriodType), Enabled: policy.Enabled}
+	scopeID := optionalInt(row.UserID)
+	if row.ScopeType == string(domain.QuotaScopeAPIKey) {
+		scopeID = optionalInt(row.ApiKeyID)
+	}
+	if scopeID == nil {
+		return domain.QuotaPolicy{}, fmt.Errorf("%w: quota scope missing", store.ErrInvalid)
+	}
+	var tokenLimit *int64
+	if row.TokenLimit.Valid {
+		value := row.TokenLimit.Int64
+		tokenLimit = &value
+	}
+	return domain.QuotaPolicy{
+		ID:         int(row.ID),
+		PolicyName: row.PolicyName,
+		ScopeType:  domain.QuotaScopeType(row.ScopeType),
+		ScopeID:    *scopeID,
+		PeriodType: domain.QuotaPeriodType(row.PeriodType),
+		TokenLimit: tokenLimit,
+		CostLimit:  optionalString(row.CostLimit),
+		Enabled:    row.Enabled,
+	}, nil
+}
+
+func (s *Store) InsertQuotaPolicy(policy domain.QuotaPolicy) (int, error) {
+	params := sqlc.CreateQuotaPolicyParams{
+		PolicyName: policy.PolicyName,
+		ScopeType:  string(policy.ScopeType),
+		PeriodType: string(policy.PeriodType),
+		Enabled:    policy.Enabled,
+	}
 	if policy.ScopeType == domain.QuotaScopeUser {
 		params.UserID = pgtype.Int8{Int64: int64(policy.ScopeID), Valid: true}
 	} else {
@@ -47,71 +76,37 @@ func (s *Store) CreateQuotaPolicy(in domain.QuotaPolicyInput) (domain.QuotaPolic
 		params.TokenLimit = pgtype.Int8{Int64: *policy.TokenLimit, Valid: true}
 	}
 	params.CostLimit = numericValue(policy.CostLimit)
+
 	id, err := s.queries.CreateQuotaPolicy(context.Background(), params)
 	if err != nil {
-		return domain.QuotaPolicyDTO{}, mapError(err)
+		return 0, mapError(err)
 	}
-	return s.getQuotaPolicy(int(id))
+	return int(id), nil
 }
 
-func (s *Store) UpdateQuotaPolicy(id int, in domain.QuotaPolicyInput) (domain.QuotaPolicyDTO, error) {
-	existingDTO, err := s.getQuotaPolicy(id)
-	if err != nil {
-		return domain.QuotaPolicyDTO{}, err
+func (s *Store) UpdateQuotaPolicyRecord(id int, policy domain.QuotaPolicy) (bool, error) {
+	params := sqlc.UpdateQuotaPolicyParams{
+		ID:         int64(id),
+		PolicyName: policy.PolicyName,
+		Enabled:    policy.Enabled,
+		CostLimit:  numericValue(policy.CostLimit),
 	}
-	existing := domain.QuotaPolicy{ID: existingDTO.ID, PolicyName: existingDTO.PolicyName, ScopeType: existingDTO.ScopeType, ScopeID: existingDTO.ScopeID, PeriodType: existingDTO.PeriodType, TokenLimit: existingDTO.TokenLimit, CostLimit: existingDTO.CostLimit, Enabled: existingDTO.Enabled}
-	policy, err := domain.NormalizeQuotaPolicy(in, &existing)
-	if err != nil {
-		return domain.QuotaPolicyDTO{}, err
-	}
-	if in.ScopeType != nil || in.ScopeID != nil || in.PeriodType != nil {
-		if policy.ScopeType != existing.ScopeType || policy.ScopeID != existing.ScopeID || policy.PeriodType != existing.PeriodType {
-			return domain.QuotaPolicyDTO{}, fmt.Errorf("%w: quota scope and period cannot be changed", store.ErrInvalid)
-		}
-	}
-	params := sqlc.UpdateQuotaPolicyParams{ID: int64(id), PolicyName: policy.PolicyName, Enabled: policy.Enabled, CostLimit: numericValue(policy.CostLimit)}
 	if policy.TokenLimit != nil {
 		params.TokenLimit = pgtype.Int8{Int64: *policy.TokenLimit, Valid: true}
 	}
 	affected, err := s.queries.UpdateQuotaPolicy(context.Background(), params)
 	if err != nil {
-		return domain.QuotaPolicyDTO{}, mapError(err)
+		return false, mapError(err)
 	}
-	if affected == 0 {
-		return domain.QuotaPolicyDTO{}, store.ErrNotFound
-	}
-	return s.getQuotaPolicy(id)
+	return affected > 0, nil
 }
 
-func (s *Store) DeleteQuotaPolicy(id int) error {
+func (s *Store) DeleteQuotaPolicy(id int) (bool, error) {
 	affected, err := s.queries.DeleteQuotaPolicy(context.Background(), int64(id))
 	if err != nil {
-		return mapError(err)
+		return false, mapError(err)
 	}
-	if affected == 0 {
-		return store.ErrNotFound
-	}
-	return nil
-}
-
-func (s *Store) getQuotaPolicy(id int) (domain.QuotaPolicyDTO, error) {
-	row, err := s.queries.GetQuotaPolicy(context.Background(), int64(id))
-	if err != nil {
-		return domain.QuotaPolicyDTO{}, mapError(err)
-	}
-	scopeID := optionalInt(row.UserID)
-	if row.ScopeType == string(domain.QuotaScopeAPIKey) {
-		scopeID = optionalInt(row.ApiKeyID)
-	}
-	if scopeID == nil {
-		return domain.QuotaPolicyDTO{}, fmt.Errorf("%w: quota scope missing", store.ErrInvalid)
-	}
-	var tokenLimit *int64
-	if row.TokenLimit.Valid {
-		value := row.TokenLimit.Int64
-		tokenLimit = &value
-	}
-	return domain.QuotaPolicyDTO{ID: int(row.ID), PolicyName: row.PolicyName, ScopeType: domain.QuotaScopeType(row.ScopeType), ScopeID: *scopeID, PeriodType: domain.QuotaPeriodType(row.PeriodType), TokenLimit: tokenLimit, CostLimit: optionalString(row.CostLimit), Enabled: row.Enabled}, nil
+	return affected > 0, nil
 }
 
 func (s *Store) ListQuotaPolicies(filter domain.QuotaPolicyFilter) (domain.ListResponse[domain.QuotaPolicyDTO], error) {
@@ -202,50 +197,54 @@ LIMIT $3 OFFSET $4`, filter.ScopeType, filter.ScopeID, limit, offset)
 	return domain.ListResponse[domain.QuotaUsageDTO]{List: list, Total: total}, nil
 }
 
-func (s *Store) ReserveQuota(ctx context.Context, in domain.QuotaReserveInput) (domain.QuotaReservation, error) {
-	if in.RequestID == "" || in.UserID <= 0 || in.APIKeyID <= 0 || in.EstimatedTokens < 0 || !in.ExpiresAt.After(s.now()) {
-		return domain.QuotaReservation{}, fmt.Errorf("%w: invalid quota reservation", store.ErrInvalid)
-	}
-	cost, err := money.Parse6(in.EstimatedCost)
-	if err != nil || cost.Cmp(0) < 0 {
-		return domain.QuotaReservation{}, fmt.Errorf("%w: invalid estimated cost", store.ErrInvalid)
-	}
-	tx, err := s.pool.Begin(ctx)
+// --- Tx primitives ---
+
+func (t *Tx) ApplicablePolicies(userID, keyID int) ([]domain.QuotaPolicy, error) {
+	rows, err := applicableQuotaPolicies(context.Background(), t.tx, userID, keyID)
 	if err != nil {
-		return domain.QuotaReservation{}, mapError(err)
+		return nil, err
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	policies, err := applicableQuotaPolicies(ctx, tx, in.UserID, in.APIKeyID)
-	if err != nil {
-		return domain.QuotaReservation{}, err
+	policies := make([]domain.QuotaPolicy, 0, len(rows))
+	for _, row := range rows {
+		policies = append(policies, domain.QuotaPolicy{
+			ID:         int(row.id),
+			PolicyName: row.name,
+			ScopeType:  row.scopeType,
+			ScopeID:    row.scopeID,
+			PeriodType: row.periodType,
+			TokenLimit: row.tokenLimit,
+			CostLimit:  row.costLimit,
+			Enabled:    row.enabled,
+		})
 	}
-	// Policy locks precede reservation/bucket locks everywhere identity deletion
-	// and admission can overlap, preventing reverse lock-order deadlocks.
-	if _, err := reapExpiredQuotaTx(ctx, tx, s.now(), 16, in.UserID, in.APIKeyID); err != nil {
-		return domain.QuotaReservation{}, err
-	}
-	if len(policies) == 0 {
-		return domain.QuotaReservation{}, tx.Commit(ctx)
-	}
+	return policies, nil
+}
+
+func (t *Tx) ReapExpired(now time.Time, limit, userID, keyID int) (int, error) {
+	return reapExpiredQuotaTx(context.Background(), t.tx, now, limit, userID, keyID)
+}
+
+func (t *Tx) InsertReservation(in domain.QuotaReservationInsert) (int64, error) {
 	var reservationID int64
-	err = tx.QueryRow(ctx, `INSERT INTO quota_reservations (request_id, user_id, api_key_id, model, estimated_tokens, estimated_cost, expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`, in.RequestID, in.UserID, in.APIKeyID, in.Model, in.EstimatedTokens, money.Format6(cost), in.ExpiresAt.UTC()).Scan(&reservationID)
+	err := t.tx.QueryRow(context.Background(), `INSERT INTO quota_reservations (request_id, user_id, api_key_id, model, estimated_tokens, estimated_cost, expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`, in.RequestID, in.UserID, in.APIKeyID, in.Model, in.EstimatedTokens, in.EstimatedCost, in.ExpiresAt.UTC()).Scan(&reservationID)
 	if err != nil {
-		return domain.QuotaReservation{}, mapError(err)
+		return 0, mapError(err)
 	}
-	now := s.now().UTC()
-	for _, policy := range policies {
-		start, end, err := domain.QuotaPeriodBounds(now, policy.periodType)
-		if err != nil {
-			return domain.QuotaReservation{}, err
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO quota_buckets (policy_id, period_start, period_end) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, policy.id, start, end); err != nil {
-			return domain.QuotaReservation{}, mapError(err)
-		}
-		var lockedPolicyID int64
-		if err := tx.QueryRow(ctx, `SELECT policy_id FROM quota_buckets WHERE policy_id=$1 AND period_start=$2 FOR UPDATE`, policy.id, start).Scan(&lockedPolicyID); err != nil {
-			return domain.QuotaReservation{}, mapError(err)
-		}
-		result, err := tx.Exec(ctx, `
+	return reservationID, nil
+}
+
+func (t *Tx) UpsertBucket(policyID int, start, end time.Time) error {
+	_, err := t.tx.Exec(context.Background(), `INSERT INTO quota_buckets (policy_id, period_start, period_end) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, policyID, start, end)
+	return mapError(err)
+}
+
+func (t *Tx) LockBucket(policyID int, start time.Time) error {
+	var lockedPolicyID int64
+	return mapError(t.tx.QueryRow(context.Background(), `SELECT policy_id FROM quota_buckets WHERE policy_id=$1 AND period_start=$2 FOR UPDATE`, policyID, start).Scan(&lockedPolicyID))
+}
+
+func (t *Tx) ReserveBucket(policyID int, start time.Time, tokens int64, cost string) (bool, error) {
+	result, err := t.tx.Exec(context.Background(), `
 UPDATE quota_buckets b
 SET reserved_tokens = b.reserved_tokens + $3,
     reserved_cost = b.reserved_cost + $4,
@@ -254,56 +253,23 @@ FROM quota_policies p
 WHERE b.policy_id = $1 AND b.period_start = $2 AND p.id = b.policy_id
   AND p.enabled = true AND p.deleted_at IS NULL
   AND (p.token_limit IS NULL OR b.used_tokens + b.reserved_tokens + $3 <= p.token_limit)
-  AND (p.cost_limit IS NULL OR b.used_cost + b.reserved_cost + $4 <= p.cost_limit)`, policy.id, start, in.EstimatedTokens, money.Format6(cost))
-		if err != nil {
-			return domain.QuotaReservation{}, mapError(err)
-		}
-		if result.RowsAffected() != 1 {
-			return domain.QuotaReservation{}, store.ErrQuotaExceeded
-		}
-		if _, err := tx.Exec(ctx, `INSERT INTO quota_reservation_items (reservation_id, policy_id, period_start, reserved_tokens, reserved_cost) VALUES ($1,$2,$3,$4,$5)`, reservationID, policy.id, start, in.EstimatedTokens, money.Format6(cost)); err != nil {
-			return domain.QuotaReservation{}, mapError(err)
-		}
+  AND (p.cost_limit IS NULL OR b.used_cost + b.reserved_cost + $4 <= p.cost_limit)`, policyID, start, tokens, cost)
+	if err != nil {
+		return false, mapError(err)
 	}
-	if err := tx.Commit(ctx); err != nil {
-		return domain.QuotaReservation{}, mapError(err)
-	}
-	return domain.QuotaReservation{ID: reservationID, RequestID: in.RequestID, EstimatedTokens: in.EstimatedTokens, EstimatedCost: money.Format6(cost)}, nil
+	return result.RowsAffected() == 1, nil
 }
 
-func (s *Store) ReleaseQuota(ctx context.Context, reservationID int64) error {
-	if reservationID == 0 {
-		return nil
-	}
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return mapError(err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if err := releaseQuotaTx(ctx, tx, reservationID, "released", s.now()); err != nil {
-		return err
-	}
-	return mapError(tx.Commit(ctx))
+func (t *Tx) InsertReservationItem(reservationID int64, policyID int, start time.Time, tokens int64, cost string) error {
+	_, err := t.tx.Exec(context.Background(), `INSERT INTO quota_reservation_items (reservation_id, policy_id, period_start, reserved_tokens, reserved_cost) VALUES ($1,$2,$3,$4,$5)`, reservationID, policyID, start, tokens, cost)
+	return mapError(err)
 }
 
-func (s *Store) ReapExpiredQuotaReservations(ctx context.Context, limit int) (int, error) {
-	if limit <= 0 {
-		limit = 100
-	}
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return 0, mapError(err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	count, err := reapExpiredQuotaTx(ctx, tx, s.now(), limit, 0, 0)
-	if err != nil {
-		return 0, err
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return 0, mapError(err)
-	}
-	return count, nil
+func (t *Tx) ReleaseReservation(reservationID int64, status string, now time.Time) error {
+	return releaseQuotaTx(context.Background(), t.tx, reservationID, status, now)
 }
+
+// --- helpers ---
 
 func applicableQuotaPolicies(ctx context.Context, tx pgx.Tx, userID, keyID int) ([]quotaPolicyRow, error) {
 	rows, err := tx.Query(ctx, `SELECT id, policy_name, scope_type, COALESCE(user_id, api_key_id), period_type, token_limit, cost_limit::text, enabled FROM quota_policies WHERE deleted_at IS NULL AND enabled=true AND ((scope_type='user' AND user_id=$1) OR (scope_type='api_key' AND api_key_id=$2)) ORDER BY id FOR SHARE`, userID, keyID)
