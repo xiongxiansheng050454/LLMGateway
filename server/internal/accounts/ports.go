@@ -5,27 +5,8 @@ import (
 	"encoding/json"
 )
 
-// CanonicalJSON is a serialization-consistency helper (not a business rule):
-// it re-encodes JSON into a compact, key-sorted form so test fakes (raw input)
-// and PostgreSQL (JSONB) return byte-identical values. Empty input
-// returns nil.
-func CanonicalJSON(value json.RawMessage) json.RawMessage {
-	if len(value) == 0 {
-		return nil
-	}
-	var decoded any
-	if err := json.Unmarshal(value, &decoded); err != nil {
-		return value
-	}
-	encoded, err := json.Marshal(decoded)
-	if err != nil {
-		return value
-	}
-	return encoded
-}
-
 // Port covers account reads and single-statement writes that need no
-// orchestration. Multi-step and rule-bearing operations live on Server and use
+// orchestration. Multistep and rule-bearing operations live on Server and use
 // a TxManager.
 type Port interface {
 	ListUsers(page, pageSize int) (ListResponse[UserDTO], error)

@@ -21,7 +21,7 @@ import (
 	usagecontracts "LLMGateway/server/internal/usage"
 )
 
-// models returns the OpenAI-style model list visible to the key, filtered by
+// Models models returns the OpenAI-style model list visible to the key, filtered by
 // its permissions.
 func (a *Service) Models(auth *accounts.AuthContext) (ModelList, error) {
 	result, err := a.catalog.ListCatalogModels(true)
