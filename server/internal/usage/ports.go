@@ -1,9 +1,9 @@
 package usage
 
 // UsageStore records and queries request usage logs, and aggregates statistics
-// from them. Statistics are computed from usage_logs in real time; the
-// daily_usage_stats table was dropped (migration 000004) because it was unused
-// and its composite primary key could not represent global per-day rows.
+// from them. Statistics are computed from usage_logs in real time; there is no
+// daily_usage_stats table because it was unused and its composite primary key
+// could not represent global per-day rows.
 type Port interface {
 	ListUsageLogs(UsageLogFilter) (ListResponse[UsageLogDTO], error)
 	GetUsageLog(int) (UsageLogDTO, error)

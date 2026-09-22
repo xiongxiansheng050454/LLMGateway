@@ -51,7 +51,7 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
 - sqlc 查询写在 `server/db/queries/*.sql`，schema 写在 `server/db/migrations/*.sql`，生成代码输出到 `server/internal/db/sqlc`。
 - 不要手改 `server/internal/db/sqlc` 生成文件；修改 SQL 后运行 `sqlc generate`。
 - 初始 schema 覆盖渠道、模型映射、定价、用户、余额、Key、限流和用量日志，后续 issue 应优先扩展现有表而不是新建重复概念。
-- 统计接口（overview/daily/channels）在 `usage_logs` 上实时聚合，按 UTC 自然日分组；`daily_usage_stats` 因未被使用且复合主键无法表达全局日汇总，已在迁移 `000004_drop_daily_usage_stats.sql` 中删除。
+- 统计接口（overview/daily/channels）在 `usage_logs` 上实时聚合，按 UTC 自然日分组；不存在 `daily_usage_stats` 表，因其未被使用且复合主键无法表达全局日汇总。
 - 进程启动时建立 pgxpool 连接、执行迁移并装配 PostgreSQL store，不提供无数据库运行模式。
 - PostgreSQL store 已实现渠道/模型/定价、用户/余额/Key、限流规则、用量日志与代理结算的持久化行为。
 - `server/cmd/llmgateway` 使用 `http.Server` 并在收到 `SIGINT`/`SIGTERM` 后优雅关闭。

@@ -1,3 +1,7 @@
+-- Baseline schema for a fresh deployment, squashed from the former incremental
+-- migrations 000001..000010. The project has not shipped, so no upgrade path
+-- from the pre-squash version table is needed.
+
 CREATE TABLE channels (
     id BIGSERIAL PRIMARY KEY,
     name TEXT NOT NULL,
@@ -65,8 +69,10 @@ CREATE TABLE balance_transactions (
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE UNIQUE INDEX balance_transactions_related_order_id_idx
-    ON balance_transactions (related_order_id)
+-- Recharge idempotency is scoped per user: the same related_order_id may be
+-- reused by different users, but must be unique within a user.
+CREATE UNIQUE INDEX balance_transactions_user_order_idx
+    ON balance_transactions (user_id, related_order_id)
     WHERE related_order_id IS NOT NULL AND related_order_id <> '';
 
 CREATE TABLE client_api_keys (
@@ -81,7 +87,10 @@ CREATE TABLE client_api_keys (
     is_active BOOLEAN NOT NULL DEFAULT true,
     last_used_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- Composite target for quota_reservations so a reservation cannot pair a
+    -- key with a different user.
+    CONSTRAINT client_api_keys_id_user_id_unique UNIQUE (id, user_id)
 );
 
 CREATE TABLE rate_limit_rules (
@@ -100,7 +109,9 @@ CREATE TABLE rate_limit_rules (
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     CHECK (target_type IN ('global', 'user', 'api_key', 'model', 'channel')),
     CHECK (metric IN ('rpm', 'tpm', 'rpd', 'tpd', 'concurrency')),
-    CHECK (action IN ('reject', 'queue'))
+    -- Queueing synchronous proxy requests is unsupported, so 'reject' is the
+    -- only valid action.
+    CHECK (action = 'reject')
 );
 
 CREATE INDEX rate_limit_rules_enabled_idx ON rate_limit_rules (enabled, priority, id);
@@ -108,7 +119,7 @@ CREATE INDEX rate_limit_rules_enabled_idx ON rate_limit_rules (enabled, priority
 CREATE TABLE usage_logs (
     id BIGSERIAL PRIMARY KEY,
     request_id TEXT NOT NULL UNIQUE,
-    user_id BIGINT REFERENCES users(id) ON DELETE SET NULL,
+    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
     api_key_id BIGINT REFERENCES client_api_keys(id) ON DELETE SET NULL,
     channel_id BIGINT REFERENCES channels(id) ON DELETE SET NULL,
     model TEXT NOT NULL,
@@ -132,16 +143,160 @@ CREATE INDEX usage_logs_created_at_idx ON usage_logs (created_at DESC, id DESC);
 CREATE INDEX usage_logs_user_created_at_idx ON usage_logs (user_id, created_at DESC);
 CREATE INDEX usage_logs_channel_created_at_idx ON usage_logs (channel_id, created_at DESC);
 CREATE INDEX usage_logs_model_created_at_idx ON usage_logs (model, created_at DESC);
+-- These indexes match the API Key, model, and channel aggregation windows.
+CREATE INDEX usage_logs_api_key_created_at_idx ON usage_logs (api_key_id, created_at DESC);
+CREATE INDEX usage_logs_api_key_model_created_at_idx ON usage_logs (api_key_id, model, created_at DESC);
+CREATE INDEX usage_logs_api_key_channel_created_at_idx ON usage_logs (api_key_id, channel_id, created_at DESC);
 
-CREATE TABLE daily_usage_stats (
-    stat_date DATE NOT NULL,
-    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
-    channel_id BIGINT REFERENCES channels(id) ON DELETE CASCADE,
-    model TEXT NOT NULL DEFAULT '',
-    request_count BIGINT NOT NULL DEFAULT 0,
+-- Per-channel circuit breaker state. A missing row means "closed".
+CREATE TABLE channel_health (
+    channel_id BIGINT PRIMARY KEY REFERENCES channels(id) ON DELETE CASCADE,
+    state TEXT NOT NULL DEFAULT 'closed' CHECK (state IN ('closed', 'open', 'half-open')),
+    consecutive_failures INTEGER NOT NULL DEFAULT 0,
     success_count BIGINT NOT NULL DEFAULT 0,
-    error_count BIGINT NOT NULL DEFAULT 0,
-    total_tokens BIGINT NOT NULL DEFAULT 0,
-    total_cost NUMERIC(20, 6) NOT NULL DEFAULT 0,
-    PRIMARY KEY (stat_date, user_id, channel_id, model)
+    failure_count BIGINT NOT NULL DEFAULT 0,
+    opened_at TIMESTAMPTZ,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE TABLE quota_policies (
+    id BIGSERIAL PRIMARY KEY,
+    policy_name TEXT NOT NULL,
+    scope_type TEXT NOT NULL,
+    user_id BIGINT REFERENCES users(id) ON DELETE CASCADE,
+    api_key_id BIGINT REFERENCES client_api_keys(id) ON DELETE CASCADE,
+    period_type TEXT NOT NULL,
+    token_limit BIGINT,
+    cost_limit NUMERIC(20, 6),
+    enabled BOOLEAN NOT NULL DEFAULT true,
+    deleted_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (scope_type IN ('user', 'api_key')),
+    CHECK (period_type IN ('day', 'month')),
+    CHECK ((scope_type = 'user' AND user_id IS NOT NULL AND api_key_id IS NULL) OR
+           (scope_type = 'api_key' AND user_id IS NULL AND api_key_id IS NOT NULL)),
+    CHECK (token_limit IS NULL OR token_limit > 0),
+    CHECK (cost_limit IS NULL OR cost_limit > 0),
+    CHECK (token_limit IS NOT NULL OR cost_limit IS NOT NULL)
+);
+
+CREATE UNIQUE INDEX quota_policies_user_period_uidx
+    ON quota_policies (user_id, period_type)
+    WHERE scope_type = 'user' AND deleted_at IS NULL;
+CREATE UNIQUE INDEX quota_policies_key_period_uidx
+    ON quota_policies (api_key_id, period_type)
+    WHERE scope_type = 'api_key' AND deleted_at IS NULL;
+
+CREATE TABLE quota_buckets (
+    policy_id BIGINT NOT NULL REFERENCES quota_policies(id) ON DELETE CASCADE,
+    period_start TIMESTAMPTZ NOT NULL,
+    period_end TIMESTAMPTZ NOT NULL,
+    used_tokens BIGINT NOT NULL DEFAULT 0,
+    reserved_tokens BIGINT NOT NULL DEFAULT 0,
+    used_cost NUMERIC(20, 6) NOT NULL DEFAULT 0,
+    reserved_cost NUMERIC(20, 6) NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (policy_id, period_start),
+    CHECK (period_end > period_start),
+    CHECK (used_tokens >= 0 AND reserved_tokens >= 0),
+    CHECK (used_cost >= 0 AND reserved_cost >= 0)
+);
+
+CREATE TABLE quota_reservations (
+    id BIGSERIAL PRIMARY KEY,
+    request_id TEXT NOT NULL UNIQUE,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    api_key_id BIGINT NOT NULL,
+    model TEXT NOT NULL DEFAULT '',
+    estimated_tokens BIGINT NOT NULL,
+    estimated_cost NUMERIC(20, 6) NOT NULL,
+    actual_tokens BIGINT,
+    actual_cost NUMERIC(20, 6),
+    status TEXT NOT NULL DEFAULT 'pending',
+    expires_at TIMESTAMPTZ NOT NULL,
+    settled_at TIMESTAMPTZ,
+    released_at TIMESTAMPTZ,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (estimated_tokens >= 0 AND estimated_cost >= 0),
+    CHECK (actual_tokens IS NULL OR actual_tokens >= 0),
+    CHECK (actual_cost IS NULL OR actual_cost >= 0),
+    CHECK (status IN ('pending', 'settled', 'released', 'expired')),
+    CONSTRAINT quota_reservations_key_user_fkey
+        FOREIGN KEY (api_key_id, user_id) REFERENCES client_api_keys(id, user_id) ON DELETE RESTRICT
+);
+
+CREATE INDEX quota_reservations_pending_expiry_idx
+    ON quota_reservations (expires_at, id) WHERE status = 'pending';
+CREATE INDEX quota_reservations_scope_idx
+    ON quota_reservations (user_id, api_key_id, status, expires_at);
+
+CREATE TABLE quota_reservation_items (
+    reservation_id BIGINT NOT NULL REFERENCES quota_reservations(id) ON DELETE CASCADE,
+    policy_id BIGINT NOT NULL,
+    period_start TIMESTAMPTZ NOT NULL,
+    reserved_tokens BIGINT NOT NULL,
+    reserved_cost NUMERIC(20, 6) NOT NULL,
+    actual_tokens BIGINT,
+    actual_cost NUMERIC(20, 6),
+    PRIMARY KEY (reservation_id, policy_id),
+    FOREIGN KEY (policy_id, period_start) REFERENCES quota_buckets(policy_id, period_start) ON DELETE CASCADE,
+    CHECK (reserved_tokens >= 0 AND reserved_cost >= 0)
+);
+
+CREATE TABLE rate_limit_counters (
+    rule_id BIGINT NOT NULL REFERENCES rate_limit_rules(id) ON DELETE CASCADE,
+    bucket_start TIMESTAMPTZ NOT NULL,
+    current_count BIGINT NOT NULL DEFAULT 0,
+    previous_count BIGINT NOT NULL DEFAULT 0,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (rule_id, bucket_start),
+    CHECK (current_count >= 0 AND previous_count >= 0)
+);
+
+CREATE TABLE rate_limit_reservations (
+    id BIGSERIAL PRIMARY KEY,
+    request_id TEXT NOT NULL UNIQUE,
+    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    api_key_id BIGINT NOT NULL REFERENCES client_api_keys(id) ON DELETE CASCADE,
+    model TEXT NOT NULL DEFAULT '',
+    channel_id BIGINT REFERENCES channels(id) ON DELETE CASCADE,
+    estimated_tokens BIGINT NOT NULL DEFAULT 0,
+    bucket_starts JSONB NOT NULL DEFAULT '{}'::jsonb,
+    status TEXT NOT NULL DEFAULT 'pending',
+    expires_at TIMESTAMPTZ NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    released_at TIMESTAMPTZ,
+    CHECK (estimated_tokens >= 0),
+    CHECK (status IN ('pending', 'released', 'settled', 'expired'))
+);
+
+CREATE INDEX rate_limit_reservations_pending_expiry_idx ON rate_limit_reservations (expires_at, id) WHERE status = 'pending';
+
+CREATE TABLE channel_health_buckets (
+    channel_id BIGINT NOT NULL REFERENCES channels(id) ON DELETE CASCADE,
+    bucket_start TIMESTAMPTZ NOT NULL,
+    requests BIGINT NOT NULL DEFAULT 0,
+    errors BIGINT NOT NULL DEFAULT 0,
+    timeouts BIGINT NOT NULL DEFAULT 0,
+    PRIMARY KEY (channel_id, bucket_start),
+    CHECK (requests >= 0 AND errors >= 0 AND timeouts >= 0)
+);
+
+CREATE TABLE channel_breaker_configs (
+    channel_id BIGINT PRIMARY KEY REFERENCES channels(id) ON DELETE CASCADE,
+    window_seconds INTEGER NOT NULL,
+    minimum_samples INTEGER NOT NULL,
+    error_rate_percent INTEGER NOT NULL,
+    timeout_rate_percent INTEGER NOT NULL,
+    cooldown_seconds INTEGER NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CHECK (window_seconds > 0 AND minimum_samples > 0 AND error_rate_percent BETWEEN 1 AND 100 AND timeout_rate_percent BETWEEN 1 AND 100 AND cooldown_seconds > 0)
+);
+
+CREATE TABLE channel_breaker_probes (
+    channel_id BIGINT PRIMARY KEY REFERENCES channels(id) ON DELETE CASCADE,
+    lease_id UUID NOT NULL,
+    leased_until TIMESTAMPTZ NOT NULL
 );
