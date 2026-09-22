@@ -3,13 +3,11 @@ package postgres
 import (
 	"context"
 	"errors"
-	"fmt"
-	"strings"
 
 	domain "LLMGateway/server/internal/catalog"
 	"LLMGateway/server/internal/db/sqlc"
-	"LLMGateway/server/internal/money"
-	"LLMGateway/server/internal/store"
+
+	"github.com/jackc/pgx/v5"
 )
 
 func (s *Store) ListChannels() (domain.ListResponse[domain.ChannelDTO], error) {
@@ -24,30 +22,41 @@ func (s *Store) ListChannels() (domain.ListResponse[domain.ChannelDTO], error) {
 	return domain.ListResponse[domain.ChannelDTO]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) CreateChannel(in domain.ChannelInput) (domain.ChannelDTO, error) {
-	if strings.TrimSpace(in.APIKey) == "" {
-		return domain.ChannelDTO{}, fmt.Errorf("%w: api_key is required", store.ErrInvalid)
-	}
-	if in.AuthType == "" {
-		in.AuthType = "bearer"
-	}
-	if in.Weight == 0 {
-		in.Weight = 100
-	}
-
-	balance, err := normalizeBalance(in.Balance)
+func (s *Store) GetChannelDTO(id int) (domain.ChannelDTO, error) {
+	row, err := s.queries.GetChannel(context.Background(), int64(id))
 	if err != nil {
-		return domain.ChannelDTO{}, err
+		return domain.ChannelDTO{}, mapError(err)
 	}
-	ciphertext, err := s.encryptSecret(in.APIKey)
-	if err != nil {
-		return domain.ChannelDTO{}, err
-	}
+	return channelDTO(row.ID, row.Name, row.BaseUrl, row.AuthType, row.Status, row.Weight, row.Priority, textValue(row.Balance), row.ModelCount), nil
+}
 
+func (s *Store) GetChannelRecord(id int) (domain.ChannelRecord, error) {
+	row, err := s.queries.GetChannelSecret(context.Background(), int64(id))
+	if err != nil {
+		return domain.ChannelRecord{}, mapError(err)
+	}
+	return domain.ChannelRecord{
+		ID:               int(row.ID),
+		Name:             row.Name,
+		BaseURL:          row.BaseUrl,
+		APIKeyCiphertext: row.ApiKeyCiphertext,
+		AuthType:         row.AuthType,
+		Status:           int(row.Status),
+		Weight:           int(row.Weight),
+		Priority:         int(row.Priority),
+		Balance:          optionalString(textValue(row.Balance)),
+	}, nil
+}
+
+func (s *Store) InsertChannel(in domain.ChannelInsert) (int, error) {
+	var balance any
+	if in.Balance != nil {
+		balance = *in.Balance
+	}
 	id, err := s.queries.CreateChannel(context.Background(), sqlc.CreateChannelParams{
 		Name:             in.Name,
 		BaseUrl:          in.BaseURL,
-		ApiKeyCiphertext: ciphertext,
+		ApiKeyCiphertext: in.APIKeyCiphertext,
 		AuthType:         in.AuthType,
 		Status:           int32(in.Status),
 		Weight:           int32(in.Weight),
@@ -55,26 +64,16 @@ func (s *Store) CreateChannel(in domain.ChannelInput) (domain.ChannelDTO, error)
 		Balance:          balance,
 	})
 	if err != nil {
-		return domain.ChannelDTO{}, mapError(err)
+		return 0, mapError(err)
 	}
-	return s.getChannelDTO(id)
+	return int(id), nil
 }
 
-func (s *Store) UpdateChannel(id int, in domain.ChannelInput) (domain.ChannelDTO, error) {
-	balance, err := normalizeBalance(in.Balance)
-	if err != nil {
-		return domain.ChannelDTO{}, err
+func (s *Store) UpdateChannelRecord(id int, in domain.ChannelUpdate) (bool, error) {
+	var balance any
+	if in.Balance != nil {
+		balance = *in.Balance
 	}
-
-	var ciphertext any = ""
-	if strings.TrimSpace(in.APIKey) != "" {
-		encrypted, err := s.encryptSecret(in.APIKey)
-		if err != nil {
-			return domain.ChannelDTO{}, err
-		}
-		ciphertext = encrypted
-	}
-
 	affected, err := s.queries.UpdateChannel(context.Background(), sqlc.UpdateChannelParams{
 		Name:             in.Name,
 		BaseUrl:          in.BaseURL,
@@ -83,134 +82,29 @@ func (s *Store) UpdateChannel(id int, in domain.ChannelInput) (domain.ChannelDTO
 		Weight:           int32(in.Weight),
 		Priority:         int32(in.Priority),
 		Balance:          balance,
-		ApiKeyCiphertext: ciphertext,
+		ApiKeyCiphertext: in.APIKeyCiphertext,
 		ID:               int64(id),
 	})
 	if err != nil {
-		return domain.ChannelDTO{}, mapError(err)
+		return false, mapError(err)
 	}
-	if affected == 0 {
-		return domain.ChannelDTO{}, store.ErrNotFound
-	}
-	return s.getChannelDTO(int64(id))
+	return affected > 0, nil
 }
 
-func (s *Store) UpdateChannelStatus(id int, status int) (domain.ChannelDTO, error) {
-	affected, err := s.queries.UpdateChannelStatus(context.Background(), sqlc.UpdateChannelStatusParams{
-		Status: int32(status),
-		ID:     int64(id),
-	})
+func (s *Store) UpdateChannelStatusRecord(id, status int) (bool, error) {
+	affected, err := s.queries.UpdateChannelStatus(context.Background(), sqlc.UpdateChannelStatusParams{Status: int32(status), ID: int64(id)})
 	if err != nil {
-		return domain.ChannelDTO{}, mapError(err)
+		return false, mapError(err)
 	}
-	if affected == 0 {
-		return domain.ChannelDTO{}, store.ErrNotFound
-	}
-	return s.getChannelDTO(int64(id))
+	return affected > 0, nil
 }
 
-func (s *Store) UpdateChannelBalance(id int, balance string, delta string) (domain.ChannelDTO, error) {
-	if balance == "" && delta == "" {
-		return domain.ChannelDTO{}, fmt.Errorf("%w: balance or delta is required", store.ErrInvalid)
-	}
-
-	ctx := context.Background()
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return domain.ChannelDTO{}, mapError(err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	queries := sqlc.New(tx)
-
-	// Lock the row so concurrent read-modify-write balance updates cannot be
-	// lost under READ COMMITTED.
-	if _, err := queries.LockChannel(ctx, int64(id)); err != nil {
-		return domain.ChannelDTO{}, mapError(err)
-	}
-	row, err := queries.GetChannel(ctx, int64(id))
-	if err != nil {
-		return domain.ChannelDTO{}, mapError(err)
-	}
-
-	base := money.Amount(0)
-	if current := textValue(row.Balance); current != "" {
-		parsed, err := money.Parse6(current)
-		if err != nil {
-			return domain.ChannelDTO{}, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
-		}
-		base = parsed
-	}
-	if balance != "" {
-		parsed, err := money.Parse6(balance)
-		if err != nil {
-			return domain.ChannelDTO{}, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
-		}
-		base = parsed
-	}
-	if delta != "" {
-		parsed, err := money.Parse6(delta)
-		if err != nil {
-			return domain.ChannelDTO{}, fmt.Errorf("%w: invalid delta", store.ErrInvalid)
-		}
-		base = base.Add(parsed)
-	}
-
-	affected, err := queries.UpdateChannelBalance(ctx, sqlc.UpdateChannelBalanceParams{
-		Balance: money.Format6(base),
-		ID:      int64(id),
-	})
-	if err != nil {
-		return domain.ChannelDTO{}, mapError(err)
-	}
-	if affected == 0 {
-		return domain.ChannelDTO{}, store.ErrNotFound
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return domain.ChannelDTO{}, mapError(err)
-	}
-	return s.getChannelDTO(int64(id))
-}
-
-func (s *Store) DeleteChannel(id int) error {
+func (s *Store) DeleteChannel(id int) (bool, error) {
 	affected, err := s.queries.DeleteChannel(context.Background(), int64(id))
 	if err != nil {
-		return mapError(err)
+		return false, mapError(err)
 	}
-	if affected == 0 {
-		return store.ErrNotFound
-	}
-	return nil
-}
-
-func (s *Store) GetChannelSecret(id int) (*domain.Channel, error) {
-	row, err := s.queries.GetChannelSecret(context.Background(), int64(id))
-	if err != nil {
-		return nil, mapError(err)
-	}
-
-	plaintext := ""
-	if row.ApiKeyCiphertext != "" {
-		if s.cipher == nil {
-			return nil, errors.New("channel encryption key is not configured")
-		}
-		decrypted, err := s.cipher.Decrypt(row.ApiKeyCiphertext)
-		if err != nil {
-			return nil, fmt.Errorf("decrypt channel api_key: %w", err)
-		}
-		plaintext = decrypted
-	}
-
-	return &domain.Channel{
-		ID:       int(row.ID),
-		Name:     row.Name,
-		BaseURL:  row.BaseUrl,
-		APIKey:   plaintext,
-		AuthType: row.AuthType,
-		Status:   int(row.Status),
-		Weight:   int(row.Weight),
-		Priority: int(row.Priority),
-		Balance:  optionalString(textValue(row.Balance)),
-	}, nil
+	return affected > 0, nil
 }
 
 func (s *Store) ListChannelModels(channelID int) (domain.ListResponse[domain.ChannelModel], error) {
@@ -225,12 +119,8 @@ func (s *Store) ListChannelModels(channelID int) (domain.ListResponse[domain.Cha
 	return domain.ListResponse[domain.ChannelModel]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) CreateChannelModel(channelID int, in domain.ChannelModel) (domain.ChannelModel, error) {
-	ctx := context.Background()
-	if _, err := s.queries.GetChannel(ctx, int64(channelID)); err != nil {
-		return domain.ChannelModel{}, mapError(err)
-	}
-	row, err := s.queries.CreateChannelModel(ctx, sqlc.CreateChannelModelParams{
+func (s *Store) InsertChannelModel(channelID int, in domain.ChannelModel) (domain.ChannelModel, error) {
+	row, err := s.queries.CreateChannelModel(context.Background(), sqlc.CreateChannelModelParams{
 		ChannelID:     int64(channelID),
 		ModelName:     in.ModelName,
 		UpstreamModel: in.UpstreamModel,
@@ -242,7 +132,7 @@ func (s *Store) CreateChannelModel(channelID int, in domain.ChannelModel) (domai
 	return domain.ChannelModel{ID: int(row.ID), ModelName: row.ModelName, UpstreamModel: row.UpstreamModel, Enabled: row.Enabled}, nil
 }
 
-func (s *Store) UpdateChannelModel(channelID, modelID int, upstreamModel string, enabled bool) (domain.ChannelModel, error) {
+func (s *Store) UpdateChannelModelRecord(channelID, modelID int, upstreamModel string, enabled bool) (domain.ChannelModel, bool, error) {
 	row, err := s.queries.UpdateChannelModel(context.Background(), sqlc.UpdateChannelModelParams{
 		UpstreamModel: upstreamModel,
 		Enabled:       enabled,
@@ -250,23 +140,31 @@ func (s *Store) UpdateChannelModel(channelID, modelID int, upstreamModel string,
 		ID:            int64(modelID),
 	})
 	if err != nil {
-		return domain.ChannelModel{}, mapError(err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.ChannelModel{}, false, nil
+		}
+		return domain.ChannelModel{}, false, mapError(err)
 	}
-	return domain.ChannelModel{ID: int(row.ID), ModelName: row.ModelName, UpstreamModel: row.UpstreamModel, Enabled: row.Enabled}, nil
+	return domain.ChannelModel{ID: int(row.ID), ModelName: row.ModelName, UpstreamModel: row.UpstreamModel, Enabled: row.Enabled}, true, nil
 }
 
-func (s *Store) DeleteChannelModel(channelID, modelID int) error {
-	affected, err := s.queries.DeleteChannelModel(context.Background(), sqlc.DeleteChannelModelParams{
-		ChannelID: int64(channelID),
-		ID:        int64(modelID),
-	})
+func (s *Store) DeleteChannelModel(channelID, modelID int) (bool, error) {
+	affected, err := s.queries.DeleteChannelModel(context.Background(), sqlc.DeleteChannelModelParams{ChannelID: int64(channelID), ID: int64(modelID)})
 	if err != nil {
-		return mapError(err)
+		return false, mapError(err)
 	}
-	if affected == 0 {
-		return store.ErrNotFound
+	return affected > 0, nil
+}
+
+func (s *Store) ChannelModelExists(channelID int, modelName string) (bool, error) {
+	_, err := s.queries.GetChannelModel(context.Background(), sqlc.GetChannelModelParams{ChannelID: int64(channelID), ModelName: modelName})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return false, nil
+		}
+		return false, mapError(err)
 	}
-	return nil
+	return true, nil
 }
 
 func (s *Store) ListCatalogModels(enabledOnly bool) (domain.ListResponse[domain.CatalogModelDTO], error) {
@@ -306,45 +204,19 @@ func (s *Store) ListPricing() (domain.ListResponse[domain.PricingDTO], error) {
 	return domain.ListResponse[domain.PricingDTO]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) UpsertPricing(in domain.PricingInput) (domain.PricingDTO, error) {
-	if in.ChannelID <= 0 || strings.TrimSpace(in.ModelName) == "" {
-		return domain.PricingDTO{}, fmt.Errorf("%w: channel_id and model_name are required", store.ErrInvalid)
-	}
+func (s *Store) UpsertPricingRecord(in domain.PricingRecord) (domain.PricingDTO, error) {
 	ctx := context.Background()
-	if _, err := s.queries.GetChannel(ctx, int64(in.ChannelID)); err != nil {
-		return domain.PricingDTO{}, mapError(err)
+	var cached any
+	if in.CachedInputPricePer1M != "" {
+		cached = in.CachedInputPricePer1M
 	}
-	if _, err := s.queries.GetChannelModel(ctx, sqlc.GetChannelModelParams{ChannelID: int64(in.ChannelID), ModelName: in.ModelName}); err != nil {
-		if errors.Is(mapError(err), store.ErrNotFound) {
-			return domain.PricingDTO{}, fmt.Errorf("%w: model mapping not found", store.ErrInvalid)
-		}
-		return domain.PricingDTO{}, mapError(err)
-	}
-
-	inputPrice, err := normalizePrice(in.InputPricePer1M, "input_price_per_1m")
-	if err != nil {
-		return domain.PricingDTO{}, err
-	}
-	outputPrice, err := normalizePrice(in.OutputPricePer1M, "output_price_per_1m")
-	if err != nil {
-		return domain.PricingDTO{}, err
-	}
-	cachedPrice, err := normalizeOptionalPrice(in.CachedInputPricePer1M, "cached_input_price_per_1m")
-	if err != nil {
-		return domain.PricingDTO{}, err
-	}
-	currency := in.Currency
-	if currency == "" {
-		currency = "USD"
-	}
-
 	if _, err := s.queries.UpsertPricing(ctx, sqlc.UpsertPricingParams{
 		ChannelID:             int64(in.ChannelID),
 		ModelName:             in.ModelName,
-		InputPricePer1m:       inputPrice,
-		OutputPricePer1m:      outputPrice,
-		CachedInputPricePer1m: cachedPrice,
-		Currency:              currency,
+		InputPricePer1m:       in.InputPricePer1M,
+		OutputPricePer1m:      in.OutputPricePer1M,
+		CachedInputPricePer1m: cached,
+		Currency:              in.Currency,
 	}); err != nil {
 		return domain.PricingDTO{}, mapError(err)
 	}
@@ -374,10 +246,10 @@ func (s *Store) GetPricing(channelID int, modelName string) (domain.PricingDTO, 
 	return pricingDTO(row.ID, row.ChannelID, row.ChannelName, row.ModelName, textOrEmpty(row.UpstreamModel), row.InputPricePer1m, row.OutputPricePer1m, textValue(row.CachedInputPricePer1m), row.Currency), nil
 }
 
-func (s *Store) RouteCandidates(modelName string) (domain.ListResponse[domain.RouteCandidate], error) {
+func (s *Store) RouteCandidates(modelName string, cooldownSeconds int) (domain.ListResponse[domain.RouteCandidate], error) {
 	rows, err := s.queries.ListRouteCandidates(context.Background(), sqlc.ListRouteCandidatesParams{
 		ModelName:       modelName,
-		CooldownSeconds: int32(s.breaker.Cooldown.Seconds()),
+		CooldownSeconds: int32(cooldownSeconds),
 	})
 	if err != nil {
 		return domain.ListResponse[domain.RouteCandidate]{}, mapError(err)
@@ -387,45 +259,4 @@ func (s *Store) RouteCandidates(modelName string) (domain.ListResponse[domain.Ro
 		list = append(list, domain.RouteCandidate{ChannelID: int(row.ChannelID), ChannelName: row.ChannelName, UpstreamModel: row.UpstreamModel, Priority: int(row.Priority), Weight: int(row.Weight), Balance: optionalString(textValue(row.Balance))})
 	}
 	return domain.ListResponse[domain.RouteCandidate]{List: list, Total: len(list)}, nil
-}
-
-func (s *Store) getChannelDTO(id int64) (domain.ChannelDTO, error) {
-	row, err := s.queries.GetChannel(context.Background(), id)
-	if err != nil {
-		return domain.ChannelDTO{}, mapError(err)
-	}
-	return channelDTO(row.ID, row.Name, row.BaseUrl, row.AuthType, row.Status, row.Weight, row.Priority, textValue(row.Balance), row.ModelCount), nil
-}
-
-func (s *Store) encryptSecret(plaintext string) (string, error) {
-	if s.cipher == nil {
-		return "", errors.New("channel encryption key is not configured")
-	}
-	return s.cipher.Encrypt(plaintext)
-}
-
-func normalizeBalance(balance *string) (any, error) {
-	if balance == nil || *balance == "" {
-		return nil, nil
-	}
-	amount, err := money.Parse6(*balance)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
-	}
-	return money.Format6(amount), nil
-}
-
-func normalizePrice(value string, field string) (any, error) {
-	amount, err := money.Parse8(value)
-	if err != nil {
-		return nil, fmt.Errorf("%w: invalid %s", store.ErrInvalid, field)
-	}
-	return money.Format8(amount), nil
-}
-
-func normalizeOptionalPrice(value string, field string) (any, error) {
-	if value == "" {
-		return nil, nil
-	}
-	return normalizePrice(value, field)
 }

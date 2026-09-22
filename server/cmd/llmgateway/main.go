@@ -34,7 +34,7 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	st, closeStore, err := buildStore(ctx, cfg)
+	st, cipher, closeStore, err := buildStore(ctx, cfg)
 	if err != nil {
 		return err
 	}
@@ -43,6 +43,7 @@ func run() error {
 	server := &http.Server{
 		Addr: cfg.Addr,
 		Handler: newRouter(cfg.DashboardDir, st,
+			httpapi.WithCipher(cipher),
 			httpapi.WithUpstreamTimeout(time.Duration(cfg.UpstreamTimeoutSeconds)*time.Second),
 			httpapi.WithUpstreamMaxAttempts(cfg.UpstreamMaxAttempts),
 			httpapi.WithMinimumRouteBalance(cfg.ChannelMinRouteBalance),
@@ -105,30 +106,31 @@ func runQuotaReaper(ctx context.Context, st reaperPort, interval time.Duration, 
 	}
 }
 
-// buildStore constructs the only runtime persistence implementation.
-func buildStore(ctx context.Context, cfg config.Config) (*postgres.Store, func(), error) {
+// buildStore constructs the only runtime persistence implementation and the
+// channel key cipher owned by the catalog module.
+func buildStore(ctx context.Context, cfg config.Config) (*postgres.Store, *crypto.Cipher, func(), error) {
 	if cfg.DatabaseURL == "" {
-		return nil, nil, fmt.Errorf("DATABASE_URL is required")
+		return nil, nil, nil, fmt.Errorf("DATABASE_URL is required")
 	}
 
 	cipher, err := crypto.NewCipher([]byte(cfg.ChannelKeyEncryptionKey))
 	if err != nil {
-		return nil, nil, fmt.Errorf("channel key encryption: %w", err)
+		return nil, nil, nil, fmt.Errorf("channel key encryption: %w", err)
 	}
 
 	pool, err := pgxpool.New(ctx, cfg.DatabaseURL)
 	if err != nil {
-		return nil, nil, fmt.Errorf("connect postgres: %w", err)
+		return nil, nil, nil, fmt.Errorf("connect postgres: %w", err)
 	}
 	if err := pool.Ping(ctx); err != nil {
 		pool.Close()
-		return nil, nil, fmt.Errorf("ping postgres: %w", err)
+		return nil, nil, nil, fmt.Errorf("ping postgres: %w", err)
 	}
 	if err := migrate.Run(ctx, pool, cfg.MigrationsDir); err != nil {
 		pool.Close()
-		return nil, nil, fmt.Errorf("run migrations: %w", err)
+		return nil, nil, nil, fmt.Errorf("run migrations: %w", err)
 	}
 
 	log.Print("using PostgreSQL store")
-	return postgres.New(pool, cipher), pool.Close, nil
+	return postgres.New(pool), cipher, pool.Close, nil
 }

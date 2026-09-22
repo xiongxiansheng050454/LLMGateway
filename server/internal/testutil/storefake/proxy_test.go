@@ -132,8 +132,9 @@ func TestDebitUserBalanceConcurrent(t *testing.T) {
 
 func TestGetPricingAndRouteCandidates(t *testing.T) {
 	st := New()
+	cat := newCatalog(st)
 	create := func(name string, status, priority, weight int, balance string) int {
-		created, err := st.CreateChannel(domain.ChannelInput{Name: name, BaseURL: "https://" + name + ".test", APIKey: "sk", Status: status, Priority: priority, Weight: weight, Balance: strPtr(balance)})
+		created, err := cat.CreateChannel(domain.ChannelInput{Name: name, BaseURL: "https://" + name + ".test", APIKey: "sk", Status: status, Priority: priority, Weight: weight, Balance: strPtr(balance)})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -145,31 +146,31 @@ func TestGetPricingAndRouteCandidates(t *testing.T) {
 	channelD := create("D", 0, 99, 999, "")
 
 	for _, id := range []int{channelA, channelB, channelC, channelD} {
-		if _, err := st.CreateChannelModel(id, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
+		if _, err := cat.CreateChannelModel(id, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	// Disabled mapping on an enabled channel must be excluded.
 	disabled := create("E", 1, 50, 50, "")
-	if _, err := st.CreateChannelModel(disabled, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: false}); err != nil {
+	if _, err := cat.CreateChannelModel(disabled, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: false}); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := st.UpsertPricing(domain.PricingInput{ChannelID: channelA, ModelName: "gpt", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000", Currency: "USD"}); err != nil {
+	if _, err := cat.UpsertPricing(domain.PricingInput{ChannelID: channelA, ModelName: "gpt", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000", Currency: "USD"}); err != nil {
 		t.Fatal(err)
 	}
-	pricing, err := st.GetPricing(channelA, "gpt")
+	pricing, err := cat.GetPricing(channelA, "gpt")
 	if err != nil {
 		t.Fatalf("GetPricing: %v", err)
 	}
 	if pricing.InputPricePer1M != "0.10000000" || pricing.UpstreamModel != "up-gpt" {
 		t.Fatalf("unexpected pricing: %+v", pricing)
 	}
-	if _, err := st.GetPricing(channelA, "missing"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := cat.GetPricing(channelA, "missing"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing pricing err = %v, want ErrNotFound", err)
 	}
 
-	candidates, err := st.RouteCandidates("gpt")
+	candidates, err := cat.RouteCandidates("gpt")
 	if err != nil {
 		t.Fatalf("RouteCandidates: %v", err)
 	}

@@ -12,6 +12,7 @@ import (
 func newRouteTestApp(st *storefake.Store, randIntN func(int) int) *Service {
 	return &Service{
 		store:    st,
+		catalog:  newTestCatalog(st),
 		settleTx: st.SettlementTx(),
 		client:   &http.Client{},
 		randIntN: randIntN,
@@ -22,12 +23,13 @@ func newRouteTestApp(st *storefake.Store, randIntN func(int) int) *Service {
 func seedRoutingStore(t *testing.T) *storefake.Store {
 	t.Helper()
 	st := storefake.New()
+	cat := newTestCatalog(st)
 	create := func(name string, priority, weight int, balance string) int {
 		var balancePtr *string
 		if balance != "" {
 			balancePtr = &balance
 		}
-		created, err := st.CreateChannel(domain.ChannelInput{Name: name, BaseURL: "https://" + name + ".test", APIKey: "sk", Status: 1, Priority: priority, Weight: weight, Balance: balancePtr})
+		created, err := cat.CreateChannel(domain.ChannelInput{Name: name, BaseURL: "https://" + name + ".test", APIKey: "sk", Status: 1, Priority: priority, Weight: weight, Balance: balancePtr})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -38,7 +40,7 @@ func seedRoutingStore(t *testing.T) *storefake.Store {
 	highB := create("highB", 10, 200, "")
 	zero := create("zero", 20, 500, "0.000000")
 	for _, id := range []int{low, highA, highB, zero} {
-		if _, err := st.CreateChannelModel(id, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up", Enabled: true}); err != nil {
+		if _, err := cat.CreateChannelModel(id, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up", Enabled: true}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -79,9 +81,10 @@ func TestSelectChannelWeightedFallback(t *testing.T) {
 
 func TestSelectChannelExcludesNonPositiveBalance(t *testing.T) {
 	st := seedRoutingStore(t)
+	cat := newTestCatalog(st)
 
 	// Only the zero-balance channel serves "only-zero".
-	if _, err := st.CreateChannelModel(4, domain.ChannelModel{ModelName: "only-zero", UpstreamModel: "up", Enabled: true}); err != nil {
+	if _, err := cat.CreateChannelModel(4, domain.ChannelModel{ModelName: "only-zero", UpstreamModel: "up", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -93,6 +96,7 @@ func TestSelectChannelExcludesNonPositiveBalance(t *testing.T) {
 
 func TestSelectChannelExcludesBalanceBelowConfiguredReserve(t *testing.T) {
 	st := storefake.New()
+	cat := newTestCatalog(st)
 	lowBalance := "0.999999"
 	highBalance := "1.000000"
 	for _, input := range []domain.ChannelInput{
@@ -100,11 +104,11 @@ func TestSelectChannelExcludesBalanceBelowConfiguredReserve(t *testing.T) {
 		{Name: "at-reserve", BaseURL: "https://at.test", APIKey: "sk", Status: 1, Priority: 10, Weight: 100, Balance: &highBalance},
 		{Name: "unlimited", BaseURL: "https://unlimited.test", APIKey: "sk", Status: 1, Priority: 10, Weight: 100},
 	} {
-		channel, err := st.CreateChannel(input)
+		channel, err := cat.CreateChannel(input)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := st.CreateChannelModel(channel.ID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "gpt", Enabled: true}); err != nil {
+		if _, err := cat.CreateChannelModel(channel.ID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "gpt", Enabled: true}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -129,23 +133,24 @@ func TestSelectChannelNoCandidates(t *testing.T) {
 
 func TestOrderedCandidatesDeduplicateChannelsAndKeepPriorityFallbacks(t *testing.T) {
 	st := storefake.New()
+	cat := newTestCatalog(st)
 	ids := []int{}
 	for _, input := range []domain.ChannelInput{
 		{Name: "preferred", BaseURL: "http://preferred", APIKey: "x", Status: 1, Priority: 10, Weight: 10},
 		{Name: "fallback", BaseURL: "http://fallback", APIKey: "x", Status: 1, Priority: 5, Weight: 1},
 	} {
-		created, err := st.CreateChannel(input)
+		created, err := cat.CreateChannel(input)
 		if err != nil {
 			t.Fatal(err)
 		}
 		ids = append(ids, created.ID)
 	}
 	for _, channelID := range []int{ids[0], ids[1]} {
-		if _, err := st.CreateChannelModel(channelID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "gpt", Enabled: true}); err != nil {
+		if _, err := cat.CreateChannelModel(channelID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "gpt", Enabled: true}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	service := NewService(st, nil, func(int) int { return 0 }, time.Now)
+	service := NewService(st, cat, nil, func(int) int { return 0 }, time.Now)
 	candidates, err := service.orderedCandidates("gpt")
 	if err != nil {
 		t.Fatal(err)

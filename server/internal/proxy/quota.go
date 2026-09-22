@@ -35,7 +35,7 @@ func (a *Service) reserveQuota(ctx context.Context, requestID string, auth *acco
 }
 
 func (a *Service) estimatedCost(channelID int, model string, estimate EstimatedUsage) (string, error) {
-	pricing, err := a.store.GetPricing(channelID, model)
+	pricing, err := a.catalog.GetPricing(channelID, model)
 	if err != nil {
 		if errors.Is(err, apperrors.ErrNotFound) {
 			return "0.000000", nil

@@ -11,6 +11,7 @@ import (
 
 	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/catalog"
+	"LLMGateway/server/internal/crypto"
 	"LLMGateway/server/internal/httpcommon"
 	"LLMGateway/server/internal/proxy"
 	openaiwire "LLMGateway/server/internal/proxy/openai"
@@ -56,6 +57,7 @@ type Port interface {
 	usage.Port
 	proxy.Port
 	AccountsTx() accounts.TxManager
+	CatalogTx() catalog.TxManager
 }
 
 type options struct {
@@ -66,6 +68,7 @@ type options struct {
 	quotaReservationTTL   time.Duration
 	upstreamMaxAttempts   int
 	minimumRouteBalance   string
+	cipher                *crypto.Cipher
 }
 
 func WithQuotaConfig(defaultMaxTokens int, reservationTTL time.Duration) Option {
@@ -123,6 +126,13 @@ func WithClock(fn func() time.Time) Option {
 	}
 }
 
+// WithCipher injects the cipher used to encrypt/decrypt upstream channel keys.
+func WithCipher(cipher *crypto.Cipher) Option {
+	return func(o *options) {
+		o.cipher = cipher
+	}
+}
+
 // NewServer builds the HTTP entry points around an injected store. Route
 // registration is done by cmd/llmgateway/router.go.
 func NewServer(dashboardDir string, st Port, opts ...Option) *Server {
@@ -138,7 +148,15 @@ func NewServer(dashboardDir string, st Port, opts ...Option) *Server {
 		opt(&settings)
 	}
 	client := &http.Client{Timeout: settings.upstreamTimeout}
-	proxyService := proxy.NewService(st, client, settings.randIntN, settings.now, openaiwire.Adapter())
+	catalogServer := catalog.New(catalog.Deps{
+		Store:  st,
+		Health: st,
+		Tx:     st.CatalogTx(),
+		Cipher: settings.cipher,
+		Client: client,
+		Now:    settings.now,
+	})
+	proxyService := proxy.NewService(st, catalogServer, client, settings.randIntN, settings.now, openaiwire.Adapter())
 	proxyService.ConfigureQuota(settings.quotaDefaultMaxTokens, settings.quotaReservationTTL)
 	proxyService.ConfigureRequest(settings.upstreamTimeout, settings.upstreamMaxAttempts)
 	proxyService.ConfigureMinimumRouteBalance(settings.minimumRouteBalance)
@@ -146,7 +164,7 @@ func NewServer(dashboardDir string, st Port, opts ...Option) *Server {
 		store:        st,
 		client:       client,
 		proxy:        proxyService,
-		catalog:      catalog.New(st, client),
+		catalog:      catalogServer,
 		accounts:     accounts.New(st, st.AccountsTx()),
 		usage:        usage.New(st),
 		ratelimit:    ratelimit.New(st),

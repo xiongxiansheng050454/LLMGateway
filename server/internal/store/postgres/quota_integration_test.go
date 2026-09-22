@@ -77,7 +77,7 @@ func TestPGQuotaReleaseAndSettlementMoveReservedToUsed(t *testing.T) {
 	usage.ChannelID = nil
 	usage.TotalTokens = 25
 	usage.TotalCost = "1.250000"
-	service := proxy.NewService(st, nil, func(int) int { return 0 }, time.Now)
+	service := proxy.NewService(st, testCatalog(t, st), nil, func(int) int { return 0 }, time.Now)
 	if _, err := service.Settle(settlement.Input{ReservationID: settled.ID, UserID: 1, APIKeyID: keyID, Cost: "1.250000", Description: "chat", UsageLog: usage}); err != nil {
 		t.Fatal(err)
 	}

@@ -13,11 +13,12 @@ import (
 )
 
 func newSettlementService(st *storefake.Store) *Service {
-	return NewService(st, nil, func(int) int { return 0 }, time.Now)
+	return NewService(st, newTestCatalog(st), nil, func(int) int { return 0 }, time.Now)
 }
 
 func TestSettleDebitsUserChannelAndWritesUsage(t *testing.T) {
 	st := storefake.New()
+	cat := newTestCatalog(st)
 	acc := accounts.New(st, st.AccountsTx())
 	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
@@ -26,7 +27,7 @@ func TestSettleDebitsUserChannelAndWritesUsage(t *testing.T) {
 		t.Fatal(err)
 	}
 	channelBalance := "5.000000"
-	channel, err := st.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1, Balance: &channelBalance})
+	channel, err := cat.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1, Balance: &channelBalance})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -49,7 +50,7 @@ func TestSettleDebitsUserChannelAndWritesUsage(t *testing.T) {
 	if balance.AvailableBalance != "8.750000" {
 		t.Fatalf("user balance = %s, want 8.750000", balance.AvailableBalance)
 	}
-	secret, _ := st.GetChannelSecret(channel.ID)
+	secret, _ := cat.GetChannelSecret(channel.ID)
 	if secret.Balance == nil || *secret.Balance != "3.750000" {
 		t.Fatalf("channel balance = %v, want 3.750000", secret.Balance)
 	}
@@ -65,6 +66,7 @@ func TestSettleDebitsUserChannelAndWritesUsage(t *testing.T) {
 
 func TestSettleRejectsInsufficientBalanceWithoutSuccessLog(t *testing.T) {
 	st := storefake.New()
+	cat := newTestCatalog(st)
 	acc := accounts.New(st, st.AccountsTx())
 	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
@@ -72,7 +74,7 @@ func TestSettleRejectsInsufficientBalanceWithoutSuccessLog(t *testing.T) {
 	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "1.000000"}); err != nil {
 		t.Fatal(err)
 	}
-	channel, _ := st.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
+	channel, _ := cat.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
 
 	_, err := newSettlementService(st).Settle(settlement.Input{UserID: 1, ChannelID: &channel.ID, Cost: "2.000000", Description: "chat", UsageLog: successUsageInput("req-2", 1, channel.ID)})
 	if !errors.Is(err, store.ErrInvalid) {
@@ -90,6 +92,7 @@ func TestSettleRejectsInsufficientBalanceWithoutSuccessLog(t *testing.T) {
 
 func TestSettleCostZeroWritesUsageWithoutDebit(t *testing.T) {
 	st := storefake.New()
+	cat := newTestCatalog(st)
 	acc := accounts.New(st, st.AccountsTx())
 	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
@@ -97,7 +100,7 @@ func TestSettleCostZeroWritesUsageWithoutDebit(t *testing.T) {
 	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "1.000000"}); err != nil {
 		t.Fatal(err)
 	}
-	channel, _ := st.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
+	channel, _ := cat.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
 
 	if _, err := newSettlementService(st).Settle(settlement.Input{UserID: 1, ChannelID: &channel.ID, Cost: "0.000000", Description: "free", UsageLog: successUsageInput("req-free", 1, channel.ID)}); err != nil {
 		t.Fatalf("Settle: %v", err)
@@ -118,6 +121,7 @@ func TestSettleCostZeroWritesUsageWithoutDebit(t *testing.T) {
 
 func TestSettleDuplicateUsageRollsBack(t *testing.T) {
 	st := storefake.New()
+	cat := newTestCatalog(st)
 	acc := accounts.New(st, st.AccountsTx())
 	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
@@ -126,7 +130,7 @@ func TestSettleDuplicateUsageRollsBack(t *testing.T) {
 		t.Fatal(err)
 	}
 	channelBalance := "5.000000"
-	channel, _ := st.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1, Balance: &channelBalance})
+	channel, _ := cat.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1, Balance: &channelBalance})
 	if _, err := st.InsertUsageLog(successUsageInput("dup", 1, channel.ID)); err != nil {
 		t.Fatal(err)
 	}
@@ -139,7 +143,7 @@ func TestSettleDuplicateUsageRollsBack(t *testing.T) {
 	if balance.AvailableBalance != "10.000000" {
 		t.Fatalf("user balance not rolled back: %s", balance.AvailableBalance)
 	}
-	secret, _ := st.GetChannelSecret(channel.ID)
+	secret, _ := cat.GetChannelSecret(channel.ID)
 	if secret.Balance == nil || *secret.Balance != "5.000000" {
 		t.Fatalf("channel balance not rolled back: %v", secret.Balance)
 	}

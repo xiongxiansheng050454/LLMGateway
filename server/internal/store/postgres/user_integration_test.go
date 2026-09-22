@@ -231,10 +231,11 @@ func TestPGKeysLifecycleHidesPlaintext(t *testing.T) {
 
 func TestPGDeleteUserCascadesAllRelatedRows(t *testing.T) {
 	st := testStore(t)
+	cat := testCatalog(t, st)
 	acc := accounts.New(st, st.AccountsTx())
 	ctx := context.Background()
 
-	if _, err := st.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk-secret", Status: 1}); err != nil {
+	if _, err := cat.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk-secret", Status: 1}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {

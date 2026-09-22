@@ -25,7 +25,7 @@ func (a *Service) selectChannel(model string) (catalog.RouteCandidate, error) {
 }
 
 func (a *Service) orderedCandidates(model string, stickyKey ...int) ([]catalog.RouteCandidate, error) {
-	result, err := a.store.RouteCandidates(model)
+	result, err := a.catalog.RouteCandidates(model)
 	if err != nil {
 		return nil, err
 	}
@@ -35,9 +35,9 @@ func (a *Service) orderedCandidates(model string, stickyKey ...int) ([]catalog.R
 		if seen[candidate.ChannelID] {
 			continue
 		}
-		health, healthErr := a.store.GetChannelHealth(candidate.ChannelID)
+		health, healthErr := a.catalog.GetChannelHealth(candidate.ChannelID)
 		if healthErr == nil && health.State == catalog.HealthHalfOpen {
-			allowed, probeErr := a.store.AcquireChannelProbe(context.Background(), candidate.ChannelID, a.requestTimeout)
+			allowed, probeErr := a.catalog.AcquireChannelProbe(context.Background(), candidate.ChannelID, a.requestTimeout)
 			if probeErr != nil || !allowed {
 				continue
 			}

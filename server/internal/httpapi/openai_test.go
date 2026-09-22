@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"LLMGateway/server/internal/accounts"
+	"LLMGateway/server/internal/catalog"
 	openaiwire "LLMGateway/server/internal/proxy/openai"
 	settlement "LLMGateway/server/internal/proxy/settlement"
 	"LLMGateway/server/internal/testutil/storefake"
@@ -47,6 +48,7 @@ type proxyFixture struct {
 	server   *Server
 	store    Port
 	accounts *accounts.Server
+	catalog  *catalog.Server
 	fullKey  string
 	upstream *httptest.Server
 }
@@ -62,7 +64,8 @@ func newProxyFixtureWithStore(t *testing.T, upstream http.Handler, st Port, opts
 	server := httptest.NewServer(upstream)
 	t.Cleanup(server.Close)
 
-	acc := accounts.New(st, st.AccountsTx())
+	handler := NewServer(testDashboardDir(), st, append([]Option{WithCipher(testCipher())}, opts...)...)
+	acc := handler.accounts
 	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
@@ -75,22 +78,23 @@ func newProxyFixtureWithStore(t *testing.T, upstream http.Handler, st Port, opts
 	}
 
 	balance := "10.000000"
-	channel, err := st.CreateChannel(domain.ChannelInput{Name: "upstream", BaseURL: server.URL, APIKey: upstreamKey, Status: 1, Priority: 10, Weight: 100, Balance: &balance})
+	channel, err := handler.catalog.CreateChannel(domain.ChannelInput{Name: "upstream", BaseURL: server.URL, APIKey: upstreamKey, Status: 1, Priority: 10, Weight: 100, Balance: &balance})
 	if err != nil {
 		t.Fatal(err)
 	}
 	channelID := channel.ID
-	if _, err := st.CreateChannelModel(channelID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
+	if _, err := handler.catalog.CreateChannelModel(channelID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.UpsertPricing(domain.PricingInput{ChannelID: channelID, ModelName: "gpt", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", CachedInputPricePer1M: "0.07500000", Currency: "USD"}); err != nil {
+	if _, err := handler.catalog.UpsertPricing(domain.PricingInput{ChannelID: channelID, ModelName: "gpt", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", CachedInputPricePer1M: "0.07500000", Currency: "USD"}); err != nil {
 		t.Fatal(err)
 	}
 
 	return &proxyFixture{
-		server:   NewServer(testDashboardDir(), st, opts...),
+		server:   handler,
 		store:    st,
 		accounts: acc,
+		catalog:  handler.catalog,
 		fullKey:  created.FullKey,
 		upstream: server,
 	}
@@ -167,7 +171,7 @@ func TestChatCompletionsSuccess(t *testing.T) {
 		t.Fatalf("user balance = %v, want 9.999550", balance.AvailableBalance)
 	}
 
-	channelBalance, err := f.store.GetChannelSecret(1)
+	channelBalance, err := f.catalog.GetChannelSecret(1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,7 +353,7 @@ func TestChatCompletionsStreamingWithoutDoneFailsAndTripsBreaker(t *testing.T) {
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "upstream_stream_interrupted") {
 		t.Fatalf("status/body = %d %s, want interrupted SSE error", res.Code, res.Body.String())
 	}
-	health, err := f.store.GetChannelHealth(1)
+	health, err := f.catalog.GetChannelHealth(1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -400,7 +404,7 @@ func TestChatCompletionsStreamingMalformedDataTripsBreaker(t *testing.T) {
 	if !strings.Contains(res.Body.String(), "upstream_stream_protocol_error") {
 		t.Fatalf("body = %s, want protocol error", res.Body.String())
 	}
-	health, _ := f.store.GetChannelHealth(1)
+	health, _ := f.catalog.GetChannelHealth(1)
 	if health.ConsecutiveFailures != 1 {
 		t.Fatalf("consecutive failures = %d, want 1", health.ConsecutiveFailures)
 	}
@@ -630,10 +634,10 @@ func TestChatCompletionsModelRateLimitCountsOnlySameModel(t *testing.T) {
 	current := time.Now().UTC()
 	st := storefake.NewWithClock(func() time.Time { return current })
 	f := newProxyFixtureWithStore(t, upstreamSuccess(), st, WithClock(func() time.Time { return current }))
-	if _, err := f.store.CreateChannelModel(1, domain.ChannelModel{ModelName: "gpt-other", UpstreamModel: "up-other", Enabled: true}); err != nil {
+	if _, err := f.catalog.CreateChannelModel(1, domain.ChannelModel{ModelName: "gpt-other", UpstreamModel: "up-other", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.store.UpsertPricing(domain.PricingInput{ChannelID: 1, ModelName: "gpt-other", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
+	if _, err := f.catalog.UpsertPricing(domain.PricingInput{ChannelID: 1, ModelName: "gpt-other", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := f.store.InsertUsageLog(domain.UsageLogInput{RequestID: "prior-other", UserID: intPointer(1), APIKeyID: intPointer(1), ChannelID: intPointer(1), Model: "gpt-other", Status: "success"}); err != nil {
@@ -693,7 +697,7 @@ func TestChatCompletionsTripsBreakerAndSkipsChannel(t *testing.T) {
 		}
 	}
 
-	health, err := f.store.GetChannelHealth(1)
+	health, err := f.catalog.GetChannelHealth(1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -750,7 +754,7 @@ func TestChatCompletionsHalfOpenRecovers(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, body)
 	}
-	health, _ := st.GetChannelHealth(1)
+	health, _ := f.catalog.GetChannelHealth(1)
 	if health.State != domain.HealthOpen {
 		t.Fatalf("state = %s, want open", health.State)
 	}
@@ -762,7 +766,7 @@ func TestChatCompletionsHalfOpenRecovers(t *testing.T) {
 	if res.Code != http.StatusOK {
 		t.Fatalf("probe status = %d, want 200; body=%s", res.Code, res.Body.String())
 	}
-	health, _ = st.GetChannelHealth(1)
+	health, _ = f.catalog.GetChannelHealth(1)
 	if health.State != domain.HealthClosed {
 		t.Fatalf("state = %s, want closed after successful probe", health.State)
 	}
@@ -776,10 +780,20 @@ func TestChatCompletionsHealthRecordFailureDoesNotBreakSuccess(t *testing.T) {
 	}
 }
 
-// failingHealthStore makes health recording fail so tests can prove it is
-// best-effort and cannot turn a successful request into an error.
+// failingHealthStore makes catalog transactions fail so tests can prove health
+// recording is best-effort and cannot turn a successful request into an error.
 type failingHealthStore struct {
 	Port
+}
+
+func (f failingHealthStore) CatalogTx() catalog.TxManager {
+	return failingCatalogTx{}
+}
+
+type failingCatalogTx struct{}
+
+func (failingCatalogTx) InTx(context.Context, func(catalog.Tx) error) error {
+	return errors.New("health store unavailable")
 }
 
 type countingSettlementStore struct {
@@ -825,7 +839,7 @@ func TestChatCompletionsClientErrorDoesNotTripBreaker(t *testing.T) {
 		}
 	}
 
-	health, _ := f.store.GetChannelHealth(1)
+	health, _ := f.catalog.GetChannelHealth(1)
 	if health.State != domain.HealthClosed {
 		t.Fatalf("state = %s, want closed (client errors must not trip the breaker)", health.State)
 	}

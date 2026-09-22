@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	domain "LLMGateway/server/internal/catalog"
-	"LLMGateway/server/internal/money"
 	"LLMGateway/server/internal/store"
 )
 
@@ -20,104 +20,86 @@ func (s *Store) ListChannels() (domain.ListResponse[domain.ChannelDTO], error) {
 	return domain.ListResponse[domain.ChannelDTO]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) CreateChannel(in domain.ChannelInput) (domain.ChannelDTO, error) {
-	if strings.TrimSpace(in.APIKey) == "" {
-		return domain.ChannelDTO{}, fmt.Errorf("%w: api_key is required", store.ErrInvalid)
-	}
-	if in.AuthType == "" {
-		in.AuthType = "bearer"
-	}
-	if in.Weight == 0 {
-		in.Weight = 100
-	}
-
-	balance, err := normalizeBalance(in.Balance)
-	if err != nil {
-		return domain.ChannelDTO{}, err
-	}
-
+func (s *Store) GetChannelDTO(id int) (domain.ChannelDTO, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	ch := &domain.Channel{ID: s.nextChannelID, Name: in.Name, BaseURL: in.BaseURL, APIKey: in.APIKey, AuthType: in.AuthType, Status: in.Status, Weight: in.Weight, Priority: in.Priority, Balance: balance}
+	ch, ok := s.channels[id]
+	if !ok {
+		return domain.ChannelDTO{}, store.ErrNotFound
+	}
+	return s.channelDTO(ch), nil
+}
+
+func (s *Store) GetChannelRecord(id int) (domain.ChannelRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ch, ok := s.channels[id]
+	if !ok {
+		return domain.ChannelRecord{}, store.ErrNotFound
+	}
+	return domain.ChannelRecord{
+		ID:               ch.ID,
+		Name:             ch.Name,
+		BaseURL:          ch.BaseURL,
+		APIKeyCiphertext: ch.APIKey,
+		AuthType:         ch.AuthType,
+		Status:           ch.Status,
+		Weight:           ch.Weight,
+		Priority:         ch.Priority,
+		Balance:          ch.Balance,
+	}, nil
+}
+
+func (s *Store) InsertChannel(in domain.ChannelInsert) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ch := &domain.Channel{
+		ID:       s.nextChannelID,
+		Name:     in.Name,
+		BaseURL:  in.BaseURL,
+		APIKey:   in.APIKeyCiphertext,
+		AuthType: in.AuthType,
+		Status:   in.Status,
+		Weight:   in.Weight,
+		Priority: in.Priority,
+		Balance:  in.Balance,
+	}
 	s.nextChannelID++
 	s.channels[ch.ID] = ch
-	return s.channelDTO(ch), nil
+	return ch.ID, nil
 }
 
-func (s *Store) UpdateChannel(id int, in domain.ChannelInput) (domain.ChannelDTO, error) {
-	balance, err := normalizeBalance(in.Balance)
-	if err != nil {
-		return domain.ChannelDTO{}, err
-	}
-
+func (s *Store) UpdateChannelRecord(id int, in domain.ChannelUpdate) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ch, ok := s.channels[id]
 	if !ok {
-		return domain.ChannelDTO{}, store.ErrNotFound
+		return false, nil
 	}
 	ch.Name, ch.BaseURL, ch.AuthType, ch.Status, ch.Weight, ch.Priority = in.Name, in.BaseURL, in.AuthType, in.Status, in.Weight, in.Priority
-	if strings.TrimSpace(in.APIKey) != "" {
-		ch.APIKey = in.APIKey
+	if strings.TrimSpace(in.APIKeyCiphertext) != "" {
+		ch.APIKey = in.APIKeyCiphertext
 	}
-	ch.Balance = balance
-	return s.channelDTO(ch), nil
+	ch.Balance = in.Balance
+	return true, nil
 }
 
-func (s *Store) UpdateChannelStatus(id int, status int) (domain.ChannelDTO, error) {
+func (s *Store) UpdateChannelStatusRecord(id, status int) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ch, ok := s.channels[id]
 	if !ok {
-		return domain.ChannelDTO{}, store.ErrNotFound
+		return false, nil
 	}
 	ch.Status = status
-	return s.channelDTO(ch), nil
+	return true, nil
 }
 
-func (s *Store) UpdateChannelBalance(id int, balance string, delta string) (domain.ChannelDTO, error) {
-	if balance == "" && delta == "" {
-		return domain.ChannelDTO{}, fmt.Errorf("%w: balance or delta is required", store.ErrInvalid)
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	ch, ok := s.channels[id]
-	if !ok {
-		return domain.ChannelDTO{}, store.ErrNotFound
-	}
-
-	base := money.Amount(0)
-	if balance != "" {
-		parsed, err := money.Parse6(balance)
-		if err != nil {
-			return domain.ChannelDTO{}, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
-		}
-		base = parsed
-	} else if ch.Balance != nil {
-		parsed, err := money.Parse6(*ch.Balance)
-		if err != nil {
-			return domain.ChannelDTO{}, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
-		}
-		base = parsed
-	}
-	if delta != "" {
-		parsed, err := money.Parse6(delta)
-		if err != nil {
-			return domain.ChannelDTO{}, fmt.Errorf("%w: invalid delta", store.ErrInvalid)
-		}
-		base = base.Add(parsed)
-	}
-	formatted := money.Format6(base)
-	ch.Balance = &formatted
-	return s.channelDTO(ch), nil
-}
-
-func (s *Store) DeleteChannel(id int) error {
+func (s *Store) DeleteChannel(id int) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.channels[id]; !ok {
-		return store.ErrNotFound
+		return false, nil
 	}
 	delete(s.channels, id)
 	delete(s.models, id)
@@ -126,18 +108,7 @@ func (s *Store) DeleteChannel(id int) error {
 			delete(s.pricing, key)
 		}
 	}
-	return nil
-}
-
-func (s *Store) GetChannelSecret(id int) (*domain.Channel, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	ch, ok := s.channels[id]
-	if !ok {
-		return nil, store.ErrNotFound
-	}
-	copy := *ch
-	return &copy, nil
+	return true, nil
 }
 
 func (s *Store) ListChannelModels(channelID int) (domain.ListResponse[domain.ChannelModel], error) {
@@ -147,10 +118,11 @@ func (s *Store) ListChannelModels(channelID int) (domain.ListResponse[domain.Cha
 	for _, m := range s.models[channelID] {
 		list = append(list, *m)
 	}
+	sort.Slice(list, func(i, j int) bool { return list[i].ID < list[j].ID })
 	return domain.ListResponse[domain.ChannelModel]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) CreateChannelModel(channelID int, in domain.ChannelModel) (domain.ChannelModel, error) {
+func (s *Store) InsertChannelModel(channelID int, in domain.ChannelModel) (domain.ChannelModel, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.channels[channelID]; !ok {
@@ -169,34 +141,38 @@ func (s *Store) CreateChannelModel(channelID int, in domain.ChannelModel) (domai
 	return m, nil
 }
 
-func (s *Store) UpdateChannelModel(channelID, modelID int, upstreamModel string, enabled bool) (domain.ChannelModel, error) {
+func (s *Store) UpdateChannelModelRecord(channelID, modelID int, upstreamModel string, enabled bool) (domain.ChannelModel, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	m, ok := s.models[channelID][modelID]
 	if !ok {
-		return domain.ChannelModel{}, store.ErrNotFound
+		return domain.ChannelModel{}, false, nil
 	}
 	m.UpstreamModel, m.Enabled = upstreamModel, enabled
-	return *m, nil
+	return *m, true, nil
 }
 
-func (s *Store) DeleteChannelModel(channelID, modelID int) error {
+func (s *Store) DeleteChannelModel(channelID, modelID int) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if _, ok := s.channels[channelID]; !ok {
-		return store.ErrNotFound
-	}
 	if _, ok := s.models[channelID][modelID]; !ok {
-		return store.ErrNotFound
+		return false, nil
 	}
 	delete(s.models[channelID], modelID)
-	return nil
+	return true, nil
+}
+
+func (s *Store) ChannelModelExists(channelID int, modelName string) (bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.hasChannelModelLocked(channelID, modelName), nil
 }
 
 func (s *Store) ListCatalogModels(enabledOnly bool) (domain.ListResponse[domain.CatalogModelDTO], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	byName := map[string]*domain.CatalogModelDTO{}
+	order := []string{}
 	for channelID, models := range s.models {
 		ch := s.channels[channelID]
 		if ch == nil {
@@ -210,13 +186,15 @@ func (s *Store) ListCatalogModels(enabledOnly bool) (domain.ListResponse[domain.
 			if entry == nil {
 				entry = &domain.CatalogModelDTO{ModelName: m.ModelName, Status: 1}
 				byName[m.ModelName] = entry
+				order = append(order, m.ModelName)
 			}
 			entry.Channels = append(entry.Channels, domain.CatalogChannelDTO{ChannelID: channelID, ChannelName: ch.Name, UpstreamModel: m.UpstreamModel, Enabled: m.Enabled})
 		}
 	}
+	sort.Strings(order)
 	list := []domain.CatalogModelDTO{}
-	for _, item := range byName {
-		list = append(list, *item)
+	for _, name := range order {
+		list = append(list, *byName[name])
 	}
 	return domain.ListResponse[domain.CatalogModelDTO]{List: list, Total: len(list)}, nil
 }
@@ -231,31 +209,11 @@ func (s *Store) ListPricing() (domain.ListResponse[domain.PricingDTO], error) {
 	return domain.ListResponse[domain.PricingDTO]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) UpsertPricing(in domain.PricingInput) (domain.PricingDTO, error) {
-	if in.ChannelID <= 0 || strings.TrimSpace(in.ModelName) == "" {
-		return domain.PricingDTO{}, fmt.Errorf("%w: channel_id and model_name are required", store.ErrInvalid)
-	}
-
-	inputPrice, err := normalizePrice8(in.InputPricePer1M, "input_price_per_1m")
-	if err != nil {
-		return domain.PricingDTO{}, err
-	}
-	outputPrice, err := normalizePrice8(in.OutputPricePer1M, "output_price_per_1m")
-	if err != nil {
-		return domain.PricingDTO{}, err
-	}
-	cachedPrice, err := normalizeOptionalPrice8(in.CachedInputPricePer1M, "cached_input_price_per_1m")
-	if err != nil {
-		return domain.PricingDTO{}, err
-	}
-
+func (s *Store) UpsertPricingRecord(in domain.PricingRecord) (domain.PricingDTO, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.channels[in.ChannelID]; !ok {
 		return domain.PricingDTO{}, store.ErrNotFound
-	}
-	if !s.hasChannelModelLocked(in.ChannelID, in.ModelName) {
-		return domain.PricingDTO{}, fmt.Errorf("%w: model mapping not found", store.ErrInvalid)
 	}
 
 	key := pricingKey(in.ChannelID, in.ModelName)
@@ -265,7 +223,7 @@ func (s *Store) UpsertPricing(in domain.PricingInput) (domain.PricingDTO, error)
 		s.nextPricingID++
 		s.pricing[key] = p
 	}
-	p.InputPricePer1M, p.OutputPricePer1M, p.CachedInputPricePer1M, p.Currency = inputPrice, outputPrice, cachedPrice, in.Currency
+	p.InputPricePer1M, p.OutputPricePer1M, p.CachedInputPricePer1M, p.Currency = in.InputPricePer1M, in.OutputPricePer1M, in.CachedInputPricePer1M, in.Currency
 	if p.Currency == "" {
 		p.Currency = "USD"
 	}
@@ -289,9 +247,12 @@ func (s *Store) GetPricing(channelID int, modelName string) (domain.PricingDTO, 
 	return s.pricingDTO(pricing), nil
 }
 
-func (s *Store) RouteCandidates(modelName string) (domain.ListResponse[domain.RouteCandidate], error) {
+func (s *Store) RouteCandidates(modelName string, cooldownSeconds int) (domain.ListResponse[domain.RouteCandidate], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+
+	cfg := s.breaker
+	cfg.Cooldown = time.Duration(cooldownSeconds) * time.Second
 
 	candidates := []domain.RouteCandidate{}
 	for channelID, models := range s.models {
@@ -301,7 +262,7 @@ func (s *Store) RouteCandidates(modelName string) (domain.ListResponse[domain.Ro
 		}
 		// Exclude open (tripped) channels; a missing health row means closed and
 		// a cooled-down open channel is treated as half-open.
-		if s.channelHealthLocked(channelID).State == domain.HealthOpen {
+		if s.channelHealthLocked(channelID, cfg).State == domain.HealthOpen {
 			continue
 		}
 		for _, model := range models {

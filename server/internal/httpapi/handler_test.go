@@ -151,7 +151,7 @@ func TestStaticDashboardServed(t *testing.T) {
 }
 
 func newTestServer() *Server {
-	return NewServer(testDashboardDir(), storefake.New())
+	return NewServer(testDashboardDir(), storefake.New(), WithCipher(testCipher()))
 }
 
 func testDashboardDir() string {

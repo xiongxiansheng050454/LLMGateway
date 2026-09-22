@@ -6,16 +6,38 @@ import (
 	"time"
 
 	domain "LLMGateway/server/internal/catalog"
+	"LLMGateway/server/internal/store"
 )
 
-func (s *Store) RecordChannelAttempt(_ context.Context, channelID int, success bool, reason domain.FailureReason) (domain.ChannelHealth, error) {
-	if !success && !reason.CountsAsChannelFailure() {
-		return s.GetChannelHealth(channelID)
+func (s *Store) GetChannelHealthRow(channelID int) (domain.ChannelHealth, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	current, ok := s.channelHealth[channelID]
+	if !ok {
+		return domain.NewChannelHealth(channelID), false, nil
 	}
-	if success {
-		return s.RecordChannelSuccess(channelID)
+	return *current, true, nil
+}
+
+func (s *Store) ListChannelHealthRows() ([]domain.ChannelHealth, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	ids := make([]int, 0, len(s.channels))
+	for id := range s.channels {
+		ids = append(ids, id)
 	}
-	return s.RecordChannelFailure(channelID, reason)
+	sort.Ints(ids)
+
+	list := []domain.ChannelHealth{}
+	for _, id := range ids {
+		if current, ok := s.channelHealth[id]; ok {
+			list = append(list, *current)
+		} else {
+			list = append(list, domain.NewChannelHealth(id))
+		}
+	}
+	return list, nil
 }
 
 func (s *Store) AcquireChannelProbe(_ context.Context, channelID int, lease time.Duration) (bool, error) {
@@ -29,64 +51,84 @@ func (s *Store) AcquireChannelProbe(_ context.Context, channelID int, lease time
 	return true, nil
 }
 
-func (s *Store) GetChannelHealth(channelID int) (domain.ChannelHealth, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	return s.channelHealthLocked(channelID), nil
-}
-
-func (s *Store) RecordChannelSuccess(channelID int) (domain.ChannelHealth, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	next := domain.ApplyChannelSuccess(s.channelHealthLocked(channelID), s.now())
-	s.channelHealth[channelID] = &next
-	return next, nil
-}
-
-func (s *Store) RecordChannelFailure(channelID int, reason domain.FailureReason) (domain.ChannelHealth, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	next := domain.ApplyChannelFailure(s.channelHealthLocked(channelID), reason, s.now(), s.breaker)
-	s.channelHealth[channelID] = &next
-	return next, nil
-}
-
-func (s *Store) ResetChannelHealth(channelID int) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.channelHealth, channelID)
-	delete(s.probes, channelID)
-	return nil
-}
-
-func (s *Store) ListChannelHealth() (domain.ListResponse[domain.ChannelHealthDTO], error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	ids := make([]int, 0, len(s.channels))
-	for id := range s.channels {
-		ids = append(ids, id)
-	}
-	sort.Ints(ids)
-
-	list := []domain.ChannelHealthDTO{}
-	for _, id := range ids {
-		health := s.channelHealthLocked(id)
-		list = append(list, channelHealthDTO(&health))
-	}
-	return domain.ListResponse[domain.ChannelHealthDTO]{List: list, Total: len(ids)}, nil
-}
-
 // channelHealthLocked returns the channel health with the lazy open ->
 // half-open transition applied. It does not persist the transition.
-func (s *Store) channelHealthLocked(channelID int) domain.ChannelHealth {
+func (s *Store) channelHealthLocked(channelID int, cfg domain.ChannelBreakerConfig) domain.ChannelHealth {
 	current, ok := s.channelHealth[channelID]
 	if !ok {
 		return domain.NewChannelHealth(channelID)
 	}
-	return domain.EvaluateChannelHealth(*current, s.now(), s.breaker)
+	return domain.EvaluateChannelHealth(*current, s.now(), cfg)
 }
 
-func channelHealthDTO(health *domain.ChannelHealth) domain.ChannelHealthDTO {
-	return domain.ChannelHealthDTO{ChannelID: health.ChannelID, State: string(health.State), ConsecutiveFailures: health.ConsecutiveFailures, SuccessCount: health.SuccessCount, FailureCount: health.FailureCount, OpenedAt: health.OpenedAt, UpdatedAt: health.UpdatedAt}
+type catalogRunner struct {
+	store *Store
+}
+
+func (s *Store) CatalogTx() domain.TxManager { return catalogRunner{store: s} }
+
+func (r catalogRunner) InTx(_ context.Context, fn func(domain.Tx) error) error {
+	r.store.mu.Lock()
+	defer r.store.mu.Unlock()
+	return fn(&catalogTx{s: r.store})
+}
+
+type catalogTx struct {
+	s *Store
+}
+
+func (t *catalogTx) EnsureChannelHealth(channelID int) error {
+	if t.s.channelHealth[channelID] == nil {
+		health := domain.NewChannelHealth(channelID)
+		t.s.channelHealth[channelID] = &health
+	}
+	return nil
+}
+
+func (t *catalogTx) GetChannelHealthForUpdate(channelID int) (domain.ChannelHealth, error) {
+	current, ok := t.s.channelHealth[channelID]
+	if !ok {
+		return domain.NewChannelHealth(channelID), nil
+	}
+	return *current, nil
+}
+
+func (t *catalogTx) UpdateChannelHealth(health domain.ChannelHealth) (bool, error) {
+	copied := health
+	t.s.channelHealth[health.ChannelID] = &copied
+	return true, nil
+}
+
+func (t *catalogTx) DeleteChannelHealth(channelID int) error {
+	delete(t.s.channelHealth, channelID)
+	delete(t.s.probes, channelID)
+	return nil
+}
+
+func (t *catalogTx) LockChannel(channelID int) error {
+	if t.s.channels[channelID] == nil {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+func (t *catalogTx) GetChannelBalanceText(channelID int) (string, error) {
+	channel, ok := t.s.channels[channelID]
+	if !ok {
+		return "", store.ErrNotFound
+	}
+	if channel.Balance == nil {
+		return "", nil
+	}
+	return *channel.Balance, nil
+}
+
+func (t *catalogTx) UpdateChannelBalance(channelID int, balance string) (bool, error) {
+	channel, ok := t.s.channels[channelID]
+	if !ok {
+		return false, nil
+	}
+	value := balance
+	channel.Balance = &value
+	return true, nil
 }

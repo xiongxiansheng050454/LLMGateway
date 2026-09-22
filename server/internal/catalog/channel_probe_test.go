@@ -9,23 +9,44 @@ import (
 	"time"
 
 	"LLMGateway/server/internal/catalog"
+	"LLMGateway/server/internal/crypto"
 	"LLMGateway/server/internal/testutil/storefake"
 	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
+const testEncryptionKey = "0123456789abcdef0123456789abcdef"
+
+func testCipher() *crypto.Cipher {
+	cipher, err := crypto.NewCipher([]byte(testEncryptionKey))
+	if err != nil {
+		panic(err)
+	}
+	return cipher
+}
+
+func newCatalogServer(st *storefake.Store, client *http.Client) *catalog.Server {
+	return catalog.New(catalog.Deps{
+		Store:  st,
+		Health: st,
+		Tx:     st.CatalogTx(),
+		Cipher: testCipher(),
+		Client: client,
+	})
+}
+
 func TestChannelTestTimeoutReturnsSafeError(t *testing.T) {
 	st := storefake.New()
-	channel, err := st.CreateChannel(domain.ChannelInput{Name: "slow", BaseURL: "https://upstream.test", APIKey: "sk-secret", AuthType: "bearer", Status: 1})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := st.CreateChannelModel(channel.ID, domain.ChannelModel{ModelName: "public", UpstreamModel: "upstream", Enabled: true}); err != nil {
-		t.Fatal(err)
-	}
-	server := catalog.New(st, &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+	server := newCatalogServer(st, &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 		<-r.Context().Done()
 		return nil, r.Context().Err()
 	})})
+	channel, err := server.CreateChannel(domain.ChannelInput{Name: "slow", BaseURL: "https://upstream.test", APIKey: "sk-secret", AuthType: "bearer", Status: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := server.CreateChannelModel(channel.ID, domain.ChannelModel{ModelName: "public", UpstreamModel: "upstream", Enabled: true}); err != nil {
+		t.Fatal(err)
+	}
 	server.ConfigureTestTimeout(10 * time.Millisecond)
 	req := httptest.NewRequest(http.MethodPost, "/admin/channels/1/test", bytes.NewBufferString(`{}`))
 	result, _, _, _ := server.TestChannel(req, channel.ID)
@@ -54,16 +75,16 @@ func TestChannelTestCheckAllFalseOnlyTestsFirstEnabledModel(t *testing.T) {
 	defer upstream.Close()
 
 	st := storefake.New()
-	channel, err := st.CreateChannel(domain.ChannelInput{Name: "test", BaseURL: upstream.URL, APIKey: "sk", AuthType: "bearer", Status: 1})
+	server := newCatalogServer(st, &http.Client{})
+	channel, err := server.CreateChannel(domain.ChannelInput{Name: "test", BaseURL: upstream.URL, APIKey: "sk", AuthType: "bearer", Status: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, model := range []domain.ChannelModel{{ModelName: "first", UpstreamModel: "first-upstream", Enabled: true}, {ModelName: "second", UpstreamModel: "second-upstream", Enabled: true}} {
-		if _, err := st.CreateChannelModel(channel.ID, model); err != nil {
+		if _, err := server.CreateChannelModel(channel.ID, model); err != nil {
 			t.Fatal(err)
 		}
 	}
-	server := catalog.New(st, &http.Client{})
 	checkAll := false
 	body, _ := json.Marshal(map[string]bool{"check_all": checkAll})
 	req := httptest.NewRequest(http.MethodPost, "/admin/channels/1/test", bytes.NewReader(body))

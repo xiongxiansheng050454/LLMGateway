@@ -6,7 +6,6 @@ import (
 	"time"
 
 	domain "LLMGateway/server/internal/catalog"
-	"LLMGateway/server/internal/crypto"
 	"LLMGateway/server/internal/db/sqlc"
 	"LLMGateway/server/internal/store"
 
@@ -18,32 +17,19 @@ import (
 
 // Store is the PostgreSQL-backed implementation of the module-owned ports.
 //
-// SQL access uses sqlc-generated queries from db/queries. The cipher is
-// required to encrypt upstream channel api keys into api_key_ciphertext and to
-// decrypt them for GetChannelSecret; there is no plaintext fallback.
+// SQL access uses sqlc-generated queries from db/queries. Channel key
+// encryption/decryption and catalog rules live in the catalog module; this
+// store only moves ciphertext.
 type Store struct {
 	pool    *pgxpool.Pool
 	queries *sqlc.Queries
-	cipher  *crypto.Cipher
-	breaker domain.ChannelBreakerConfig
 	now     func() time.Time
 }
 
-var (
-	_ interface {
-		GetChannelSecret(int) (*domain.Channel, error)
-	} = (*Store)(nil)
-	_ interface {
-		GetChannelHealth(int) (domain.ChannelHealth, error)
-	} = (*Store)(nil)
-)
-
-func New(pool *pgxpool.Pool, cipher *crypto.Cipher) *Store {
+func New(pool *pgxpool.Pool) *Store {
 	return &Store{
 		pool:    pool,
 		queries: sqlc.New(pool),
-		cipher:  cipher,
-		breaker: domain.DefaultChannelBreakerConfig(),
 		now:     time.Now,
 	}
 }

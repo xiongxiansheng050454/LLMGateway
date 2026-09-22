@@ -9,11 +9,11 @@ import (
 
 func (a *Server) Data(r *http.Request, parts []string) (any, bool, int, string) {
 	if len(parts) == 2 && parts[1] == "models" && r.Method == http.MethodGet {
-		return httpcommon.Result(a.store.ListCatalogModels(r.URL.Query().Get("status") == "1"))
+		return httpcommon.Result(a.ListCatalogModels(r.URL.Query().Get("status") == "1"))
 	}
 	if len(parts) >= 2 && parts[1] == "channels" {
 		if len(parts) == 3 && parts[2] == "health" && r.Method == http.MethodGet {
-			return httpcommon.Result(a.store.ListChannelHealth())
+			return httpcommon.Result(a.ListChannelHealth())
 		}
 		return a.channelData(r, parts)
 	}
@@ -26,19 +26,19 @@ func (a *Server) Data(r *http.Request, parts []string) (any, bool, int, string) 
 func (a *Server) pricingData(r *http.Request) (any, bool, int, string) {
 	switch r.Method {
 	case http.MethodGet:
-		return httpcommon.Result(a.store.ListPricing())
+		return httpcommon.Result(a.ListPricing())
 	case http.MethodPost:
 		var req PricingInput
 		if err := httpcommon.ReadJSON(r, &req); err != nil {
 			return nil, true, http.StatusBadRequest, "invalid json"
 		}
-		return httpcommon.Result(a.store.UpsertPricing(req))
+		return httpcommon.Result(a.UpsertPricing(req))
 	case http.MethodDelete:
 		var req DeletePricingInput
 		if err := httpcommon.ReadJSON(r, &req); err != nil && err != io.EOF {
 			return nil, true, http.StatusBadRequest, "invalid json"
 		}
-		return httpcommon.NoBody(a.store.DeletePricing(req))
+		return httpcommon.NoBody(a.DeletePricing(req))
 	default:
 		return nil, true, http.StatusMethodNotAllowed, "method not allowed"
 	}
