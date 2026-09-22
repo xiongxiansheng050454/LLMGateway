@@ -15,12 +15,14 @@ server/internal/httpapi/            顶层 HTTP 装配、响应 envelope、Dashb
 server/internal/httpcommon/         共享 HTTP 请求解析、路径、分页、存储错误映射和删除响应 helper 的唯一归属
 server/internal/proxy/              下游代理业务：OpenAI 适配、路由、计费、限流、熔断、结算和上游调用
 server/internal/proxy/openai/       OpenAI 兼容 wire DTO 与协议适配；归属 proxy 业务模块
+server/internal/proxy/settlement/   结算事务 contract（proxy 拥有），供 Store 实现
 server/internal/errors/             跨模块通用错误
 server/internal/money/              定点金额（int64 最小单位）解析与格式化
 server/internal/crypto/             渠道 api_key 加解密、网关 Key 生成与哈希
 server/internal/store/              仅保留错误兼容别名，不定义业务端口
-server/internal/store/postgres/     唯一生产 Store 实现
+server/internal/store/postgres/     唯一生产 Store 实现，只提供持久化原语与事务边界
 server/internal/testutil/storefake/ 不需要数据库的测试专用 fake，生产代码不得导入
+server/internal/testutil/app/       测试专用模块装配 helper，生产代码不得导入
 server/internal/db/migrate/         tern 迁移执行入口
 server/internal/db/sqlc/            sqlc 生成代码输出目录，不手写业务逻辑
 server/db/migrations/               PostgreSQL schema 迁移 SQL（SQL 资产）
@@ -53,9 +55,10 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
 - 初始 schema 覆盖渠道、模型映射、定价、用户、余额、Key、限流和用量日志，后续 issue 应优先扩展现有表而不是新建重复概念。
 - 统计接口（overview/daily/channels）在 `usage_logs` 上实时聚合，按 UTC 自然日分组；不存在 `daily_usage_stats` 表，因其未被使用且复合主键无法表达全局日汇总。
 - 进程启动时建立 pgxpool 连接、执行迁移并装配 PostgreSQL store，不提供无数据库运行模式。
-- PostgreSQL store 已实现渠道/模型/定价、用户/余额/Key、限流规则、用量日志与代理结算的持久化行为。
+- PostgreSQL store 只实现持久化原语（CRUD/lock/query）与事务边界；渠道/健康、用户/Key/余额、配额、限流等规则与编排位于各自业务模块的 `Server`，跨聚合结算编排位于 `proxy`。
+- 业务模块通过自身 `Port` 读取，通过模块自有的 `Tx`/`TxManager`（`InTx(ctx, func(Tx) error)`）在事务内编排写入；Store 不实现多步流程或业务判定。事务管理器以每模块一个适配器类型实现，经 `httpapi.Port` 的 `AccountsTx()`、`CatalogTx()`、`QuotaTx()`、`SettlementTx()` 注入。
 - `server/cmd/llmgateway` 使用 `http.Server` 并在收到 `SIGINT`/`SIGTERM` 后优雅关闭。
-- 金额能力集中在 `server/internal/money`，密钥能力集中在 `server/internal/crypto`；store 与测试 fake 均复用这些能力，禁止重复实现金额解析。
+- 金额能力集中在 `server/internal/money`，密钥能力集中在 `server/internal/crypto`；由业务模块（catalog/quota/accounts/proxy）使用，禁止重复实现金额解析或加密。`store/postgres` 不得 import `money`/`crypto`，只存取字符串与密文（由架构测试强制）。
 - 禁止用 `float64` 参与计费；金额在 DB 用 `NUMERIC`，在 Go 用定点整数，对外输出字符串。
 - 渠道 `api_key` 落库为密文，网关 Key 只存哈希；任何响应、日志、错误都不得出现明文密钥。
 - `server/internal/money` 与 `server/internal/crypto` 为叶子包，不得依赖 `server/internal/store` 或 `server/internal/httpapi`。

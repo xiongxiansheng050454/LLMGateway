@@ -59,7 +59,18 @@ func TestBusinessModulesDependOnlyOnStorePorts(t *testing.T) {
 	}
 }
 
-func TestProductionCodeDoesNotImportTestStore(t *testing.T) {
+// TestStoreDoesNotOwnBusinessRules guards the store/primitives split: the
+// PostgreSQL adapter must not import leaf capability packages that encode
+// business rules (money math, key encryption).
+func TestStoreDoesNotOwnBusinessRules(t *testing.T) {
+	root := filepath.Join("..", "..")
+	assertNoImports(t, filepath.Join(root, "internal/store/postgres"), []string{
+		"LLMGateway/server/internal/crypto",
+		"LLMGateway/server/internal/money",
+	})
+}
+
+func TestProductionCodeDoesNotImportTestHarness(t *testing.T) {
 	root := filepath.Join("..", "..")
 	for _, dir := range []string{"cmd", "internal"} {
 		err := filepath.WalkDir(filepath.Join(root, dir), func(path string, entry os.DirEntry, err error) error {
@@ -74,8 +85,10 @@ func TestProductionCodeDoesNotImportTestStore(t *testing.T) {
 				return err
 			}
 			for _, spec := range file.Imports {
-				if strings.Trim(spec.Path.Value, `"`) == "LLMGateway/server/internal/testutil/storefake" {
-					t.Fatalf("production file %s imports the test-only store", path)
+				switch strings.Trim(spec.Path.Value, `"`) {
+				case "LLMGateway/server/internal/testutil/storefake",
+					"LLMGateway/server/internal/testutil/app":
+					t.Fatalf("production file %s imports a test-only package", path)
 				}
 			}
 			return nil
