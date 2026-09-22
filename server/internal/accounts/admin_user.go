@@ -48,7 +48,7 @@ func (a *Server) userRoutes(r *http.Request, parts []string) (any, bool, int, st
 		case http.MethodPut:
 			return a.updateUser(r, userID)
 		case http.MethodDelete:
-			return httpcommon.NoBody(a.store.DeleteUser(userID))
+			return httpcommon.NoBody(a.DeleteUser(userID))
 		}
 		return nil, true, http.StatusMethodNotAllowed, "method not allowed"
 	}
@@ -91,7 +91,7 @@ func (a *Server) userRoutes(r *http.Request, parts []string) (any, bool, int, st
 		case http.MethodPut:
 			return a.updateKey(r, userID, keyID)
 		case http.MethodDelete:
-			return httpcommon.NoBody(a.store.DeleteKey(userID, keyID))
+			return httpcommon.NoBody(a.DeleteKey(userID, keyID))
 		}
 		return nil, true, http.StatusMethodNotAllowed, "method not allowed"
 	}
@@ -102,7 +102,7 @@ func (a *Server) userRoutes(r *http.Request, parts []string) (any, bool, int, st
 			return nil, true, http.StatusBadRequest, "invalid key id"
 		}
 		if r.Method == http.MethodPost {
-			return httpcommon.Result(a.store.ResetKey(userID, keyID))
+			return httpcommon.Result(a.ResetKey(userID, keyID))
 		}
 		return nil, true, http.StatusMethodNotAllowed, "method not allowed"
 	}
@@ -120,7 +120,7 @@ func (a *Server) createUser(r *http.Request) (any, bool, int, string) {
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
-	return httpcommon.Result(a.store.CreateUser(req))
+	return httpcommon.Result(a.CreateUser(req))
 }
 
 func (a *Server) updateUser(r *http.Request, id int) (any, bool, int, string) {
@@ -128,7 +128,7 @@ func (a *Server) updateUser(r *http.Request, id int) (any, bool, int, string) {
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
-	return httpcommon.Result(a.store.UpdateUser(id, req))
+	return httpcommon.Result(a.UpdateUser(id, req))
 }
 
 func (a *Server) updateUserStatus(r *http.Request, id int) (any, bool, int, string) {
@@ -136,7 +136,7 @@ func (a *Server) updateUserStatus(r *http.Request, id int) (any, bool, int, stri
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
-	return httpcommon.Result(a.store.UpdateUserStatus(id, req.Status))
+	return httpcommon.Result(a.UpdateUserStatus(id, req.Status))
 }
 
 func (a *Server) rechargeUser(r *http.Request, id int) (any, bool, int, string) {
@@ -144,7 +144,7 @@ func (a *Server) rechargeUser(r *http.Request, id int) (any, bool, int, string) 
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
-	return httpcommon.Result(a.store.RechargeUser(id, req))
+	return httpcommon.Result(a.RechargeUser(id, req))
 }
 
 func (a *Server) listBalanceTransactions(r *http.Request, id int) (any, bool, int, string) {

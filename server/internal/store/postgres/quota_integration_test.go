@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/store"
 	domain "LLMGateway/server/internal/testutil/testtypes"
 )
@@ -171,13 +172,14 @@ func TestPGQuotaMonthlyCostLimitIsEnforced(t *testing.T) {
 
 func createQuotaTestIdentity(t *testing.T, st *Store) (string, int) {
 	t.Helper()
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "quota-user"}); err != nil {
+	acc := accounts.New(st, st.AccountsTx())
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "quota-user"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.RechargeUser(1, domain.RechargeInput{Amount: "20.000000"}); err != nil {
+	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "20.000000"}); err != nil {
 		t.Fatal(err)
 	}
-	key, err := st.CreateKey(1, domain.KeyInput{KeyName: "quota-key"})
+	key, err := acc.CreateKey(1, domain.KeyInput{KeyName: "quota-key"})
 	if err != nil {
 		t.Fatal(err)
 	}

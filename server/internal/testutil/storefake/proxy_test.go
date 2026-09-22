@@ -5,14 +5,15 @@ import (
 	"sync"
 	"testing"
 
+	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/crypto"
 	"LLMGateway/server/internal/store"
 	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
-func seedKey(t *testing.T, st *Store, userID int) (keyID int, keyHash string) {
+func seedKey(t *testing.T, acc *accounts.Server, userID int) (keyID int, keyHash string) {
 	t.Helper()
-	created, err := st.CreateKey(userID, domain.KeyInput{KeyName: "default", Prefix: "sk-"})
+	created, err := acc.CreateKey(userID, domain.KeyInput{KeyName: "default", Prefix: "sk-"})
 	if err != nil {
 		t.Fatalf("CreateKey: %v", err)
 	}
@@ -22,13 +23,14 @@ func seedKey(t *testing.T, st *Store, userID int) (keyID int, keyHash string) {
 
 func TestAuthenticateKey(t *testing.T) {
 	st := New()
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
+	acc := newAccounts(st)
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.RechargeUser(1, domain.RechargeInput{Amount: "25.000000"}); err != nil {
+	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "25.000000"}); err != nil {
 		t.Fatal(err)
 	}
-	keyID, keyHash := seedKey(t, st, 1)
+	keyID, keyHash := seedKey(t, acc, 1)
 
 	auth, err := st.AuthenticateKey(keyHash)
 	if err != nil {
@@ -61,14 +63,15 @@ func TestAuthenticateKey(t *testing.T) {
 
 func TestDebitUserBalance(t *testing.T) {
 	st := New()
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
+	acc := newAccounts(st)
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.RechargeUser(1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
+	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
 		t.Fatal(err)
 	}
 
-	result, err := st.DebitUserBalance(1, "3.5", "request")
+	result, err := acc.DebitUserBalance(1, "3.5", "request")
 	if err != nil {
 		t.Fatalf("DebitUserBalance: %v", err)
 	}
@@ -76,13 +79,13 @@ func TestDebitUserBalance(t *testing.T) {
 		t.Fatalf("balance_after = %v, want 6.500000", result.BalanceAfter)
 	}
 
-	if _, err := st.DebitUserBalance(1, "100.000000", "too much"); !errors.Is(err, store.ErrInvalid) {
+	if _, err := acc.DebitUserBalance(1, "100.000000", "too much"); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("insufficient err = %v, want ErrInvalid", err)
 	}
-	if _, err := st.DebitUserBalance(1, "-1.000000", "bad"); !errors.Is(err, store.ErrInvalid) {
+	if _, err := acc.DebitUserBalance(1, "-1.000000", "bad"); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("negative err = %v, want ErrInvalid", err)
 	}
-	if _, err := st.DebitUserBalance(404, "1.000000", "missing"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := acc.DebitUserBalance(404, "1.000000", "missing"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing user err = %v, want ErrNotFound", err)
 	}
 
@@ -95,10 +98,11 @@ func TestDebitUserBalance(t *testing.T) {
 
 func TestDebitUserBalanceConcurrent(t *testing.T) {
 	st := New()
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
+	acc := newAccounts(st)
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.RechargeUser(1, domain.RechargeInput{Amount: "100.000000"}); err != nil {
+	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "100.000000"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -109,7 +113,7 @@ func TestDebitUserBalanceConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := st.DebitUserBalance(1, "1.000000", "concurrent"); err != nil {
+			if _, err := acc.DebitUserBalance(1, "1.000000", "concurrent"); err != nil {
 				errs <- err
 			}
 		}()

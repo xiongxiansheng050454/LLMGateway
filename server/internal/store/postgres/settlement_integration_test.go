@@ -4,16 +4,18 @@ import (
 	"errors"
 	"testing"
 
+	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/store"
 	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
 func TestPGSettleChatCompletionRollsBackOnUsageInsertFailure(t *testing.T) {
 	st := testStore(t)
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
+	acc := accounts.New(st, st.AccountsTx())
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.RechargeUser(1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
+	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
 		t.Fatal(err)
 	}
 	channelBalance := "5.000000"
@@ -45,10 +47,11 @@ func TestPGSettleChatCompletionRollsBackOnUsageInsertFailure(t *testing.T) {
 
 func TestPGSettleChatCompletionPersistsTTFT(t *testing.T) {
 	st := testStore(t)
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
+	acc := accounts.New(st, st.AccountsTx())
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.RechargeUser(1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
+	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
 		t.Fatal(err)
 	}
 	channel, err := st.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})

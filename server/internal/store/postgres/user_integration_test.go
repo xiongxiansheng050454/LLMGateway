@@ -6,6 +6,7 @@ import (
 	"sync"
 	"testing"
 
+	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/crypto"
 	"LLMGateway/server/internal/store"
 	domain "LLMGateway/server/internal/testutil/testtypes"
@@ -17,8 +18,9 @@ func userBoolPtr(value bool) *bool {
 
 func TestPGUserCRUDAndBalance(t *testing.T) {
 	st := testStore(t)
+	acc := accounts.New(st, st.AccountsTx())
 
-	created, err := st.CreateUser(domain.UserInput{Nickname: "Alice"})
+	created, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
@@ -29,17 +31,17 @@ func TestPGUserCRUDAndBalance(t *testing.T) {
 		t.Fatalf("unexpected balance: %+v", created.Balance)
 	}
 
-	if _, err := st.UpdateUser(1, domain.UserInput{Nickname: "Alice2", UserGroup: "vip"}); err != nil {
+	if _, err := acc.UpdateUser(1, domain.UserInput{Nickname: "Alice2", UserGroup: "vip"}); err != nil {
 		t.Fatalf("UpdateUser: %v", err)
 	}
-	updated, err := st.UpdateUserStatus(1, "suspended")
+	updated, err := acc.UpdateUserStatus(1, "suspended")
 	if err != nil {
 		t.Fatalf("UpdateUserStatus: %v", err)
 	}
 	if updated.Nickname != "Alice2" || updated.UserGroup != "vip" || updated.Status != "suspended" {
 		t.Fatalf("unexpected updated user: %+v", updated)
 	}
-	if _, err := st.UpdateUserStatus(1, "bogus"); !errors.Is(err, store.ErrInvalid) {
+	if _, err := acc.UpdateUserStatus(1, "bogus"); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid status err = %v, want ErrInvalid", err)
 	}
 
@@ -51,7 +53,7 @@ func TestPGUserCRUDAndBalance(t *testing.T) {
 		t.Fatalf("ListUsers total = %d, want 1", listed.Total)
 	}
 
-	recharged, err := st.RechargeUser(1, domain.RechargeInput{Amount: "50.5"})
+	recharged, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "50.5"})
 	if err != nil {
 		t.Fatalf("RechargeUser: %v", err)
 	}
@@ -60,11 +62,11 @@ func TestPGUserCRUDAndBalance(t *testing.T) {
 	}
 
 	// Idempotent recharge by related_order_id.
-	first, err := st.RechargeUser(1, domain.RechargeInput{Amount: "10.000000", RelatedOrderID: "order-1"})
+	first, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "10.000000", RelatedOrderID: "order-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := st.RechargeUser(1, domain.RechargeInput{Amount: "10.000000", RelatedOrderID: "order-1"})
+	second, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "10.000000", RelatedOrderID: "order-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,29 +86,30 @@ func TestPGUserCRUDAndBalance(t *testing.T) {
 		t.Fatalf("transactions total = %d, want 2", txs.Total)
 	}
 
-	if _, err := st.RechargeUser(1, domain.RechargeInput{Amount: "abc"}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "abc"}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid amount err = %v, want ErrInvalid", err)
 	}
-	if _, err := st.UpdateUser(404, domain.UserInput{Nickname: "x"}); !errors.Is(err, store.ErrNotFound) {
+	if _, err := acc.UpdateUser(404, domain.UserInput{Nickname: "x"}); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing user err = %v, want ErrNotFound", err)
 	}
 }
 
 func TestPGRechargeOrderScopedPerUserAndConcurrent(t *testing.T) {
 	st := testStore(t)
+	acc := accounts.New(st, st.AccountsTx())
 
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "A"}); err != nil {
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "A"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "B"}); err != nil {
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "B"}); err != nil {
 		t.Fatal(err)
 	}
 
 	// The same related_order_id is allowed for different users.
-	if _, err := st.RechargeUser(1, domain.RechargeInput{Amount: "1.000000", RelatedOrderID: "order-x"}); err != nil {
+	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "1.000000", RelatedOrderID: "order-x"}); err != nil {
 		t.Fatalf("user 1 order: %v", err)
 	}
-	if _, err := st.RechargeUser(2, domain.RechargeInput{Amount: "1.000000", RelatedOrderID: "order-x"}); err != nil {
+	if _, err := acc.RechargeUser(2, domain.RechargeInput{Amount: "1.000000", RelatedOrderID: "order-x"}); err != nil {
 		t.Fatalf("same order id for another user should be allowed: %v", err)
 	}
 
@@ -119,7 +122,7 @@ func TestPGRechargeOrderScopedPerUserAndConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func(i int) {
 			defer wg.Done()
-			results[i], errs[i] = st.RechargeUser(1, domain.RechargeInput{Amount: "5.000000", RelatedOrderID: "order-concurrent"})
+			results[i], errs[i] = acc.RechargeUser(1, domain.RechargeInput{Amount: "5.000000", RelatedOrderID: "order-concurrent"})
 		}(i)
 	}
 	wg.Wait()
@@ -147,11 +150,12 @@ func TestPGRechargeOrderScopedPerUserAndConcurrent(t *testing.T) {
 
 func TestPGKeysLifecycleHidesPlaintext(t *testing.T) {
 	st := testStore(t)
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
+	acc := accounts.New(st, st.AccountsTx())
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
 
-	created, err := st.CreateKey(1, domain.KeyInput{KeyName: "default", Prefix: "sk-"})
+	created, err := acc.CreateKey(1, domain.KeyInput{KeyName: "default", Prefix: "sk-"})
 	if err != nil {
 		t.Fatalf("CreateKey: %v", err)
 	}
@@ -187,18 +191,18 @@ func TestPGKeysLifecycleHidesPlaintext(t *testing.T) {
 		t.Fatalf("global keys total = %d, want 1", global.Total)
 	}
 
-	updated, err := st.UpdateKey(1, keyID, domain.KeyUpdateInput{IsActive: userBoolPtr(false)})
+	updated, err := acc.UpdateKey(1, keyID, domain.KeyUpdateInput{IsActive: userBoolPtr(false)})
 	if err != nil {
 		t.Fatalf("UpdateKey: %v", err)
 	}
 	if updated.IsActive != false {
 		t.Fatalf("key not deactivated: %+v", updated)
 	}
-	if _, err := st.UpdateKey(1, keyID, domain.KeyUpdateInput{}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := acc.UpdateKey(1, keyID, domain.KeyUpdateInput{}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("missing is_active err = %v, want ErrInvalid", err)
 	}
 
-	reset, err := st.ResetKey(1, keyID)
+	reset, err := acc.ResetKey(1, keyID)
 	if err != nil {
 		t.Fatalf("ResetKey: %v", err)
 	}
@@ -214,31 +218,32 @@ func TestPGKeysLifecycleHidesPlaintext(t *testing.T) {
 		t.Fatal("reset did not rotate the stored hash")
 	}
 
-	if err := st.DeleteKey(1, keyID); err != nil {
+	if err := acc.DeleteKey(1, keyID); err != nil {
 		t.Fatalf("DeleteKey: %v", err)
 	}
-	if err := st.DeleteKey(1, keyID); !errors.Is(err, store.ErrNotFound) {
+	if err := acc.DeleteKey(1, keyID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("second DeleteKey err = %v, want ErrNotFound", err)
 	}
-	if _, err := st.CreateKey(404, domain.KeyInput{}); !errors.Is(err, store.ErrNotFound) {
+	if _, err := acc.CreateKey(404, domain.KeyInput{}); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("CreateKey missing user err = %v, want ErrNotFound", err)
 	}
 }
 
 func TestPGDeleteUserCascadesAllRelatedRows(t *testing.T) {
 	st := testStore(t)
+	acc := accounts.New(st, st.AccountsTx())
 	ctx := context.Background()
 
 	if _, err := st.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk-secret", Status: 1}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.RechargeUser(1, domain.RechargeInput{Amount: "5.000000"}); err != nil {
+	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "5.000000"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.CreateKey(1, domain.KeyInput{}); err != nil {
+	if _, err := acc.CreateKey(1, domain.KeyInput{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -246,7 +251,7 @@ func TestPGDeleteUserCascadesAllRelatedRows(t *testing.T) {
 	if _, err := st.pool.Exec(ctx, "INSERT INTO usage_logs (request_id, user_id, channel_id, model, status) VALUES ('req-1', 1, 1, 'gpt', 'success')"); err != nil {
 		t.Fatalf("seed usage_logs: %v", err)
 	}
-	if err := st.DeleteUser(1); err != nil {
+	if err := acc.DeleteUser(1); err != nil {
 		t.Fatalf("DeleteUser: %v", err)
 	}
 

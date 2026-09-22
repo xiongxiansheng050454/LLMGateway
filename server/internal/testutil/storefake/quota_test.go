@@ -11,10 +11,11 @@ import (
 func TestQuotaReaperReleasesExpiredReservation(t *testing.T) {
 	now := time.Date(2026, 9, 18, 0, 0, 0, 0, time.UTC)
 	st := NewWithClock(func() time.Time { return now })
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "quota"}); err != nil {
+	acc := newAccounts(st)
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "quota"}); err != nil {
 		t.Fatal(err)
 	}
-	key, err := st.CreateKey(1, domain.KeyInput{KeyName: "quota"})
+	key, err := acc.CreateKey(1, domain.KeyInput{KeyName: "quota"})
 	if err != nil {
 		t.Fatal(err)
 	}

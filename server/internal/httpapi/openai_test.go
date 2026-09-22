@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"LLMGateway/server/internal/accounts"
 	openaiwire "LLMGateway/server/internal/proxy/openai"
 	"LLMGateway/server/internal/testutil/storefake"
 	domain "LLMGateway/server/internal/testutil/testtypes"
@@ -44,6 +45,7 @@ func upstreamSuccess() http.Handler {
 type proxyFixture struct {
 	server   *Server
 	store    Port
+	accounts *accounts.Server
 	fullKey  string
 	upstream *httptest.Server
 }
@@ -59,13 +61,14 @@ func newProxyFixtureWithStore(t *testing.T, upstream http.Handler, st Port, opts
 	server := httptest.NewServer(upstream)
 	t.Cleanup(server.Close)
 
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
+	acc := accounts.New(st, st.AccountsTx())
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.RechargeUser(1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
+	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
 		t.Fatal(err)
 	}
-	created, err := st.CreateKey(1, domain.KeyInput{KeyName: "default", Prefix: "sk-"})
+	created, err := acc.CreateKey(1, domain.KeyInput{KeyName: "default", Prefix: "sk-"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,6 +89,7 @@ func newProxyFixtureWithStore(t *testing.T, upstream http.Handler, st Port, opts
 	return &proxyFixture{
 		server:   NewServer(testDashboardDir(), st, opts...),
 		store:    st,
+		accounts: acc,
 		fullKey:  created.FullKey,
 		upstream: server,
 	}
@@ -243,12 +247,12 @@ func TestChatCompletionsAuthFailures(t *testing.T) {
 	}
 
 	// Disabled key.
-	created, err := f.store.CreateKey(1, domain.KeyInput{KeyName: "second"})
+	created, err := f.accounts.CreateKey(1, domain.KeyInput{KeyName: "second"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	secondKey := created.FullKey
-	if _, err := f.store.UpdateKey(1, created.ID, domain.KeyUpdateInput{IsActive: boolPointer(false)}); err != nil {
+	if _, err := f.accounts.UpdateKey(1, created.ID, domain.KeyUpdateInput{IsActive: boolPointer(false)}); err != nil {
 		t.Fatal(err)
 	}
 	if res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", secondKey, body); res.Code != http.StatusUnauthorized {
@@ -256,7 +260,7 @@ func TestChatCompletionsAuthFailures(t *testing.T) {
 	}
 
 	// Expired key.
-	expired, err := f.store.CreateKey(1, domain.KeyInput{KeyName: "expired", ExpiresAt: "2020-01-01T00:00:00Z"})
+	expired, err := f.accounts.CreateKey(1, domain.KeyInput{KeyName: "expired", ExpiresAt: "2020-01-01T00:00:00Z"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -265,7 +269,7 @@ func TestChatCompletionsAuthFailures(t *testing.T) {
 	}
 
 	// Suspended user.
-	if _, err := f.store.UpdateUserStatus(1, "suspended"); err != nil {
+	if _, err := f.accounts.UpdateUserStatus(1, "suspended"); err != nil {
 		t.Fatal(err)
 	}
 	if res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, body); res.Code != http.StatusForbidden {
@@ -482,7 +486,7 @@ func TestChatCompletionsStreamingCancellationReachesUpstream(t *testing.T) {
 func TestChatCompletionsInsufficientBalance(t *testing.T) {
 	f := newProxyFixture(t, upstreamSuccess())
 	// Drain the user balance via a debit.
-	if _, err := f.store.DebitUserBalance(1, "10.000000", "drain"); err != nil {
+	if _, err := f.accounts.DebitUserBalance(1, "10.000000", "drain"); err != nil {
 		t.Fatal(err)
 	}
 	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","messages":[]}`)
