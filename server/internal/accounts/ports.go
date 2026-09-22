@@ -1,29 +1,6 @@
 package accounts
 
-import (
-	"encoding/json"
-)
-
-// CanonicalJSON is a serialization-consistency helper (not a business rule):
-// it re-encodes JSON into a compact, key-sorted form so test fakes (raw input)
-// and PostgreSQL (JSONB) return byte-identical values. Empty input
-// returns nil.
-func CanonicalJSON(value json.RawMessage) json.RawMessage {
-	if len(value) == 0 {
-		return nil
-	}
-	var decoded any
-	if err := json.Unmarshal(value, &decoded); err != nil {
-		return value
-	}
-	encoded, err := json.Marshal(decoded)
-	if err != nil {
-		return value
-	}
-	return encoded
-}
-
-// UserStore covers downstream users, their balances, balance transactions and
+// Port UserStore covers downstream users, their balances, balance transactions and
 // gateway API keys.
 //
 // Implementations must never return a gateway key's plaintext after creation or
