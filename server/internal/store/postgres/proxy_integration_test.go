@@ -7,21 +7,15 @@ import (
 	"testing"
 
 	"LLMGateway/server/internal/accounts"
-	"LLMGateway/server/internal/catalog"
-	"LLMGateway/server/internal/quota"
-	"LLMGateway/server/internal/ratelimit"
-	"LLMGateway/server/internal/usage"
 
 	"LLMGateway/server/internal/crypto"
 	"LLMGateway/server/internal/store"
 	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
-func createKeyAndHash(t *testing.T, st interface {
-	accounts.Port
-}, userID int) (int, string) {
+func createKeyAndHash(t *testing.T, acc *accounts.Server, userID int) (int, string) {
 	t.Helper()
-	created, err := st.CreateKey(userID, domain.KeyInput{KeyName: "default", Prefix: "sk-"})
+	created, err := acc.CreateKey(userID, domain.KeyInput{KeyName: "default", Prefix: "sk-"})
 	if err != nil {
 		t.Fatalf("CreateKey: %v", err)
 	}
@@ -30,14 +24,15 @@ func createKeyAndHash(t *testing.T, st interface {
 
 func TestPGProxyStoreCapabilities(t *testing.T) {
 	st := testStore(t)
+	acc := accounts.New(st, st.AccountsTx())
 
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.RechargeUser(1, domain.RechargeInput{Amount: "25.000000"}); err != nil {
+	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "25.000000"}); err != nil {
 		t.Fatal(err)
 	}
-	keyID, keyHash := createKeyAndHash(t, st, 1)
+	keyID, keyHash := createKeyAndHash(t, acc, 1)
 
 	auth, err := st.AuthenticateKey(keyHash)
 	if err != nil {
@@ -63,17 +58,17 @@ func TestPGProxyStoreCapabilities(t *testing.T) {
 		t.Fatalf("missing key err = %v, want ErrNotFound", err)
 	}
 
-	result, err := st.DebitUserBalance(1, "3.5", "request")
+	result, err := acc.DebitUserBalance(1, "3.5", "request")
 	if err != nil {
 		t.Fatalf("DebitUserBalance: %v", err)
 	}
 	if result.BalanceAfter != "21.500000" {
 		t.Fatalf("balance_after = %v, want 21.500000", result.BalanceAfter)
 	}
-	if _, err := st.DebitUserBalance(1, "100.000000", "too much"); !errors.Is(err, store.ErrInvalid) {
+	if _, err := acc.DebitUserBalance(1, "100.000000", "too much"); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("insufficient err = %v, want ErrInvalid", err)
 	}
-	if _, err := st.DebitUserBalance(404, "1.000000", "missing"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := acc.DebitUserBalance(404, "1.000000", "missing"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing user err = %v, want ErrNotFound", err)
 	}
 
@@ -156,11 +151,12 @@ func TestPGProxyStoreCapabilities(t *testing.T) {
 
 func TestPGDebitUserBalanceConcurrent(t *testing.T) {
 	st := testStore(t)
+	acc := accounts.New(st, st.AccountsTx())
 
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.RechargeUser(1, domain.RechargeInput{Amount: "100.000000"}); err != nil {
+	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "100.000000"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -171,7 +167,7 @@ func TestPGDebitUserBalanceConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := st.DebitUserBalance(1, "1.000000", "concurrent"); err != nil {
+			if _, err := acc.DebitUserBalance(1, "1.000000", "concurrent"); err != nil {
 				errs <- err
 			}
 		}()
@@ -210,23 +206,17 @@ type proxySnapshot struct {
 	countAll         int
 }
 
-func runProxyScenario(t *testing.T, st interface {
-	accounts.Port
-	catalog.Port
-	catalog.HealthPort
-	quota.Port
-	ratelimit.Port
-	usage.Port
-}) proxySnapshot {
+func runProxyScenario(t *testing.T, st *Store) proxySnapshot {
 	t.Helper()
+	acc := accounts.New(st, st.AccountsTx())
 
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.RechargeUser(1, domain.RechargeInput{Amount: "25.000000"}); err != nil {
+	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "25.000000"}); err != nil {
 		t.Fatal(err)
 	}
-	_, keyHash := createKeyAndHash(t, st, 1)
+	_, keyHash := createKeyAndHash(t, acc, 1)
 
 	auth, err := st.AuthenticateKey(keyHash)
 	if err != nil {
@@ -276,11 +266,11 @@ func runProxyScenario(t *testing.T, st interface {
 		}
 	}
 
-	debit, err := st.DebitUserBalance(1, "3.5", "request")
+	debit, err := acc.DebitUserBalance(1, "3.5", "request")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, insufficientErr := st.DebitUserBalance(1, "100.000000", "too much")
+	_, insufficientErr := acc.DebitUserBalance(1, "100.000000", "too much")
 
 	if _, err := st.InsertUsageLog(domain.UsageLogInput{RequestID: "req-1", UserID: intp(1), Model: "gpt", Status: "success"}); err != nil {
 		t.Fatal(err)

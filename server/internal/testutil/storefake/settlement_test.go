@@ -10,10 +10,11 @@ import (
 
 func TestSettleChatCompletionDebitsUserChannelAndWritesUsage(t *testing.T) {
 	st := New()
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
+	acc := newAccounts(st)
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.RechargeUser(1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
+	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
 		t.Fatal(err)
 	}
 	channelBalance := "5.000000"
@@ -56,10 +57,11 @@ func TestSettleChatCompletionDebitsUserChannelAndWritesUsage(t *testing.T) {
 
 func TestSettleChatCompletionRejectsInsufficientBalanceWithoutSuccessLog(t *testing.T) {
 	st := New()
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
+	acc := newAccounts(st)
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.RechargeUser(1, domain.RechargeInput{Amount: "1.000000"}); err != nil {
+	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "1.000000"}); err != nil {
 		t.Fatal(err)
 	}
 	channel, _ := st.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
@@ -80,10 +82,11 @@ func TestSettleChatCompletionRejectsInsufficientBalanceWithoutSuccessLog(t *test
 
 func TestSettleChatCompletionCostZeroWritesUsageWithoutDebit(t *testing.T) {
 	st := New()
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
+	acc := newAccounts(st)
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.RechargeUser(1, domain.RechargeInput{Amount: "1.000000"}); err != nil {
+	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "1.000000"}); err != nil {
 		t.Fatal(err)
 	}
 	channel, _ := st.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
@@ -107,10 +110,11 @@ func TestSettleChatCompletionCostZeroWritesUsageWithoutDebit(t *testing.T) {
 
 func TestSettleChatCompletionDuplicateUsageRollsBack(t *testing.T) {
 	st := New()
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
+	acc := newAccounts(st)
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.RechargeUser(1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
+	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
 		t.Fatal(err)
 	}
 	channelBalance := "5.000000"

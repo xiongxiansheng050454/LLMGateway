@@ -1,6 +1,7 @@
 package storefake
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -8,14 +9,14 @@ import (
 	"time"
 
 	domain "LLMGateway/server/internal/accounts"
-	"LLMGateway/server/internal/crypto"
-	"LLMGateway/server/internal/money"
 	"LLMGateway/server/internal/store"
 )
 
 func nowRFC3339() string {
 	return time.Now().UTC().Format(time.RFC3339)
 }
+
+// --- Port reads ---
 
 func (s *Store) ListUsers(page, pageSize int) (domain.ListResponse[domain.UserDTO], error) {
 	s.mu.Lock()
@@ -33,118 +34,6 @@ func (s *Store) ListUsers(page, pageSize int) (domain.ListResponse[domain.UserDT
 		list = append(list, s.userDTO(s.users[id]))
 	}
 	return domain.ListResponse[domain.UserDTO]{List: list, Total: len(ids)}, nil
-}
-
-func (s *Store) CreateUser(in domain.UserInput) (domain.UserDTO, error) {
-	if in.UserGroup == "" {
-		in.UserGroup = "default"
-	}
-	if in.Status == "" {
-		in.Status = "active"
-	}
-	if in.Status != "active" && in.Status != "suspended" {
-		return domain.UserDTO{}, fmt.Errorf("%w: invalid status", store.ErrInvalid)
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	user := &domain.User{ID: s.nextUserID, Nickname: in.Nickname, UserGroup: in.UserGroup, Status: in.Status, AvailableBalance: "0.000000", FrozenBalance: "0.000000"}
-	s.nextUserID++
-	s.users[user.ID] = user
-	return s.userDTO(user), nil
-}
-
-func (s *Store) UpdateUser(id int, in domain.UserInput) (domain.UserDTO, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	user, ok := s.users[id]
-	if !ok {
-		return domain.UserDTO{}, store.ErrNotFound
-	}
-	if in.UserGroup != "" {
-		user.UserGroup = in.UserGroup
-	}
-	user.Nickname = in.Nickname
-	return s.userDTO(user), nil
-}
-
-func (s *Store) UpdateUserStatus(id int, status string) (domain.UserDTO, error) {
-	if status != "active" && status != "suspended" {
-		return domain.UserDTO{}, fmt.Errorf("%w: invalid status", store.ErrInvalid)
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	user, ok := s.users[id]
-	if !ok {
-		return domain.UserDTO{}, store.ErrNotFound
-	}
-	user.Status = status
-	return s.userDTO(user), nil
-}
-
-func (s *Store) DeleteUser(id int) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, ok := s.users[id]; !ok {
-		return store.ErrNotFound
-	}
-	s.cleanupQuotaLocked(id, 0)
-	delete(s.users, id)
-	delete(s.transactions, id)
-	for keyID, key := range s.keys {
-		if key.userID == id {
-			delete(s.keys, keyID)
-		}
-	}
-	for order, tx := range s.orders {
-		if tx.ID != 0 && strings.HasPrefix(order, fmt.Sprintf("%d:", id)) {
-			delete(s.orders, order)
-		}
-	}
-	return nil
-}
-
-func (s *Store) RechargeUser(id int, in domain.RechargeInput) (domain.BalanceUpdateDTO, error) {
-	amount, err := money.Parse6(in.Amount)
-	if err != nil || amount.Cmp(0) <= 0 {
-		return domain.BalanceUpdateDTO{}, fmt.Errorf("%w: invalid amount", store.ErrInvalid)
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	user, ok := s.users[id]
-	if !ok {
-		return domain.BalanceUpdateDTO{}, store.ErrNotFound
-	}
-
-	if in.RelatedOrderID != "" {
-		if existing, ok := s.orders[orderKey(id, in.RelatedOrderID)]; ok {
-			return domain.BalanceUpdateDTO{BalanceAfter: existing.BalanceAfter}, nil
-		}
-	}
-
-	current, err := money.Parse6(user.AvailableBalance)
-	if err != nil {
-		return domain.BalanceUpdateDTO{}, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
-	}
-	next := current.Add(amount)
-	user.AvailableBalance = money.Format6(next)
-
-	tx := domain.BalanceTransaction{
-		ID:           s.nextTxID,
-		TxType:       "recharge",
-		Amount:       money.Format6(amount),
-		BalanceAfter: user.AvailableBalance,
-		Description:  in.Description,
-		CreatedAt:    nowRFC3339(),
-	}
-	s.nextTxID++
-	s.transactions[id] = append(s.transactions[id], tx)
-	if in.RelatedOrderID != "" {
-		s.orders[orderKey(id, in.RelatedOrderID)] = tx
-	}
-	return domain.BalanceUpdateDTO{BalanceAfter: user.AvailableBalance}, nil
 }
 
 func (s *Store) GetUserBalance(id int) (domain.BalanceDTO, error) {
@@ -201,90 +90,6 @@ func (s *Store) ListKeys(page, pageSize int) (domain.ListResponse[domain.ClientK
 	return domain.ListResponse[domain.ClientKeyDTO]{List: list, Total: len(keys)}, nil
 }
 
-func (s *Store) CreateKey(userID int, in domain.KeyInput) (domain.KeySecretDTO, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if _, ok := s.users[userID]; !ok {
-		return domain.KeySecretDTO{}, store.ErrNotFound
-	}
-
-	keyName := in.KeyName
-	if keyName == "" {
-		keyName = "default"
-	}
-	prefix := in.Prefix
-	if prefix == "" {
-		prefix = "sk-"
-	}
-	isActive := true
-	if in.IsActive != nil {
-		isActive = *in.IsActive
-	}
-
-	fullKey, err := crypto.GenerateGatewayKey(prefix)
-	if err != nil {
-		return domain.KeySecretDTO{}, err
-	}
-
-	key := &memoryKey{
-		id:                 s.nextKeyID,
-		userID:             userID,
-		keyName:            keyName,
-		prefix:             prefix,
-		keyHash:            crypto.HashKey(fullKey),
-		permissions:        canonicalJSON(normalizeJSON(in.Permissions, defaultPermissions)),
-		rateLimitOverrides: canonicalJSON(normalizeJSON(in.RateLimitOverrides, "")),
-		isActive:           isActive,
-		expiresAt:          normalizeTimestampPtr(in.ExpiresAt),
-	}
-	s.nextKeyID++
-	s.keys[key.id] = key
-	return domain.KeySecretDTO{ID: key.id, FullKey: fullKey}, nil
-}
-
-func (s *Store) UpdateKey(userID, keyID int, in domain.KeyUpdateInput) (domain.ClientKeyDTO, error) {
-	if in.IsActive == nil {
-		return domain.ClientKeyDTO{}, fmt.Errorf("%w: is_active is required", store.ErrInvalid)
-	}
-
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	key, ok := s.keys[keyID]
-	if !ok || key.userID != userID {
-		return domain.ClientKeyDTO{}, store.ErrNotFound
-	}
-	key.isActive = *in.IsActive
-	return keyDTO(key), nil
-}
-
-func (s *Store) DeleteKey(userID, keyID int) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	key, ok := s.keys[keyID]
-	if !ok || key.userID != userID {
-		return store.ErrNotFound
-	}
-	s.cleanupQuotaLocked(userID, keyID)
-	delete(s.keys, keyID)
-	return nil
-}
-
-func (s *Store) ResetKey(userID, keyID int) (domain.KeySecretDTO, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	key, ok := s.keys[keyID]
-	if !ok || key.userID != userID {
-		return domain.KeySecretDTO{}, store.ErrNotFound
-	}
-
-	fullKey, err := crypto.GenerateGatewayKey(key.prefix)
-	if err != nil {
-		return domain.KeySecretDTO{}, err
-	}
-	key.keyHash = crypto.HashKey(fullKey)
-	return domain.KeySecretDTO{FullKey: fullKey}, nil
-}
-
 func (s *Store) AuthenticateKey(keyHash string) (*domain.AuthContext, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -325,41 +130,196 @@ func (s *Store) UpdateKeyLastUsed(keyID int) error {
 	return nil
 }
 
-func (s *Store) DebitUserBalance(userID int, amount string, description string) (domain.BalanceUpdateDTO, error) {
-	parsed, err := money.Parse6(amount)
-	if err != nil || parsed.Cmp(0) <= 0 {
-		return domain.BalanceUpdateDTO{}, fmt.Errorf("%w: invalid amount", store.ErrInvalid)
-	}
+// --- Tx primitives ---
 
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	user, ok := s.users[userID]
+// accountsRunner runs the callback while holding the store mutex so the
+// primitives observe a consistent snapshot, mirroring a database transaction.
+type accountsRunner struct {
+	store *Store
+}
+
+func (s *Store) AccountsTx() domain.TxManager { return accountsRunner{store: s} }
+
+func (r accountsRunner) InTx(_ context.Context, fn func(domain.Tx) error) error {
+	r.store.mu.Lock()
+	defer r.store.mu.Unlock()
+	return fn(&accountsTx{s: r.store})
+}
+
+type accountsTx struct {
+	s *Store
+}
+
+func (t *accountsTx) GetUser(id int) (domain.User, error) {
+	user, ok := t.s.users[id]
 	if !ok {
-		return domain.BalanceUpdateDTO{}, store.ErrNotFound
+		return domain.User{}, store.ErrNotFound
 	}
+	return *user, nil
+}
 
-	current, err := money.Parse6(user.AvailableBalance)
-	if err != nil {
-		return domain.BalanceUpdateDTO{}, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
-	}
-	if current.Cmp(parsed) < 0 {
-		return domain.BalanceUpdateDTO{}, fmt.Errorf("%w: insufficient balance", store.ErrInvalid)
-	}
-	next := current.Sub(parsed)
-	user.AvailableBalance = money.Format6(next)
+func (t *accountsTx) InsertUser(nickname, group, status string) (domain.User, error) {
+	user := &domain.User{ID: t.s.nextUserID, Nickname: nickname, UserGroup: group, Status: status, AvailableBalance: "0.000000", FrozenBalance: "0.000000"}
+	t.s.nextUserID++
+	t.s.users[user.ID] = user
+	return *user, nil
+}
 
+func (t *accountsTx) InsertUserBalance(int) error { return nil }
+
+func (t *accountsTx) UpdateUser(id int, nickname, group string) (domain.User, bool, error) {
+	user, ok := t.s.users[id]
+	if !ok {
+		return domain.User{}, false, nil
+	}
+	user.Nickname = nickname
+	user.UserGroup = group
+	return *user, true, nil
+}
+
+func (t *accountsTx) UpdateUserStatus(id int, status string) (domain.User, bool, error) {
+	user, ok := t.s.users[id]
+	if !ok {
+		return domain.User{}, false, nil
+	}
+	user.Status = status
+	return *user, true, nil
+}
+
+func (t *accountsTx) DeleteUser(id int) (bool, error) {
+	if _, ok := t.s.users[id]; !ok {
+		return false, nil
+	}
+	t.s.cleanupQuotaLocked(id, 0)
+	delete(t.s.users, id)
+	delete(t.s.transactions, id)
+	for keyID, key := range t.s.keys {
+		if key.userID == id {
+			delete(t.s.keys, keyID)
+		}
+	}
+	for order, tx := range t.s.orders {
+		if tx.ID != 0 && strings.HasPrefix(order, fmt.Sprintf("%d:", id)) {
+			delete(t.s.orders, order)
+		}
+	}
+	return true, nil
+}
+
+func (t *accountsTx) LockUserBalance(userID int) error {
+	if _, ok := t.s.users[userID]; !ok {
+		return store.ErrNotFound
+	}
+	return nil
+}
+
+func (t *accountsTx) GetUserBalanceText(userID int) (string, error) {
+	user, ok := t.s.users[userID]
+	if !ok {
+		return "", store.ErrNotFound
+	}
+	return user.AvailableBalance, nil
+}
+
+func (t *accountsTx) UpdateUserBalance(userID int, available string) (bool, error) {
+	user, ok := t.s.users[userID]
+	if !ok {
+		return false, nil
+	}
+	user.AvailableBalance = available
+	return true, nil
+}
+
+func (t *accountsTx) InsertBalanceTransaction(in domain.BalanceTransactionInput) error {
 	tx := domain.BalanceTransaction{
-		ID:           s.nextTxID,
-		TxType:       "consume",
-		Amount:       money.Format6(parsed),
-		BalanceAfter: user.AvailableBalance,
-		Description:  description,
+		ID:           t.s.nextTxID,
+		TxType:       in.TxType,
+		Amount:       in.Amount,
+		BalanceAfter: in.BalanceAfter,
+		Description:  in.Description,
 		CreatedAt:    nowRFC3339(),
 	}
-	s.nextTxID++
-	s.transactions[userID] = append(s.transactions[userID], tx)
-	return domain.BalanceUpdateDTO{BalanceAfter: user.AvailableBalance}, nil
+	t.s.nextTxID++
+	t.s.transactions[in.UserID] = append(t.s.transactions[in.UserID], tx)
+	if in.RelatedOrderID != "" {
+		t.s.orders[orderKey(in.UserID, in.RelatedOrderID)] = tx
+	}
+	return nil
 }
+
+func (t *accountsTx) GetBalanceTransactionByOrder(userID int, orderID string) (string, bool, error) {
+	existing, ok := t.s.orders[orderKey(userID, orderID)]
+	if !ok {
+		return "", false, nil
+	}
+	return existing.BalanceAfter, true, nil
+}
+
+func (t *accountsTx) GetKey(keyID, userID int) (domain.ClientKey, error) {
+	key, ok := t.s.keys[keyID]
+	if !ok || key.userID != userID {
+		return domain.ClientKey{}, store.ErrNotFound
+	}
+	return clientKey(key), nil
+}
+
+func (t *accountsTx) InsertKey(in domain.KeyInsert) (int, error) {
+	key := &memoryKey{
+		id:                 t.s.nextKeyID,
+		userID:             in.UserID,
+		keyName:            in.KeyName,
+		prefix:             in.Prefix,
+		keyHash:            in.KeyHash,
+		permissions:        canonicalJSON(normalizeJSON(in.Permissions, defaultPermissions)),
+		rateLimitOverrides: canonicalJSON(normalizeJSON(in.RateLimitOverrides, "")),
+		isActive:           in.IsActive,
+		expiresAt:          normalizeTimestampPtr(in.ExpiresAt),
+	}
+	t.s.nextKeyID++
+	t.s.keys[key.id] = key
+	return key.id, nil
+}
+
+func (t *accountsTx) UpdateKeyActive(keyID, userID int, active bool) (domain.ClientKey, bool, error) {
+	key, ok := t.s.keys[keyID]
+	if !ok || key.userID != userID {
+		return domain.ClientKey{}, false, nil
+	}
+	key.isActive = active
+	return clientKey(key), true, nil
+}
+
+func (t *accountsTx) UpdateKeySecret(keyID, userID int, keyHash, prefix string) (bool, error) {
+	key, ok := t.s.keys[keyID]
+	if !ok || key.userID != userID {
+		return false, nil
+	}
+	key.keyHash = keyHash
+	key.prefix = prefix
+	return true, nil
+}
+
+func (t *accountsTx) DeleteKey(keyID, userID int) (bool, error) {
+	key, ok := t.s.keys[keyID]
+	if !ok || key.userID != userID {
+		return false, nil
+	}
+	t.s.cleanupQuotaLocked(userID, keyID)
+	delete(t.s.keys, keyID)
+	return true, nil
+}
+
+func (t *accountsTx) DeleteQuotaReservationsForUser(userID int) error {
+	t.s.cleanupQuotaLocked(userID, 0)
+	return nil
+}
+
+func (t *accountsTx) DeleteQuotaReservationsForKey(userID, keyID int) error {
+	t.s.cleanupQuotaLocked(userID, keyID)
+	return nil
+}
+
+// --- mappings ---
 
 func (s *Store) userDTO(user *domain.User) domain.UserDTO {
 	return domain.UserDTO{ID: user.ID, Nickname: user.Nickname, UserGroup: user.UserGroup, Status: user.Status, Balance: balanceDTO(user.AvailableBalance, user.FrozenBalance)}
@@ -370,7 +330,11 @@ func balanceDTO(available, frozen string) domain.BalanceDTO {
 }
 
 func keyDTO(key *memoryKey) domain.ClientKeyDTO {
-	return domain.ClientKeyDTO{ID: key.id, UserID: key.userID, KeyName: key.keyName, Prefix: key.prefix, IsActive: key.isActive, LastUsedAt: key.lastUsedAt, ExpiresAt: key.expiresAt}
+	return domain.ClientKeyDTO(clientKey(key))
+}
+
+func clientKey(key *memoryKey) domain.ClientKey {
+	return domain.ClientKey{ID: key.id, UserID: key.userID, KeyName: key.keyName, Prefix: key.prefix, IsActive: key.isActive, LastUsedAt: key.lastUsedAt, ExpiresAt: key.expiresAt}
 }
 
 func (s *Store) sortedKeysLocked(userID int) []*memoryKey {

@@ -43,6 +43,10 @@ type Server struct {
 
 // Port is the process assembly contract. Each business server receives its
 // own narrower module port during construction.
+//
+// Transaction managers are exposed as per-module factory methods because a
+// single store cannot implement several InTx methods that differ only in the
+// callback signature.
 type Port interface {
 	accounts.Port
 	catalog.Port
@@ -51,6 +55,7 @@ type Port interface {
 	ratelimit.Port
 	usage.Port
 	proxy.Port
+	AccountsTx() accounts.TxManager
 }
 
 type options struct {
@@ -142,7 +147,7 @@ func NewServer(dashboardDir string, st Port, opts ...Option) *Server {
 		client:       client,
 		proxy:        proxyService,
 		catalog:      catalog.New(st, client),
-		accounts:     accounts.New(st),
+		accounts:     accounts.New(st, st.AccountsTx()),
 		usage:        usage.New(st),
 		ratelimit:    ratelimit.New(st),
 		quota:        quota.New(st),

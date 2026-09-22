@@ -5,21 +5,23 @@ import (
 	"errors"
 	"testing"
 
+	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/store"
 	domain "LLMGateway/server/internal/testutil/testtypes"
 )
 
 func TestPGUsageLogsAndStats(t *testing.T) {
 	st := testStore(t)
+	acc := accounts.New(st, st.AccountsTx())
 	ctx := context.Background()
 
 	if _, err := st.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "A"}); err != nil {
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "A"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "B"}); err != nil {
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "B"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -131,16 +133,17 @@ func TestPGUsageLogsAndStats(t *testing.T) {
 
 func TestPGCountRequestsSinceFiltersByModelAndChannel(t *testing.T) {
 	st := testStore(t)
+	acc := accounts.New(st, st.AccountsTx())
 	if _, err := st.CreateChannel(domain.ChannelInput{Name: "A", BaseURL: "https://a.test", APIKey: "sk", Status: 1}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.CreateChannel(domain.ChannelInput{Name: "B", BaseURL: "https://b.test", APIKey: "sk", Status: 1}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "A"}); err != nil {
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "A"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "B"}); err != nil {
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "B"}); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := st.InsertUsageLog(domain.UsageLogInput{RequestID: "count-1", UserID: intp(1), ChannelID: intp(1), Model: "gpt", Status: "success"}); err != nil {
@@ -167,14 +170,15 @@ func TestPGCountRequestsSinceFiltersByModelAndChannel(t *testing.T) {
 
 func TestPGAggregateUsageFiltersByAPIKey(t *testing.T) {
 	st := testStore(t)
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "A"}); err != nil {
+	acc := accounts.New(st, st.AccountsTx())
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "A"}); err != nil {
 		t.Fatal(err)
 	}
-	keyA, err := st.CreateKey(1, domain.KeyInput{KeyName: "A"})
+	keyA, err := acc.CreateKey(1, domain.KeyInput{KeyName: "A"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	keyB, err := st.CreateKey(1, domain.KeyInput{KeyName: "B"})
+	keyB, err := acc.CreateKey(1, domain.KeyInput{KeyName: "B"})
 	if err != nil {
 		t.Fatal(err)
 	}

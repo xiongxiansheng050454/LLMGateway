@@ -4,19 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 
 	domain "LLMGateway/server/internal/accounts"
-	"LLMGateway/server/internal/crypto"
 	"LLMGateway/server/internal/db/sqlc"
-	"LLMGateway/server/internal/money"
 	"LLMGateway/server/internal/store"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const defaultPermissions = `{"models":["*"]}`
+// --- Store reads ---
 
 func (s *Store) ListUsers(page, pageSize int) (domain.ListResponse[domain.UserDTO], error) {
 	ctx := context.Background()
@@ -36,161 +34,6 @@ func (s *Store) ListUsers(page, pageSize int) (domain.ListResponse[domain.UserDT
 		list = append(list, userDTO(row.ID, row.Nickname, row.UserGroup, row.Status, textValue(row.AvailableBalance), textValue(row.FrozenBalance)))
 	}
 	return domain.ListResponse[domain.UserDTO]{List: list, Total: int(total)}, nil
-}
-
-func (s *Store) CreateUser(in domain.UserInput) (domain.UserDTO, error) {
-	if in.UserGroup == "" {
-		in.UserGroup = "default"
-	}
-	if in.Status == "" {
-		in.Status = "active"
-	}
-	if in.Status != "active" && in.Status != "suspended" {
-		return domain.UserDTO{}, fmt.Errorf("%w: invalid status", store.ErrInvalid)
-	}
-
-	ctx := context.Background()
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return domain.UserDTO{}, mapError(err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	queries := sqlc.New(tx)
-
-	id, err := queries.CreateUser(ctx, sqlc.CreateUserParams{Nickname: in.Nickname, UserGroup: in.UserGroup, Status: in.Status})
-	if err != nil {
-		return domain.UserDTO{}, mapError(err)
-	}
-	if err := queries.CreateUserBalance(ctx, id); err != nil {
-		return domain.UserDTO{}, mapError(err)
-	}
-	if err := tx.Commit(ctx); err != nil {
-		return domain.UserDTO{}, mapError(err)
-	}
-	return s.getUserDTO(id)
-}
-
-func (s *Store) UpdateUser(id int, in domain.UserInput) (domain.UserDTO, error) {
-	ctx := context.Background()
-	current, err := s.queries.GetUser(ctx, int64(id))
-	if err != nil {
-		return domain.UserDTO{}, mapError(err)
-	}
-	group := in.UserGroup
-	if group == "" {
-		group = current.UserGroup
-	}
-
-	affected, err := s.queries.UpdateUser(ctx, sqlc.UpdateUserParams{Nickname: in.Nickname, UserGroup: group, ID: int64(id)})
-	if err != nil {
-		return domain.UserDTO{}, mapError(err)
-	}
-	if affected == 0 {
-		return domain.UserDTO{}, store.ErrNotFound
-	}
-	return s.getUserDTO(int64(id))
-}
-
-func (s *Store) UpdateUserStatus(id int, status string) (domain.UserDTO, error) {
-	if status != "active" && status != "suspended" {
-		return domain.UserDTO{}, fmt.Errorf("%w: invalid status", store.ErrInvalid)
-	}
-	affected, err := s.queries.UpdateUserStatus(context.Background(), sqlc.UpdateUserStatusParams{Status: status, ID: int64(id)})
-	if err != nil {
-		return domain.UserDTO{}, mapError(err)
-	}
-	if affected == 0 {
-		return domain.UserDTO{}, store.ErrNotFound
-	}
-	return s.getUserDTO(int64(id))
-}
-
-func (s *Store) DeleteUser(id int) error {
-	ctx := context.Background()
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return mapError(err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if err := cleanupQuotaReservationsTx(ctx, tx, id, 0); err != nil {
-		return err
-	}
-	affected, err := sqlc.New(tx).DeleteUser(ctx, int64(id))
-	if err != nil {
-		return mapError(err)
-	}
-	if affected == 0 {
-		return store.ErrNotFound
-	}
-	return mapError(tx.Commit(ctx))
-}
-
-func (s *Store) RechargeUser(id int, in domain.RechargeInput) (domain.BalanceUpdateDTO, error) {
-	amount, err := money.Parse6(in.Amount)
-	if err != nil || amount.Cmp(0) <= 0 {
-		return domain.BalanceUpdateDTO{}, fmt.Errorf("%w: invalid amount", store.ErrInvalid)
-	}
-
-	ctx := context.Background()
-
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return domain.BalanceUpdateDTO{}, mapError(err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	queries := sqlc.New(tx)
-
-	if _, err := queries.LockUserBalance(ctx, int64(id)); err != nil {
-		return domain.BalanceUpdateDTO{}, mapError(err)
-	}
-
-	// Idempotency is scoped per user and evaluated after the balance row lock,
-	// so concurrent repeats of the same order serialize and return the original
-	// result instead of a unique-violation error.
-	if in.RelatedOrderID != "" {
-		existing, err := queries.GetBalanceTransactionByOrder(ctx, sqlc.GetBalanceTransactionByOrderParams{UserID: int64(id), RelatedOrderID: pgtype.Text{String: in.RelatedOrderID, Valid: true}})
-		if err == nil {
-			return domain.BalanceUpdateDTO{BalanceAfter: existing.BalanceAfter}, nil
-		}
-		if !errors.Is(mapError(err), store.ErrNotFound) {
-			return domain.BalanceUpdateDTO{}, mapError(err)
-		}
-	}
-	balanceRow, err := queries.GetUserBalanceText(ctx, int64(id))
-	if err != nil {
-		return domain.BalanceUpdateDTO{}, mapError(err)
-	}
-	current, err := money.Parse6(textValue(balanceRow.AvailableBalance))
-	if err != nil {
-		return domain.BalanceUpdateDTO{}, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
-	}
-	next := money.Format6(current.Add(amount))
-
-	if affected, err := queries.UpdateUserBalance(ctx, sqlc.UpdateUserBalanceParams{AvailableBalance: next, UserID: int64(id)}); err != nil {
-		return domain.BalanceUpdateDTO{}, mapError(err)
-	} else if affected == 0 {
-		return domain.BalanceUpdateDTO{}, store.ErrNotFound
-	}
-
-	var orderID any
-	if in.RelatedOrderID != "" {
-		orderID = in.RelatedOrderID
-	}
-	if _, err := queries.CreateBalanceTransaction(ctx, sqlc.CreateBalanceTransactionParams{
-		UserID:         int64(id),
-		TxType:         "recharge",
-		Amount:         money.Format6(amount),
-		BalanceAfter:   next,
-		RelatedOrderID: orderID,
-		Description:    in.Description,
-	}); err != nil {
-		return domain.BalanceUpdateDTO{}, mapError(err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return domain.BalanceUpdateDTO{}, mapError(err)
-	}
-	return domain.BalanceUpdateDTO{BalanceAfter: next}, nil
 }
 
 func (s *Store) GetUserBalance(id int) (domain.BalanceDTO, error) {
@@ -267,107 +110,6 @@ func (s *Store) ListKeys(page, pageSize int) (domain.ListResponse[domain.ClientK
 	return domain.ListResponse[domain.ClientKeyDTO]{List: list, Total: int(total)}, nil
 }
 
-func (s *Store) CreateKey(userID int, in domain.KeyInput) (domain.KeySecretDTO, error) {
-	ctx := context.Background()
-	if _, err := s.queries.GetUser(ctx, int64(userID)); err != nil {
-		return domain.KeySecretDTO{}, mapError(err)
-	}
-
-	keyName := in.KeyName
-	if keyName == "" {
-		keyName = "default"
-	}
-	prefix := in.Prefix
-	if prefix == "" {
-		prefix = "sk-"
-	}
-	isActive := true
-	if in.IsActive != nil {
-		isActive = *in.IsActive
-	}
-
-	fullKey, err := crypto.GenerateGatewayKey(prefix)
-	if err != nil {
-		return domain.KeySecretDTO{}, err
-	}
-
-	id, err := s.queries.CreateKey(ctx, sqlc.CreateKeyParams{
-		UserID:             int64(userID),
-		KeyName:            keyName,
-		Prefix:             prefix,
-		KeyHash:            crypto.HashKey(fullKey),
-		Permissions:        defaultJSON(in.Permissions, defaultPermissions),
-		RateLimitOverrides: rawJSON(in.RateLimitOverrides),
-		ExpiresAt:          in.ExpiresAt,
-		IsActive:           isActive,
-	})
-	if err != nil {
-		return domain.KeySecretDTO{}, mapError(err)
-	}
-	return domain.KeySecretDTO{ID: int(id), FullKey: fullKey}, nil
-}
-
-func (s *Store) UpdateKey(userID, keyID int, in domain.KeyUpdateInput) (domain.ClientKeyDTO, error) {
-	if in.IsActive == nil {
-		return domain.ClientKeyDTO{}, fmt.Errorf("%w: is_active is required", store.ErrInvalid)
-	}
-	ctx := context.Background()
-	affected, err := s.queries.UpdateKeyActive(ctx, sqlc.UpdateKeyActiveParams{IsActive: *in.IsActive, ID: int64(keyID), UserID: int64(userID)})
-	if err != nil {
-		return domain.ClientKeyDTO{}, mapError(err)
-	}
-	if affected == 0 {
-		return domain.ClientKeyDTO{}, store.ErrNotFound
-	}
-
-	row, err := s.queries.GetKey(ctx, sqlc.GetKeyParams{ID: int64(keyID), UserID: int64(userID)})
-	if err != nil {
-		return domain.ClientKeyDTO{}, mapError(err)
-	}
-	return keyDTO(row.ID, row.UserID, row.KeyName, row.Prefix, row.IsActive, row.LastUsedAt, row.ExpiresAt), nil
-}
-
-func (s *Store) DeleteKey(userID, keyID int) error {
-	ctx := context.Background()
-	tx, err := s.pool.Begin(ctx)
-	if err != nil {
-		return mapError(err)
-	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if err := cleanupQuotaReservationsTx(ctx, tx, userID, keyID); err != nil {
-		return err
-	}
-	affected, err := sqlc.New(tx).DeleteKey(ctx, sqlc.DeleteKeyParams{ID: int64(keyID), UserID: int64(userID)})
-	if err != nil {
-		return mapError(err)
-	}
-	if affected == 0 {
-		return store.ErrNotFound
-	}
-	return mapError(tx.Commit(ctx))
-}
-
-func (s *Store) ResetKey(userID, keyID int) (domain.KeySecretDTO, error) {
-	ctx := context.Background()
-	row, err := s.queries.GetKey(ctx, sqlc.GetKeyParams{ID: int64(keyID), UserID: int64(userID)})
-	if err != nil {
-		return domain.KeySecretDTO{}, mapError(err)
-	}
-
-	fullKey, err := crypto.GenerateGatewayKey(row.Prefix)
-	if err != nil {
-		return domain.KeySecretDTO{}, err
-	}
-	affected, err := s.queries.UpdateKeySecret(ctx, sqlc.UpdateKeySecretParams{KeyHash: crypto.HashKey(fullKey), Prefix: row.Prefix, ID: int64(keyID), UserID: int64(userID)})
-	if err != nil {
-		return domain.KeySecretDTO{}, mapError(err)
-	}
-	if affected == 0 {
-		return domain.KeySecretDTO{}, store.ErrNotFound
-	}
-	return domain.KeySecretDTO{FullKey: fullKey}, nil
-}
-
 func (s *Store) AuthenticateKey(keyHash string) (*domain.AuthContext, error) {
 	row, err := s.queries.GetAuthContextByKeyHash(context.Background(), keyHash)
 	if err != nil {
@@ -398,69 +140,198 @@ func (s *Store) UpdateKeyLastUsed(keyID int) error {
 	return nil
 }
 
-func (s *Store) DebitUserBalance(userID int, amount string, description string) (domain.BalanceUpdateDTO, error) {
-	parsed, err := money.Parse6(amount)
-	if err != nil || parsed.Cmp(0) <= 0 {
-		return domain.BalanceUpdateDTO{}, fmt.Errorf("%w: invalid amount", store.ErrInvalid)
-	}
+// --- Tx primitives ---
 
+func (t *Tx) GetUser(id int) (domain.User, error) {
 	ctx := context.Background()
-	tx, err := s.pool.Begin(ctx)
+	row, err := t.queries.GetUser(ctx, int64(id))
 	if err != nil {
-		return domain.BalanceUpdateDTO{}, mapError(err)
+		return domain.User{}, mapError(err)
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	queries := sqlc.New(tx)
-
-	if _, err := queries.LockUserBalance(ctx, int64(userID)); err != nil {
-		return domain.BalanceUpdateDTO{}, mapError(err)
-	}
-	balanceRow, err := queries.GetUserBalanceText(ctx, int64(userID))
+	balance, err := t.queries.GetUserBalanceText(ctx, int64(id))
 	if err != nil {
-		return domain.BalanceUpdateDTO{}, mapError(err)
+		return domain.User{}, mapError(err)
 	}
-	current, err := money.Parse6(textValue(balanceRow.AvailableBalance))
-	if err != nil {
-		return domain.BalanceUpdateDTO{}, fmt.Errorf("%w: invalid balance", store.ErrInvalid)
-	}
-	if current.Cmp(parsed) < 0 {
-		return domain.BalanceUpdateDTO{}, fmt.Errorf("%w: insufficient balance", store.ErrInvalid)
-	}
-	next := money.Format6(current.Sub(parsed))
-
-	if affected, err := queries.UpdateUserBalance(ctx, sqlc.UpdateUserBalanceParams{AvailableBalance: next, UserID: int64(userID)}); err != nil {
-		return domain.BalanceUpdateDTO{}, mapError(err)
-	} else if affected == 0 {
-		return domain.BalanceUpdateDTO{}, store.ErrNotFound
-	}
-
-	if _, err := queries.CreateBalanceTransaction(ctx, sqlc.CreateBalanceTransactionParams{
-		UserID:       int64(userID),
-		TxType:       "consume",
-		Amount:       money.Format6(parsed),
-		BalanceAfter: next,
-		Description:  description,
-	}); err != nil {
-		return domain.BalanceUpdateDTO{}, mapError(err)
-	}
-
-	if err := tx.Commit(ctx); err != nil {
-		return domain.BalanceUpdateDTO{}, mapError(err)
-	}
-	return domain.BalanceUpdateDTO{BalanceAfter: next}, nil
+	return accountUser(row.ID, row.Nickname, row.UserGroup, row.Status, textValue(balance.AvailableBalance), textValue(balance.FrozenBalance)), nil
 }
 
-func (s *Store) getUserDTO(id int64) (domain.UserDTO, error) {
-	ctx := context.Background()
-	user, err := s.queries.GetUser(ctx, id)
+func (t *Tx) InsertUser(nickname, group, status string) (domain.User, error) {
+	id, err := t.queries.CreateUser(context.Background(), sqlc.CreateUserParams{Nickname: nickname, UserGroup: group, Status: status})
 	if err != nil {
-		return domain.UserDTO{}, mapError(err)
+		return domain.User{}, mapError(err)
 	}
-	balance, err := s.queries.GetUserBalanceText(ctx, id)
+	return accountUser(id, nickname, group, status, "0.000000", "0.000000"), nil
+}
+
+func (t *Tx) InsertUserBalance(userID int) error {
+	return mapError(t.queries.CreateUserBalance(context.Background(), int64(userID)))
+}
+
+func (t *Tx) UpdateUser(id int, nickname, group string) (domain.User, bool, error) {
+	affected, err := t.queries.UpdateUser(context.Background(), sqlc.UpdateUserParams{Nickname: nickname, UserGroup: group, ID: int64(id)})
 	if err != nil {
-		return domain.UserDTO{}, mapError(err)
+		return domain.User{}, false, mapError(err)
 	}
-	return userDTO(user.ID, user.Nickname, user.UserGroup, user.Status, textValue(balance.AvailableBalance), textValue(balance.FrozenBalance)), nil
+	if affected == 0 {
+		return domain.User{}, false, nil
+	}
+	user, err := t.GetUser(id)
+	if err != nil {
+		return domain.User{}, false, err
+	}
+	return user, true, nil
+}
+
+func (t *Tx) UpdateUserStatus(id int, status string) (domain.User, bool, error) {
+	affected, err := t.queries.UpdateUserStatus(context.Background(), sqlc.UpdateUserStatusParams{Status: status, ID: int64(id)})
+	if err != nil {
+		return domain.User{}, false, mapError(err)
+	}
+	if affected == 0 {
+		return domain.User{}, false, nil
+	}
+	user, err := t.GetUser(id)
+	if err != nil {
+		return domain.User{}, false, err
+	}
+	return user, true, nil
+}
+
+func (t *Tx) DeleteUser(id int) (bool, error) {
+	affected, err := t.queries.DeleteUser(context.Background(), int64(id))
+	if err != nil {
+		return false, mapError(err)
+	}
+	return affected > 0, nil
+}
+
+func (t *Tx) LockUserBalance(userID int) error {
+	_, err := t.queries.LockUserBalance(context.Background(), int64(userID))
+	return mapError(err)
+}
+
+func (t *Tx) GetUserBalanceText(userID int) (string, error) {
+	row, err := t.queries.GetUserBalanceText(context.Background(), int64(userID))
+	if err != nil {
+		return "", mapError(err)
+	}
+	return textValue(row.AvailableBalance), nil
+}
+
+func (t *Tx) UpdateUserBalance(userID int, available string) (bool, error) {
+	affected, err := t.queries.UpdateUserBalance(context.Background(), sqlc.UpdateUserBalanceParams{AvailableBalance: available, UserID: int64(userID)})
+	if err != nil {
+		return false, mapError(err)
+	}
+	return affected > 0, nil
+}
+
+func (t *Tx) InsertBalanceTransaction(in domain.BalanceTransactionInput) error {
+	var orderID any
+	if in.RelatedOrderID != "" {
+		orderID = in.RelatedOrderID
+	}
+	_, err := t.queries.CreateBalanceTransaction(context.Background(), sqlc.CreateBalanceTransactionParams{
+		UserID:         int64(in.UserID),
+		TxType:         in.TxType,
+		Amount:         in.Amount,
+		BalanceAfter:   in.BalanceAfter,
+		RelatedOrderID: orderID,
+		Description:    in.Description,
+	})
+	return mapError(err)
+}
+
+func (t *Tx) GetBalanceTransactionByOrder(userID int, orderID string) (string, bool, error) {
+	row, err := t.queries.GetBalanceTransactionByOrder(context.Background(), sqlc.GetBalanceTransactionByOrderParams{
+		UserID:         int64(userID),
+		RelatedOrderID: pgtype.Text{String: orderID, Valid: true},
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", false, nil
+		}
+		return "", false, mapError(err)
+	}
+	return row.BalanceAfter, true, nil
+}
+
+func (t *Tx) GetKey(keyID, userID int) (domain.ClientKey, error) {
+	row, err := t.queries.GetKey(context.Background(), sqlc.GetKeyParams{ID: int64(keyID), UserID: int64(userID)})
+	if err != nil {
+		return domain.ClientKey{}, mapError(err)
+	}
+	return domain.ClientKey{
+		ID:         int(row.ID),
+		UserID:     int(row.UserID),
+		KeyName:    row.KeyName,
+		Prefix:     row.Prefix,
+		IsActive:   row.IsActive,
+		LastUsedAt: optionalTimestamp(row.LastUsedAt),
+		ExpiresAt:  optionalTimestamp(row.ExpiresAt),
+	}, nil
+}
+
+func (t *Tx) InsertKey(in domain.KeyInsert) (int, error) {
+	id, err := t.queries.CreateKey(context.Background(), sqlc.CreateKeyParams{
+		UserID:             int64(in.UserID),
+		KeyName:            in.KeyName,
+		Prefix:             in.Prefix,
+		KeyHash:            in.KeyHash,
+		Permissions:        []byte(in.Permissions),
+		RateLimitOverrides: rawJSON(in.RateLimitOverrides),
+		ExpiresAt:          in.ExpiresAt,
+		IsActive:           in.IsActive,
+	})
+	if err != nil {
+		return 0, mapError(err)
+	}
+	return int(id), nil
+}
+
+func (t *Tx) UpdateKeyActive(keyID, userID int, active bool) (domain.ClientKey, bool, error) {
+	affected, err := t.queries.UpdateKeyActive(context.Background(), sqlc.UpdateKeyActiveParams{IsActive: active, ID: int64(keyID), UserID: int64(userID)})
+	if err != nil {
+		return domain.ClientKey{}, false, mapError(err)
+	}
+	if affected == 0 {
+		return domain.ClientKey{}, false, nil
+	}
+	key, err := t.GetKey(keyID, userID)
+	if err != nil {
+		return domain.ClientKey{}, false, err
+	}
+	return key, true, nil
+}
+
+func (t *Tx) UpdateKeySecret(keyID, userID int, keyHash, prefix string) (bool, error) {
+	affected, err := t.queries.UpdateKeySecret(context.Background(), sqlc.UpdateKeySecretParams{KeyHash: keyHash, Prefix: prefix, ID: int64(keyID), UserID: int64(userID)})
+	if err != nil {
+		return false, mapError(err)
+	}
+	return affected > 0, nil
+}
+
+func (t *Tx) DeleteKey(keyID, userID int) (bool, error) {
+	affected, err := t.queries.DeleteKey(context.Background(), sqlc.DeleteKeyParams{ID: int64(keyID), UserID: int64(userID)})
+	if err != nil {
+		return false, mapError(err)
+	}
+	return affected > 0, nil
+}
+
+func (t *Tx) DeleteQuotaReservationsForUser(userID int) error {
+	return cleanupQuotaReservationsTx(context.Background(), t.tx, userID, 0)
+}
+
+func (t *Tx) DeleteQuotaReservationsForKey(userID, keyID int) error {
+	return cleanupQuotaReservationsTx(context.Background(), t.tx, userID, keyID)
+}
+
+// --- mappings ---
+
+func accountUser(id int64, nickname, userGroup, status, available, frozen string) domain.User {
+	return domain.User{ID: int(id), Nickname: nickname, UserGroup: userGroup, Status: status, AvailableBalance: available, FrozenBalance: frozen}
 }
 
 func userDTO(id int64, nickname, userGroup, status, available, frozen string) domain.UserDTO {
@@ -483,14 +354,6 @@ func limitOffset(page, pageSize int) (int32, int32) {
 		pageSize = 20
 	}
 	return int32(pageSize), int32((page - 1) * pageSize)
-}
-
-func defaultJSON(value json.RawMessage, fallback string) []byte {
-	trimmed := trimJSON(value)
-	if trimmed == "" {
-		return []byte(fallback)
-	}
-	return []byte(trimmed)
 }
 
 func rawJSON(value json.RawMessage) []byte {

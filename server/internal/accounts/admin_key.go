@@ -21,7 +21,7 @@ func (a *Server) createKey(r *http.Request, userID int) (any, bool, int, string)
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
-	return httpcommon.Result(a.store.CreateKey(userID, req))
+	return httpcommon.Result(a.CreateKey(userID, req))
 }
 
 func (a *Server) updateKey(r *http.Request, userID, keyID int) (any, bool, int, string) {
@@ -29,5 +29,5 @@ func (a *Server) updateKey(r *http.Request, userID, keyID int) (any, bool, int, 
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return nil, true, http.StatusBadRequest, "invalid json"
 	}
-	return httpcommon.Result(a.store.UpdateKey(userID, keyID, req))
+	return httpcommon.Result(a.UpdateKey(userID, keyID, req))
 }

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/testutil/storefake"
 	domain "LLMGateway/server/internal/testutil/testtypes"
 )
@@ -16,13 +17,14 @@ import (
 func newProtocolSeamService(t *testing.T, transport http.RoundTripper, adapter ProtocolAdapter) (*Service, *storefake.Store, *domain.AuthContext) {
 	t.Helper()
 	st := storefake.New()
-	if _, err := st.CreateUser(domain.UserInput{Nickname: "seam-user"}); err != nil {
+	acc := accounts.New(st, st.AccountsTx())
+	if _, err := acc.CreateUser(domain.UserInput{Nickname: "seam-user"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.RechargeUser(1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
+	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
 		t.Fatal(err)
 	}
-	createdKey, err := st.CreateKey(1, domain.KeyInput{KeyName: "seam-key", Prefix: "sk-"})
+	createdKey, err := acc.CreateKey(1, domain.KeyInput{KeyName: "seam-key", Prefix: "sk-"})
 	if err != nil {
 		t.Fatal(err)
 	}
