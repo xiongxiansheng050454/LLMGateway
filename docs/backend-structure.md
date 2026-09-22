@@ -21,7 +21,7 @@ server/internal/crypto/             渠道 api_key 加解密、网关 Key 生成
 server/internal/store/              仅保留错误兼容别名，不定义业务端口
 server/internal/store/postgres/     唯一生产 Store 实现
 server/internal/testutil/storefake/ 不需要数据库的测试专用 fake，生产代码不得导入
-server/internal/db/migrate/         tern 迁移执行入口与旧 schema_migrations 基线迁移
+server/internal/db/migrate/         tern 迁移执行入口
 server/internal/db/sqlc/            sqlc 生成代码输出目录，不手写业务逻辑
 server/db/migrations/               PostgreSQL schema 迁移 SQL（SQL 资产）
 server/db/queries/                  sqlc 查询 SQL（SQL 资产）
@@ -171,7 +171,7 @@ go run ./cmd/llmgateway
 
 - 迁移文件为 `server/db/migrations/NNNNNN_name.sql`；版本必须从 `000001` 连续递增且唯一。SQL 位于 `---- create above / drop below ----` 前的是 up 迁移；省略分隔符表示不可逆迁移。
 - tern 在 `public.schema_version(version)` 中记录当前版本，以 PostgreSQL advisory lock 串行化迁移；默认每个迁移在独立事务中执行。
-- 首次升级旧部署时，执行器会验证旧 `public.schema_migrations` 包含全部 10 个已发布版本，再将其基线化为 tern 的版本 10。部分或未知的旧记录会使启动失败，必须先人工核对 schema 后处理。
+- 项目尚未上线，不存在旧 `schema_migrations` 部署；数据库以全新实例为基线，直接由 tern 从零执行全部迁移。
 - 进程启动会使用必填的 `DATABASE_URL` 自动执行 `MIGRATIONS_DIR`（默认 `db/migrations`）下的待执行迁移；失败时启动报错退出。
 
 ## sqlc

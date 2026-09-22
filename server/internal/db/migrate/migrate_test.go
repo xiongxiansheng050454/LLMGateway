@@ -7,16 +7,6 @@ import (
 	tern "github.com/jackc/tern/v2/migrate"
 )
 
-func TestLegacyMigrationNamesAreUnique(t *testing.T) {
-	seen := make(map[string]struct{}, len(legacyMigrationNames))
-	for _, name := range legacyMigrationNames {
-		if _, ok := seen[name]; ok {
-			t.Fatalf("duplicate legacy migration name %q", name)
-		}
-		seen[name] = struct{}{}
-	}
-}
-
 func TestMigrationsLoadAsContiguousTernVersions(t *testing.T) {
 	migrator, err := tern.NewMigrator(t.Context(), nil, versionTable)
 	if err != nil {
@@ -25,7 +15,9 @@ func TestMigrationsLoadAsContiguousTernVersions(t *testing.T) {
 	if err := migrator.LoadMigrations(os.DirFS("../../../db/migrations")); err != nil {
 		t.Fatalf("LoadMigrations: %v", err)
 	}
-	if len(migrator.Migrations) != len(legacyMigrationNames) {
-		t.Fatalf("migration count = %d, want %d", len(migrator.Migrations), len(legacyMigrationNames))
+	for i, m := range migrator.Migrations {
+		if m.Sequence != int32(i+1) {
+			t.Fatalf("migration %d has sequence %d, want %d", i, m.Sequence, i+1)
+		}
 	}
 }
