@@ -6,7 +6,6 @@ import (
 
 func TestLoadDefaults(t *testing.T) {
 	t.Setenv("ADDR", "")
-	t.Setenv("DASHBOARD_DIR", "")
 	t.Setenv(EnvDatabaseURL, "")
 	t.Setenv("MIGRATIONS_DIR", "")
 	t.Setenv(EnvChannelKey, "")
@@ -22,9 +21,6 @@ func TestLoadDefaults(t *testing.T) {
 	cfg := Load()
 	if cfg.Addr != ":8080" {
 		t.Fatalf("Addr = %q, want :8080", cfg.Addr)
-	}
-	if cfg.DashboardDir != "../dashboard" {
-		t.Fatalf("DashboardDir = %q, want ../dashboard", cfg.DashboardDir)
 	}
 	if cfg.DatabaseURL != "" {
 		t.Fatalf("DatabaseURL = %q, want empty", cfg.DatabaseURL)
@@ -42,7 +38,6 @@ func TestLoadDefaults(t *testing.T) {
 
 func TestLoadOverrides(t *testing.T) {
 	t.Setenv("ADDR", ":9999")
-	t.Setenv("DASHBOARD_DIR", "/srv/dashboard")
 	t.Setenv(EnvDatabaseURL, "postgres://user:pass@localhost:5432/db?sslmode=disable")
 	t.Setenv("MIGRATIONS_DIR", "/srv/migrations")
 	t.Setenv(EnvChannelKey, "0123456789abcdef0123456789abcdef")
@@ -58,9 +53,6 @@ func TestLoadOverrides(t *testing.T) {
 	cfg := Load()
 	if cfg.Addr != ":9999" {
 		t.Fatalf("Addr = %q, want :9999", cfg.Addr)
-	}
-	if cfg.DashboardDir != "/srv/dashboard" {
-		t.Fatalf("DashboardDir = %q, want /srv/dashboard", cfg.DashboardDir)
 	}
 	if cfg.DatabaseURL != "postgres://user:pass@localhost:5432/db?sslmode=disable" {
 		t.Fatalf("DatabaseURL = %q, want override", cfg.DatabaseURL)

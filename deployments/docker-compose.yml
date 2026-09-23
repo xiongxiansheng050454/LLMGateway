@@ -30,8 +30,22 @@ services:
       UPSTREAM_MAX_ATTEMPTS: ${UPSTREAM_MAX_ATTEMPTS:-3}
       QUOTA_DEFAULT_MAX_TOKENS: ${QUOTA_DEFAULT_MAX_TOKENS:-4096}
       CHANNEL_MIN_ROUTE_BALANCE: ${CHANNEL_MIN_ROUTE_BALANCE:-0.000000}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8080/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  dashboard:
+    build:
+      context: ..
+      dockerfile: deployments/dashboard.Dockerfile
+    restart: unless-stopped
+    depends_on:
+      llmgateway:
+        condition: service_healthy
     ports:
-      - "${LLMGATEWAY_PORT:-8080}:8080"
+      - "${DASHBOARD_PORT:-8080}:80"
 
 volumes:
   llmgateway_pgdata:

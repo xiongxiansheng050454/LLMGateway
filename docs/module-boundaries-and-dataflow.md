@@ -27,7 +27,7 @@ flowchart TB
     CRYPTO[internal/crypto\n加密、哈希、密钥生成]
     CONFIG[internal/config\n环境变量与默认值]
 
-    DASH[dashboard\n静态 HTML/CSS/JS 控制台]
+    DASH[dashboard-react\n独立 nginx 静态控制台]
 
     CMD --> HTTP
     CMD --> CONFIG
@@ -39,7 +39,6 @@ flowchart TB
     HTTP --> RATELIMIT
     HTTP --> QUOTA
     HTTP --> PROXY
-    HTTP --> DASH
 
     CATALOG --> STORE
     ACCOUNTS --> STORE
@@ -71,7 +70,7 @@ flowchart TB
 ### 1. 顶层装配与 HTTP 入口
 
 - `cmd/llmgateway` 负责进程启动、优雅关闭、数据库初始化和顶层路由表。
-- `internal/httpapi` 负责 HTTP 方法校验、请求体读取、统一错误映射、Dashboard 托管和业务模块委托。
+- `internal/httpapi` 负责 HTTP 方法校验、请求体读取、统一错误映射和业务模块委托；Dashboard 由独立 nginx 服务托管。
 - `internal/httpcommon` 只提供跨模块的 HTTP 辅助能力，不承载渠道、计费、路由或限流规则。
 - 路径到入口的映射集中在 `cmd/llmgateway/router.go`，避免业务模块各自注册顶层路由。
 
@@ -281,7 +280,7 @@ flowchart LR
 ### 可以独立扩容的部分
 
 - `proxy` 多实例：只要共享 PostgreSQL，路由和账务可以横向扩展。
-- Dashboard/管理端：可以与代理请求进程分离部署。
+- Dashboard/管理端：前端由 nginx 独立部署，通过同源反向代理访问 Go 网关的 `/admin`、`/v1` 和 `/healthz`。
 - 统计读路径：可以增加异步 rollup 或只读数据库连接。
 - 短窗口限流：高吞吐时可以迁移到 Redis/Lua，但必须定义数据库与 Redis 的一致性边界。
 

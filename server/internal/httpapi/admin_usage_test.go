@@ -13,7 +13,7 @@ func intPtr(value int) *int { return &value }
 func newUsageTestHandler(t *testing.T) (*Server, *storefake.Store) {
 	t.Helper()
 	st := storefake.New()
-	return NewServer(testDashboardDir(), st), st
+	return NewServer(st), st
 }
 
 func TestUsageInvalidTimeParamsReturnBadRequest(t *testing.T) {

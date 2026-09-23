@@ -12,7 +12,7 @@
 4. 流式响应已经交付给用户后，不尝试做语义不可靠的“续接”。
 5. 在保证账务正确的前提下，健康记录和统计指标允许 best-effort。
 
-当前实现使用 Go `net/http`、PostgreSQL 和静态 Dashboard。各业务模块在自身包内定义窄 port，进程边界负责组合这些 port；代理编排集中在 `server/internal/proxy`，协议适配集中在 `server/internal/proxy/openai`。
+当前实现使用 Go `net/http`、PostgreSQL 和独立 nginx 托管的 React Dashboard。nginx 将管理端和下游 API 反向代理到 Go 网关；各业务模块在自身包内定义窄 port，进程边界负责组合这些 port；代理编排集中在 `server/internal/proxy`，协议适配集中在 `server/internal/proxy/openai`。
 
 ## 1. 负载均衡与路由策略
 

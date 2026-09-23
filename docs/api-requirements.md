@@ -6,16 +6,10 @@
 
 ### 管理端地址
 
-Dashboard 默认请求同源管理端：
+Dashboard 由 nginx 与后端保持同源，默认请求相对路径管理端：
 
 ```text
 /admin
-```
-
-也支持通过页面 URL 参数覆盖：
-
-```text
-?api_base=http://host:port/admin
 ```
 
 ### 统一响应格式
@@ -999,6 +993,6 @@ GET    /admin/quota-usage
 
 ## 前端相关注意事项
 
-- `dashboard-react/src/api/client.ts` 中所有管理端写操作都会解析 `{code,message,data}`。
+- `dashboard-react/src/api/client.ts` 中所有管理端读写操作都会请求同源 `/admin` 并解析 `{code,message,data}`。
 - `/admin` 当前前端文案说明“不设认证”，如果后端加入认证，需要同步修改前端请求头逻辑。
 - 文档页加载仓库中的后端结构和 API 需求文档；如果静态文档未复制到 Dashboard 构建产物，文档页会提示加载失败。

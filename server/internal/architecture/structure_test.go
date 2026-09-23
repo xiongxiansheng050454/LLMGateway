@@ -217,7 +217,7 @@ func TestHTTPRouteTableStaysCentralized(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, route := range []string{"/healthz", "/admin/", "/v1/", "/dashboard/"} {
+	for _, route := range []string{"/healthz", "/admin/", "/v1/"} {
 		if !strings.Contains(string(content), route) {
 			t.Fatalf("cmd/llmgateway/router.go is missing route %s", route)
 		}

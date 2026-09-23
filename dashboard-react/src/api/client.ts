@@ -1,5 +1,5 @@
 import type { AdminResponse } from '../types/api'
-const base = new URLSearchParams(location.search).get('api_base')?.replace(/\/$/, '') || '/admin'
+const base = '/admin'
 export async function adminGet<T>(path: string, params: Record<string, string | number | undefined> = {}): Promise<T> {
   const url = new URL(base + path, location.origin); Object.entries(params).forEach(([k, v]) => v !== undefined && url.searchParams.set(k, String(v)))
   const response = await fetch(url, { headers: { Accept: 'application/json' } }); const text = await response.text(); let json: AdminResponse<T> | null = null

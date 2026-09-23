@@ -11,7 +11,7 @@ import (
 	apperrors "LLMGateway/server/internal/errors"
 )
 
-// authenticate validates the Bearer gateway key and returns the raw auth state.
+// Authenticate validates the Bearer gateway key and returns the raw auth state.
 func (a *Service) Authenticate(authorization string) (*accounts.AuthContext, error) {
 	token, ok := bearerToken(authorization)
 	if !ok {

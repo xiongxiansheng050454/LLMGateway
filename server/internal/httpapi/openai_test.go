@@ -68,7 +68,7 @@ func newProxyFixtureWithStore(t *testing.T, upstream http.Handler, st Port, opts
 	server := httptest.NewServer(upstream)
 	t.Cleanup(server.Close)
 
-	handler := NewServer(testDashboardDir(), st, append([]Option{WithCipher(testCipher())}, opts...)...)
+	handler := NewServer(st, append([]Option{WithCipher(testCipher())}, opts...)...)
 	acc := handler.accounts
 	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)

@@ -5,8 +5,6 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
@@ -123,52 +121,8 @@ func TestPaginationParsing(t *testing.T) {
 	}
 }
 
-func TestStaticDashboardServed(t *testing.T) {
-	server := newTestServer()
-	tests := []struct {
-		name string
-		path string
-		call http.HandlerFunc
-	}{
-		{"root", "/", server.Dashboard},
-		{"index", "/", server.DashboardIndex},
-		{"asset", "/assets/test.js", server.Dashboard},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			res := httptest.NewRecorder()
-			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
-			tt.call(res, req)
-
-			if res.Code != http.StatusOK {
-				t.Fatalf("status = %d, want %d", res.Code, http.StatusOK)
-			}
-			if res.Body.Len() == 0 {
-				t.Fatal("empty dashboard response")
-			}
-		})
-	}
-}
-
 func newTestServer() *Server {
-	return NewServer(testDashboardDir(), storefake.New(), WithCipher(testCipher()))
-}
-
-func testDashboardDir() string {
-	dir, err := os.MkdirTemp("", "llmgateway-dashboard-test-")
-	if err != nil {
-		panic(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "index.html"), []byte("<!doctype html>"), 0o644); err != nil {
-		panic(err)
-	}
-	if err := os.Mkdir(filepath.Join(dir, "assets"), 0o755); err != nil {
-		panic(err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, "assets", "test.js"), []byte("console.log('test')"), 0o644); err != nil {
-		panic(err)
-	}
-	return dir
+	return NewServer(storefake.New(), WithCipher(testCipher()))
 }
 
 func assertListResponse(t *testing.T, data map[string]any) {

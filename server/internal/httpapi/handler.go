@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"math/rand"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -30,16 +28,14 @@ type adminResponse struct {
 }
 
 type Server struct {
-	store        Port
-	client       *http.Client
-	proxy        *proxy.Service
-	catalog      *catalog.Server
-	accounts     *accounts.Server
-	usage        *usage.Server
-	ratelimit    *ratelimit.Server
-	quota        *quota.Server
-	dashboardDir string
-	dashboard    http.Handler
+	store     Port
+	client    *http.Client
+	proxy     *proxy.Service
+	catalog   *catalog.Server
+	accounts  *accounts.Server
+	usage     *usage.Server
+	ratelimit *ratelimit.Server
+	quota     *quota.Server
 }
 
 // Port is the process assembly contract. Each business server receives its
@@ -136,7 +132,7 @@ func WithCipher(cipher *crypto.Cipher) Option {
 
 // NewServer builds the HTTP entry points around an injected store. Route
 // registration is done by cmd/llmgateway/router.go.
-func NewServer(dashboardDir string, st Port, opts ...Option) *Server {
+func NewServer(st Port, opts ...Option) *Server {
 	settings := options{
 		upstreamTimeout:       60 * time.Second,
 		randIntN:              rand.Intn,
@@ -164,64 +160,15 @@ func NewServer(dashboardDir string, st Port, opts ...Option) *Server {
 	proxyService.ConfigureRequest(settings.upstreamTimeout, settings.upstreamMaxAttempts)
 	proxyService.ConfigureMinimumRouteBalance(settings.minimumRouteBalance)
 	return &Server{
-		store:        st,
-		client:       client,
-		proxy:        proxyService,
-		catalog:      catalogServer,
-		accounts:     accounts.New(st, st.AccountsTx()),
-		usage:        usage.New(st),
-		ratelimit:    ratelimitServer,
-		quota:        quotaServer,
-		dashboardDir: dashboardDir,
-		dashboard:    http.FileServer(http.Dir(dashboardDir)),
+		store:     st,
+		client:    client,
+		proxy:     proxyService,
+		catalog:   catalogServer,
+		accounts:  accounts.New(st, st.AccountsTx()),
+		usage:     usage.New(st),
+		ratelimit: ratelimitServer,
+		quota:     quotaServer,
 	}
-}
-
-// Dashboard serves static dashboard assets and falls back to index.html for
-// client-side routes handled by the React BrowserRouter.
-func (a *Server) Dashboard(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		writeMethodNotAllowed(w)
-		return
-	}
-
-	path := strings.TrimPrefix(filepath.Clean(r.URL.Path), string(filepath.Separator))
-	if path != "." && path != "" {
-		if file, err := os.Open(filepath.Join(a.dashboardDir, filepath.FromSlash(path))); err == nil {
-			file.Close()
-			a.dashboard.ServeHTTP(w, r)
-			return
-		}
-	}
-	a.DashboardIndex(w, r)
-}
-
-// DashboardRoot serves the legacy root mount without treating arbitrary root
-// paths as client-side dashboard routes.
-func (a *Server) DashboardRoot(w http.ResponseWriter, r *http.Request) {
-	a.dashboard.ServeHTTP(w, r)
-}
-
-// DashboardIndex serves the dashboard index page directly.
-func (a *Server) DashboardIndex(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet && r.Method != http.MethodHead {
-		writeMethodNotAllowed(w)
-		return
-	}
-
-	file, err := os.Open(filepath.Join(a.dashboardDir, "index.html"))
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	defer file.Close()
-
-	info, err := file.Stat()
-	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-	http.ServeContent(w, r, "index.html", info.ModTime(), file)
 }
 
 // Healthz reports service health.

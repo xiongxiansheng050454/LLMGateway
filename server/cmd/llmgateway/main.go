@@ -43,7 +43,7 @@ func run() error {
 
 	server := &http.Server{
 		Addr: cfg.Addr,
-		Handler: newRouter(cfg.DashboardDir, st,
+		Handler: newRouter(st,
 			httpapi.WithCipher(cipher),
 			httpapi.WithUpstreamTimeout(time.Duration(cfg.UpstreamTimeoutSeconds)*time.Second),
 			httpapi.WithUpstreamMaxAttempts(cfg.UpstreamMaxAttempts),

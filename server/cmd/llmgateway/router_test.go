@@ -3,8 +3,6 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"testing"
 
 	"LLMGateway/server/internal/testutil/storefake"
@@ -13,11 +11,7 @@ import (
 // TestNewRouterPaths exercises the production route table directly so drift
 // between cmd/llmgateway/router.go and the handler entry points is caught.
 func TestNewRouterPaths(t *testing.T) {
-	dashboardDir := t.TempDir()
-	if err := os.WriteFile(filepath.Join(dashboardDir, "index.html"), []byte("<!doctype html>"), 0o644); err != nil {
-		t.Fatal(err)
-	}
-	router := newRouter(dashboardDir, storefake.New())
+	router := newRouter(storefake.New())
 
 	tests := []struct {
 		name   string
@@ -30,10 +24,7 @@ func TestNewRouterPaths(t *testing.T) {
 		{"admin channels", http.MethodGet, "/admin/channels", http.StatusOK},
 		{"v1 models requires auth", http.MethodGet, "/v1/models", http.StatusUnauthorized},
 		{"v1 chat requires auth", http.MethodPost, "/v1/chat/completions", http.StatusUnauthorized},
-		{"dashboard index", http.MethodGet, "/dashboard/index.html", http.StatusOK},
-		{"dashboard client route", http.MethodGet, "/dashboard/channels", http.StatusOK},
-		{"dashboard nested client route", http.MethodGet, "/dashboard/users/keys", http.StatusOK},
-		{"root static", http.MethodGet, "/", http.StatusOK},
+		{"root is not served by backend", http.MethodGet, "/", http.StatusNotFound},
 		{"unknown path", http.MethodGet, "/does-not-exist", http.StatusNotFound},
 		{"unknown admin path", http.MethodGet, "/admin/does-not-exist", http.StatusNotFound},
 		{"unknown v1 path", http.MethodGet, "/v1/does-not-exist", http.StatusNotFound},

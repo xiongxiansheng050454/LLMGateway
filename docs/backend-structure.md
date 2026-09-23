@@ -11,7 +11,7 @@ server/internal/accounts/           用户、余额、网关 Key、认证上下�
 server/internal/usage/              用量日志、审计查询和统计能力
 server/internal/ratelimit/          限流规则管理和运行时限流能力
 server/internal/quota/              UTC 日/月 token/费用业务配额策略与管理能力
-server/internal/httpapi/            顶层 HTTP 装配、响应 envelope、Dashboard 和业务入口委托
+server/internal/httpapi/            顶层 HTTP 装配、响应 envelope 和业务入口委托
 server/internal/httpcommon/         共享 HTTP 请求解析、路径、分页、存储错误映射和删除响应 helper 的唯一归属
 server/internal/proxy/              下游代理业务：OpenAI 适配、路由、计费、限流、熔断、结算和上游调用
 server/internal/proxy/openai/       OpenAI 兼容 wire DTO 与协议适配；归属 proxy 业务模块
@@ -28,7 +28,7 @@ server/internal/db/sqlc/            sqlc 生成代码输出目录，不手写业
 server/db/migrations/               PostgreSQL schema 迁移 SQL（SQL 资产）
 server/db/queries/                  sqlc 查询 SQL（SQL 资产）
 deployments/                        本地开发部署配置，如 PostgreSQL docker compose
-dashboard-react/                    React + TypeScript + Vite 控制台源码，生产构建产物由 server 静态托管
+dashboard-react/                    React + TypeScript + Vite 控制台源码，由独立 nginx 服务托管
 ```
 
 Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执行（或在仓库根使用 `go -C server ...`）。
@@ -87,7 +87,7 @@ Go 模块路径为 `LLMGateway/server`；Go 命令需在 `server/` 目录下执�
   - `server/internal/accounts/`：用户、余额、网关 Key 和身份业务模块（HTTP 入口由顶层装配）
   - `server/internal/usage/`：用量日志、审计和统计业务模块（HTTP 入口由顶层装配）
   - `server/internal/ratelimit/`：限流规则和运行时限流业务模块（HTTP 入口由顶层装配）
-  - `server/internal/httpapi/`：`handler.go`（顶层入口/分派/响应/静态托管）、`openai.go`（/v1 分派与错误映射）
+  - `server/internal/httpapi/`：`handler.go`（顶层入口/分派/响应）、`openai.go`（/v1 分派与错误映射）
   - `server/internal/httpcommon/`：共享 HTTP 请求解析、路径解析、分页、存储错误映射和删除响应 helper；这些通用行为只在此处实现
 - `server/internal/proxy/`：`proxy.go`（编排依赖装配与代理错误）、`contracts.go`（协议中立请求/响应/usage contract）、`auth.go`（认证）、`routing.go`（选路）、`billing.go`（计费）、`ratelimit.go`（限流）、`orchestration.go`（代理编排）
     - `server/internal/proxy/openai/`：`types.go`、`adapter.go`（OpenAI 兼容 wire DTO、请求解析和响应适配；proxy 业务模块的协议边界）
@@ -145,7 +145,6 @@ postgres://llmgateway:llmgateway_dev@localhost:5432/llmgateway?sslmode=disable
 
 ```text
 ADDR=:8080
-DASHBOARD_DIR=../dashboard-react/dist
 DATABASE_URL=postgres://llmgateway:llmgateway_dev@localhost:5432/llmgateway?sslmode=disable
 CHANNEL_KEY_ENCRYPTION_KEY=0123456789abcdef0123456789abcdef
 MIGRATIONS_DIR=db/migrations
@@ -155,7 +154,7 @@ QUOTA_REAPER_INTERVAL_SECONDS=30
 QUOTA_REAPER_BATCH_SIZE=100
 ```
 
-路径均相对于运行目录 `server/`：`DASHBOARD_DIR` 默认 `../dashboard-react/dist`，生产 Docker 使用 `/app/dashboard`；`MIGRATIONS_DIR` 默认 `db/migrations`。
+路径均相对于运行目录 `server/`；`MIGRATIONS_DIR` 默认 `db/migrations`。生产环境由独立 nginx 容器托管前端并将 `/admin`、`/v1` 和 `/healthz` 反向代理到 Go 网关。
 
 启动前必须设置 PostgreSQL URL 和 16/24/32 字节的渠道密钥加密密钥：
 

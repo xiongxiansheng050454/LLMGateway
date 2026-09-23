@@ -21,7 +21,7 @@
 - `server/internal/store/postgres/` 是唯一生产 Store 实现；`server/internal/testutil/storefake/` 与 `server/internal/testutil/app/` 仅供不需要数据库的单元与 HTTP 契约测试使用，生产代码不得导入，运行时不得提供 memory fallback。
 - `server/db/migrations/` 放 schema 迁移，`server/db/queries/` 放 sqlc 查询，`server/internal/db/migrate/` 放迁移 runner，`server/internal/db/sqlc/` 放生成代码。禁止手改 sqlc 生成文件。
 - `server/internal/money/` 放定点金额能力，`server/internal/crypto/` 放密钥加密、生成与哈希，`server/internal/config/` 放环境变量名称、解析和默认值。
-- `dashboard-react/` 是 React + TypeScript + Vite 前端工程；`dashboard-react/src/api/` 放 `/admin` 数据接入，`dashboard-react/src/pages/` 按页面放视图代码，生产构建产物由 Go 静态托管。
+- `dashboard-react/` 是 React + TypeScript + Vite 前端工程；`dashboard-react/src/api/` 放 `/admin` 数据接入，`dashboard-react/src/pages/` 按页面放视图代码，生产构建产物由独立 nginx 静态托管。
 - `docs/api-requirements.md` 是管理端与下游 API 契约来源，`docs/backend-structure.md` 记录后端结构细节。接口或结构发生变化时同步更新对应文档。
 - `deployments/` 放本地部署配置。`communication/` 只用于本地协作，不得提交。
 - 新文件优先放入现有业务模块。只有出现独立、稳定且可清晰命名的业务能力时才新增顶层模块，禁止按 `service`、`handler`、`utils` 等泛化技术层创建兜底目录。
@@ -41,7 +41,7 @@
 - 金额禁止使用 `float64` 参与计算。数据库使用 `NUMERIC`，Go 使用定点整数，对外使用字符串。
 - 渠道 API Key 必须加密存储；网关 Key 只存哈希，明文只在创建或重置时返回一次。响应、日志和错误信息不得泄露密钥、Token、数据库密码或其他敏感配置。
 - 修改 SQL 查询或 schema 后运行 `sqlc generate`；迁移只能新增，不修改已发布迁移的既有语义。
-- Dashboard 默认请求同源 `/admin`，也支持 `?api_base=http://host:port/admin`。如增加管理端认证、修改响应结构或接口路径，必须同步修改前端数据层。
+- Dashboard 由独立 nginx 托管，默认通过同源相对路径 `/admin` 访问管理端；nginx 将 `/admin`、`/v1` 和 `/healthz` 反向代理到 Go 网关。如增加管理端认证、修改响应结构或接口路径，必须同步修改前端数据层和 nginx 配置。
 - Dashboard 启动会并发请求多个管理端接口，任一失败都会进入错误页。修改启动接口时必须同时验证 `/admin/stats/overview`、`/admin/stats/daily`、`/admin/channels`、`/admin/stats/channels`、`/admin/usage-logs`、`/admin/users`、`/admin/rate-limits`、`/admin/models`、`/admin/quota-policies` 和 `/admin/quota-usage`。
 - 前端当前使用带 JSON 请求体的 `DELETE /admin/pricing`；除非同步修改前端，否则后端必须保持兼容。
 - 修改前检查工作区状态，不覆盖或回退他人改动，不做无关的大范围重排或格式化。提交应聚焦一个目标，不得提交 `communication/`、本地密钥或其他敏感文件。
