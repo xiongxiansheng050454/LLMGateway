@@ -4,6 +4,8 @@
 
 ## 基础约定
 
+前端共享 DTO 位于 `dashboard-react/src/types/api.ts`，后端响应 DTO 由各业务模块持有。后端 `server/internal/httpapi/api_contract_test.go` 会验证关键 DTO 的 JSON 字段和敏感字段排除；修改响应字段时必须同步更新这两处及对应页面 API 调用。
+
 ### 管理端地址
 
 Dashboard 由 nginx 与后端保持同源，默认请求相对路径管理端：

@@ -5,7 +5,7 @@ import { Modal } from '../components/feedback/Modal'
 import type { ListResponse, UsageLog } from '../types/api'
 
 type Filter = { user_id: string; channel_id: string; model: string; status: string; start_time: string; end_time: string; page: number }
-type Detail = UsageLog & Record<string, unknown>
+type Detail = UsageLog
 const initial: Filter = { user_id: '', channel_id: '', model: '', status: '', start_time: '', end_time: '', page: 1 }
 const localDateTime = (date: Date) => { const pad = (value: number) => String(value).padStart(2, '0'); return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}` }
 

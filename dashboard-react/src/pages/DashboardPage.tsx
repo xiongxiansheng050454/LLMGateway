@@ -2,23 +2,21 @@ import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { adminGet } from '../api/client'
 import { resetHealth } from '../api/channels'
-import type { Channel, Health, ListResponse, Stats, UsageLog } from '../types/api'
+import type { Channel, CatalogModel, DailyStats, Health, ListResponse, RateLimit, Stats, UsageAggregate, UsageLog, User } from '../types/api'
 
-type Row = Record<string, unknown>
 const n = (value: unknown) => Number(value || 0)
 const money = (value: unknown) => Number(value || 0).toFixed(2)
 const compact = (value: number) => value >= 1_000_000 ? `${(value / 1_000_000).toFixed(1)}M` : value >= 1_000 ? `${(value / 1_000).toFixed(1)}K` : value.toLocaleString()
-const pct = (value: number, total: number) => total ? `${(value / total * 100).toFixed(1)}%` : '0.0%'
 const dateKey = (date: Date) => date.toISOString().slice(0, 10)
-const recentDays = (source: Row[]) => {
-  const values = new Map(source.map(row => [String(row.stat_date), row]))
+const recentDays = (source: DailyStats[]) => {
+  const values = new Map(source.map(row => [row.stat_date, row]))
   const today = new Date()
-  const days: Row[] = []
+  const days: DailyStats[] = []
   for (let offset = 13; offset >= 0; offset -= 1) {
     const date = new Date(today)
     date.setDate(today.getDate() - offset)
     const key = dateKey(date)
-    days.push(values.get(key) || { stat_date: key, request_count: 0 })
+    days.push(values.get(key) || { stat_date: key, request_count: 0, success_count: 0, error_count: 0, total_tokens: 0, total_cost: '0' })
   }
   return days
 }
@@ -31,18 +29,18 @@ function Progress({ label, value, right }: { label: string; value: number; right
   return <div><div className="muted progress-label"><span>{label}</span><span>{right || `${value.toFixed(0)}%`}</span></div><div className="progress"><i style={{ width: `${Math.min(100, Math.max(0, value))}%` }} /></div></div>
 }
 
-export function DashboardPage({ stats, daily, channels, health, logs }: { stats?: Stats; daily: Row[]; channels: Channel[]; health: Health[]; logs: UsageLog[] }) {
+export function DashboardPage({ stats, daily, channels, health, logs }: { stats?: Stats; daily: DailyStats[]; channels: Channel[]; health: Health[]; logs: UsageLog[] }) {
   const client = useQueryClient(); const [actionError, setActionError] = useState('')
-  const models = useQuery({ queryKey: ['models'], queryFn: () => adminGet<ListResponse<Row>>('/models', { status: 1 }) })
-  const limits = useQuery({ queryKey: ['rate-limits'], queryFn: () => adminGet<ListResponse<Row>>('/rate-limits', { page: 1, page_size: 100, enabled: 1 }) })
-  const users = useQuery({ queryKey: ['users'], queryFn: () => adminGet<ListResponse<Row>>('/users', { page: 1, page_size: 100 }) })
-  const modelUsage = useQuery({ queryKey: ['model-usage'], queryFn: () => adminGet<ListResponse<Row>>('/stats/usage', { group_by: 'model' }) })
+  const models = useQuery({ queryKey: ['models'], queryFn: () => adminGet<ListResponse<CatalogModel>>('/models', { status: 1 }) })
+  const limits = useQuery({ queryKey: ['rate-limits'], queryFn: () => adminGet<ListResponse<RateLimit>>('/rate-limits', { page: 1, page_size: 100, enabled: 1 }) })
+  const users = useQuery({ queryKey: ['users'], queryFn: () => adminGet<ListResponse<User>>('/users', { page: 1, page_size: 100 }) })
+  const modelUsage = useQuery({ queryKey: ['model-usage'], queryFn: () => adminGet<ListResponse<UsageAggregate>>('/stats/usage', { group_by: 'model' }) })
   const healthMap = new Map(health.map(item => [item.channel_id, item]))
   const successRate = stats ? stats.success_count / Math.max(stats.request_count, 1) * 100 : 0
   const trend = recentDays(daily); const max = Math.max(1, ...trend.map(row => n(row.request_count)))
   const dist = new Map<string, number>()
   logs.forEach(row => dist.set(row.model || 'unknown', (dist.get(row.model || 'unknown') || 0) + row.total_tokens))
-  const modelRows = modelUsage.data?.list?.length ? modelUsage.data.list.map(row => ({ name: String(row.model || row.model_name || 'unknown'), value: n(row.total_tokens || row.tokens || row.request_count) })) : [...dist.entries()].map(([name, value]) => ({ name, value }))
+  const modelRows = modelUsage.data?.list?.length ? modelUsage.data.list.map(row => ({ name: row.model || 'unknown', value: n(row.total_tokens || row.request_count) })) : [...dist.entries()].map(([name, value]) => ({ name, value }))
   const totalDist = Math.max(1, modelRows.reduce((sum, row) => sum + row.value, 0))
   const errorMap = new Map<string, number>(); logs.filter(row => row.status !== 'success').forEach(row => { const key = row.error_code || row.status || 'upstream_error'; errorMap.set(key, (errorMap.get(key) || 0) + 1) })
   const reset = async (channel: Channel) => { if (!window.confirm(`确认恢复渠道「${channel.name}」的熔断状态？`)) return; try { await resetHealth(channel.id); await client.invalidateQueries({ queryKey: ['channel-health'] }) } catch (error) { setActionError(error instanceof Error ? error.message : '操作失败') } }
@@ -57,8 +55,8 @@ export function DashboardPage({ stats, daily, channels, health, logs }: { stats?
       <Panel title="路由策略雷达" desc="权重优先级 · 余额过滤 · 熔断探测" className="span-4"><div className="route-summary"><strong>{channels.filter(channel => channel.status === 1).length}</strong><span>当前启用渠道</span></div><div className="progress-list"><Progress label="健康渠道" value={channels.length ? channels.filter(channel => healthMap.get(channel.id)?.state !== 'open').length / channels.length * 100 : 0} /><Progress label="正常熔断器" value={channels.length ? channels.filter(channel => healthMap.get(channel.id)?.state === 'closed').length / channels.length * 100 : 0} /><Progress label="已启用渠道" value={channels.length ? channels.filter(channel => channel.status === 1).length / channels.length * 100 : 0} /></div></Panel>
       <Panel title="实时请求日志" desc="usage_logs · 预冻结 → 按实际 usage 结算" className="span-8"><LogTable logs={logs} /></Panel>
       <Panel title="错误画像" desc="近 7 天非成功请求聚合" className="span-4"><div className="error-list">{[...errorMap.entries()].map(([name, count]) => <div key={name}><span>{name}</span><b>{count}</b></div>)}{!errorMap.size && <div className="empty">暂无错误</div>}</div></Panel>
-      <Panel title="限流配额水位" desc="rate_limit_rules · 当前消耗占比" className="span-4"><div className="progress-list">{(limits.data?.list || []).slice(0, 5).map(row => <Progress key={String(row.id)} label={String(row.rule_name)} value={Math.min(100, n(row.limit_value) ? n(row.limit_value) / Math.max(1, n(row.limit_value)) * 100 : 0)} right={`0 / ${row.limit_value}`} />)}{!limits.data?.list?.length && <div className="empty">暂无启用规则</div>}</div></Panel>
-      <Panel title="用户余额 Top" desc="user_balances · 可用 / 冻结（美元）" className="span-4"><div className="user-list">{(users.data?.list || []).slice(0, 5).map(row => <div key={String(row.id)}><span>{String(row.nickname || `User #${row.id}`)}</span><b>${money((row.balance as Row)?.available_balance || row.available_balance)}</b></div>)}{!users.data?.list?.length && <div className="empty">暂无用户</div>}</div></Panel>
+      <Panel title="限流配额水位" desc="rate_limit_rules · 当前消耗占比" className="span-4"><div className="progress-list">{(limits.data?.list || []).slice(0, 5).map(row => <Progress key={String(row.id)} label={row.rule_name} value={0} right={`0 / ${row.limit_value}`} />)}{!limits.data?.list?.length && <div className="empty">暂无启用规则</div>}</div></Panel>
+      <Panel title="用户余额 Top" desc="user_balances · 可用 / 冻结（美元）" className="span-4"><div className="user-list">{(users.data?.list || []).slice(0, 5).map(user => <div key={user.id}><span>{user.nickname || `User #${user.id}`}</span><b>${money(user.balance.available_balance)}</b></div>)}{!users.data?.list?.length && <div className="empty">暂无用户</div>}</div></Panel>
       <Panel title="系统事件" desc="熔断 · 结算 · 路由变更" className="span-4"><ul className="event-list"><li>渠道健康状态持续监控中</li><li>账单按实际 usage 结算</li><li>模型路由按优先级与权重执行</li></ul></Panel>
     </div>
   </>
