@@ -171,8 +171,8 @@ func NewServer(st Port, opts ...Option) *Server {
 	}
 }
 
-// Healthz reports service health.
-func (a *Server) Healthz(w http.ResponseWriter, r *http.Request) {
+// Healthy reports service health.
+func (a *Server) Healthy(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		writeMethodNotAllowed(w)
 		return
