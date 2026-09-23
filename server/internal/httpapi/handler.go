@@ -241,36 +241,36 @@ func (a *Server) Admin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, ok, errStatus, errMsg := a.adminData(r)
-	if errStatus != 0 {
-		writeAdminError(w, errStatus, errMsg)
+	result := a.adminData(r)
+	if result.Status != 0 {
+		writeAdminError(w, result.Status, result.Message)
 		return
 	}
-	if !ok {
+	if !result.Handled {
 		writeAdminError(w, http.StatusNotFound, "not found")
 		return
 	}
-	writeAdminOK(w, data)
+	writeAdminOK(w, result.Data)
 }
 
-func (a *Server) adminData(r *http.Request) (any, bool, int, string) {
+func (a *Server) adminData(r *http.Request) httpcommon.AdminResult {
 	parts := httpcommon.SplitPath(strings.TrimSuffix(r.URL.Path, "/"))
-	if data, ok, status, msg := a.catalog.Data(r, parts); ok || status != 0 {
-		return data, ok, status, msg
+	if result := a.catalog.Data(r, parts); result.Handled || result.Status != 0 {
+		return result
 	}
-	if data, ok, status, msg := a.accounts.Data(r); ok || status != 0 {
-		return data, ok, status, msg
+	if result := a.accounts.Data(r); result.Handled || result.Status != 0 {
+		return result
 	}
-	if data, ok, status, msg := a.ratelimit.Data(r); ok || status != 0 {
-		return data, ok, status, msg
+	if result := a.ratelimit.Data(r); result.Handled || result.Status != 0 {
+		return result
 	}
-	if data, ok, status, msg := a.quota.Data(r); ok || status != 0 {
-		return data, ok, status, msg
+	if result := a.quota.Data(r); result.Handled || result.Status != 0 {
+		return result
 	}
-	if data, ok, status, msg := a.usage.Data(r); ok || status != 0 {
-		return data, ok, status, msg
+	if result := a.usage.Data(r); result.Handled || result.Status != 0 {
+		return result
 	}
-	return nil, false, 0, ""
+	return httpcommon.Unhandled()
 }
 
 func writeAdminOK(w http.ResponseWriter, data any) {

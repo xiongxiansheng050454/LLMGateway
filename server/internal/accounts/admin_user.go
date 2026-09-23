@@ -8,26 +8,26 @@ import (
 	"LLMGateway/server/internal/httpcommon"
 )
 
-// userData dispatches /admin/users and /admin/keys requests.
-func (a *Server) Data(r *http.Request) (any, bool, int, string) {
+// Data userData dispatches /admin/users and /admin/keys requests.
+func (a *Server) Data(r *http.Request) httpcommon.AdminResult {
 	parts := httpcommon.SplitPath(strings.TrimSuffix(r.URL.Path, "/"))
 	if len(parts) < 2 || parts[0] != "admin" {
-		return nil, false, 0, ""
+		return httpcommon.Unhandled()
 	}
 
 	if parts[1] == "keys" && len(parts) == 2 {
 		if r.Method == http.MethodGet {
 			return a.listKeys(r)
 		}
-		return nil, true, http.StatusMethodNotAllowed, "method not allowed"
+		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
 	if parts[1] != "users" {
-		return nil, false, 0, ""
+		return httpcommon.Unhandled()
 	}
 	return a.userRoutes(r, parts)
 }
 
-func (a *Server) userRoutes(r *http.Request, parts []string) (any, bool, int, string) {
+func (a *Server) userRoutes(r *http.Request, parts []string) httpcommon.AdminResult {
 	if len(parts) == 2 {
 		switch r.Method {
 		case http.MethodGet:
@@ -35,12 +35,12 @@ func (a *Server) userRoutes(r *http.Request, parts []string) (any, bool, int, st
 		case http.MethodPost:
 			return a.createUser(r)
 		}
-		return nil, true, http.StatusMethodNotAllowed, "method not allowed"
+		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
 
 	userID, err := strconv.Atoi(parts[2])
 	if err != nil {
-		return nil, true, http.StatusBadRequest, "invalid user id"
+		return httpcommon.HTTPError(http.StatusBadRequest, "invalid user id")
 	}
 
 	if len(parts) == 3 {
@@ -50,7 +50,7 @@ func (a *Server) userRoutes(r *http.Request, parts []string) (any, bool, int, st
 		case http.MethodDelete:
 			return httpcommon.NoBody(a.DeleteUser(userID))
 		}
-		return nil, true, http.StatusMethodNotAllowed, "method not allowed"
+		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
 
 	if len(parts) == 4 {
@@ -79,13 +79,13 @@ func (a *Server) userRoutes(r *http.Request, parts []string) (any, bool, int, st
 				return a.createKey(r, userID)
 			}
 		}
-		return nil, true, http.StatusMethodNotAllowed, "method not allowed"
+		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
 
 	if len(parts) == 5 && parts[3] == "keys" {
 		keyID, err := strconv.Atoi(parts[4])
 		if err != nil {
-			return nil, true, http.StatusBadRequest, "invalid key id"
+			return httpcommon.HTTPError(http.StatusBadRequest, "invalid key id")
 		}
 		switch r.Method {
 		case http.MethodPut:
@@ -93,61 +93,61 @@ func (a *Server) userRoutes(r *http.Request, parts []string) (any, bool, int, st
 		case http.MethodDelete:
 			return httpcommon.NoBody(a.DeleteKey(userID, keyID))
 		}
-		return nil, true, http.StatusMethodNotAllowed, "method not allowed"
+		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
 
 	if len(parts) == 6 && parts[3] == "keys" && parts[5] == "reset" {
 		keyID, err := strconv.Atoi(parts[4])
 		if err != nil {
-			return nil, true, http.StatusBadRequest, "invalid key id"
+			return httpcommon.HTTPError(http.StatusBadRequest, "invalid key id")
 		}
 		if r.Method == http.MethodPost {
 			return httpcommon.Result(a.ResetKey(userID, keyID))
 		}
-		return nil, true, http.StatusMethodNotAllowed, "method not allowed"
+		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
 
-	return nil, false, 0, ""
+	return httpcommon.Unhandled()
 }
 
-func (a *Server) listUsers(r *http.Request) (any, bool, int, string) {
+func (a *Server) listUsers(r *http.Request) httpcommon.AdminResult {
 	page, pageSize := httpcommon.ParsePagination(r)
 	return httpcommon.Result(a.store.ListUsers(page, pageSize))
 }
 
-func (a *Server) createUser(r *http.Request) (any, bool, int, string) {
+func (a *Server) createUser(r *http.Request) httpcommon.AdminResult {
 	var req UserInput
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
-		return nil, true, http.StatusBadRequest, "invalid json"
+		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 	}
 	return httpcommon.Result(a.CreateUser(req))
 }
 
-func (a *Server) updateUser(r *http.Request, id int) (any, bool, int, string) {
+func (a *Server) updateUser(r *http.Request, id int) httpcommon.AdminResult {
 	var req UserInput
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
-		return nil, true, http.StatusBadRequest, "invalid json"
+		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 	}
 	return httpcommon.Result(a.UpdateUser(id, req))
 }
 
-func (a *Server) updateUserStatus(r *http.Request, id int) (any, bool, int, string) {
+func (a *Server) updateUserStatus(r *http.Request, id int) httpcommon.AdminResult {
 	var req UserStatusInput
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
-		return nil, true, http.StatusBadRequest, "invalid json"
+		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 	}
 	return httpcommon.Result(a.UpdateUserStatus(id, req.Status))
 }
 
-func (a *Server) rechargeUser(r *http.Request, id int) (any, bool, int, string) {
+func (a *Server) rechargeUser(r *http.Request, id int) httpcommon.AdminResult {
 	var req RechargeInput
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
-		return nil, true, http.StatusBadRequest, "invalid json"
+		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 	}
 	return httpcommon.Result(a.RechargeUser(id, req))
 }
 
-func (a *Server) listBalanceTransactions(r *http.Request, id int) (any, bool, int, string) {
+func (a *Server) listBalanceTransactions(r *http.Request, id int) httpcommon.AdminResult {
 	page, pageSize := httpcommon.ParsePagination(r)
 	return httpcommon.Result(a.store.ListBalanceTransactions(id, page, pageSize))
 }

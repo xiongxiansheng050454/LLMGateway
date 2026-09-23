@@ -15,12 +15,12 @@ import (
 
 const channelTestTimeout = 10 * time.Second
 
-func (a *Server) testChannel(r *http.Request, channelID int) (any, bool, int, string) {
+func (a *Server) testChannel(r *http.Request, channelID int) httpcommon.AdminResult {
 	var request struct {
 		CheckAll *bool `json:"check_all"`
 	}
 	if err := httpcommon.ReadJSON(r, &request); err != nil {
-		return nil, true, http.StatusBadRequest, "invalid json"
+		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 	}
 	checkAll := request.CheckAll == nil || *request.CheckAll
 	channel, err := a.GetChannelSecret(channelID)
@@ -42,11 +42,11 @@ func (a *Server) testChannel(r *http.Request, channelID int) (any, bool, int, st
 			break
 		}
 	}
-	return ChannelTestResultDTO{List: items}, true, 0, ""
+	return httpcommon.Handled(ChannelTestResultDTO{List: items})
 }
 
 // TestChannel exposes the admin channel probe to external package tests.
-func (a *Server) TestChannel(r *http.Request, channelID int) (any, bool, int, string) {
+func (a *Server) TestChannel(r *http.Request, channelID int) httpcommon.AdminResult {
 	return a.testChannel(r, channelID)
 }
 

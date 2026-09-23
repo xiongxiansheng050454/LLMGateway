@@ -7,7 +7,7 @@ import (
 	"LLMGateway/server/internal/httpcommon"
 )
 
-func (a *Server) channelData(r *http.Request, parts []string) (any, bool, int, string) {
+func (a *Server) channelData(r *http.Request, parts []string) httpcommon.AdminResult {
 	if len(parts) == 2 {
 		switch r.Method {
 		case http.MethodGet:
@@ -17,11 +17,11 @@ func (a *Server) channelData(r *http.Request, parts []string) (any, bool, int, s
 		}
 	}
 	if len(parts) < 3 {
-		return nil, true, http.StatusMethodNotAllowed, "method not allowed"
+		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
 	channelID, err := strconv.Atoi(parts[2])
 	if err != nil {
-		return nil, true, http.StatusBadRequest, "invalid channel id"
+		return httpcommon.HTTPError(http.StatusBadRequest, "invalid channel id")
 	}
 	if len(parts) == 3 {
 		switch r.Method {
@@ -70,10 +70,10 @@ func (a *Server) channelData(r *http.Request, parts []string) (any, bool, int, s
 	if len(parts) >= 4 && parts[3] == "models" {
 		return a.channelModelData(r, parts, channelID)
 	}
-	return nil, true, http.StatusMethodNotAllowed, "method not allowed"
+	return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 }
 
-func (a *Server) channelModelData(r *http.Request, parts []string, channelID int) (any, bool, int, string) {
+func (a *Server) channelModelData(r *http.Request, parts []string, channelID int) httpcommon.AdminResult {
 	if len(parts) == 4 {
 		switch r.Method {
 		case http.MethodGet:
@@ -81,7 +81,7 @@ func (a *Server) channelModelData(r *http.Request, parts []string, channelID int
 		case http.MethodPost:
 			var req ChannelModel
 			if err := httpcommon.ReadJSON(r, &req); err != nil {
-				return nil, true, http.StatusBadRequest, "invalid json"
+				return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 			}
 			return httpcommon.Result(a.CreateChannelModel(channelID, req))
 		}
@@ -89,7 +89,7 @@ func (a *Server) channelModelData(r *http.Request, parts []string, channelID int
 	if len(parts) == 5 {
 		modelID, err := strconv.Atoi(parts[4])
 		if err != nil {
-			return nil, true, http.StatusBadRequest, "invalid model id"
+			return httpcommon.HTTPError(http.StatusBadRequest, "invalid model id")
 		}
 		switch r.Method {
 		case http.MethodPut:
@@ -98,49 +98,49 @@ func (a *Server) channelModelData(r *http.Request, parts []string, channelID int
 				Enabled       bool   `json:"enabled"`
 			}
 			if err := httpcommon.ReadJSON(r, &req); err != nil {
-				return nil, true, http.StatusBadRequest, "invalid json"
+				return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 			}
 			return httpcommon.Result(a.UpdateChannelModel(channelID, modelID, req.UpstreamModel, req.Enabled))
 		case http.MethodDelete:
 			return httpcommon.NoBody(a.DeleteChannelModel(channelID, modelID))
 		}
 	}
-	return nil, true, http.StatusMethodNotAllowed, "method not allowed"
+	return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 }
 
-func (a *Server) createChannel(r *http.Request) (any, bool, int, string) {
+func (a *Server) createChannel(r *http.Request) httpcommon.AdminResult {
 	var req ChannelInput
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
-		return nil, true, http.StatusBadRequest, "invalid json"
+		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 	}
 	return httpcommon.Result(a.CreateChannel(req))
 }
 
-func (a *Server) updateChannel(r *http.Request, id int) (any, bool, int, string) {
+func (a *Server) updateChannel(r *http.Request, id int) httpcommon.AdminResult {
 	var req ChannelInput
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
-		return nil, true, http.StatusBadRequest, "invalid json"
+		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 	}
 	return httpcommon.Result(a.UpdateChannel(id, req))
 }
 
-func (a *Server) updateChannelStatus(r *http.Request, id int) (any, bool, int, string) {
+func (a *Server) updateChannelStatus(r *http.Request, id int) httpcommon.AdminResult {
 	var req struct {
 		Status int `json:"status"`
 	}
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
-		return nil, true, http.StatusBadRequest, "invalid json"
+		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 	}
 	return httpcommon.Result(a.UpdateChannelStatus(id, req.Status))
 }
 
-func (a *Server) updateChannelBalance(r *http.Request, id int) (any, bool, int, string) {
+func (a *Server) updateChannelBalance(r *http.Request, id int) httpcommon.AdminResult {
 	var req struct {
 		Balance string `json:"balance"`
 		Delta   string `json:"delta"`
 	}
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
-		return nil, true, http.StatusBadRequest, "invalid json"
+		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 	}
 	return httpcommon.Result(a.UpdateChannelBalance(id, req.Balance, req.Delta))
 }

@@ -28,20 +28,42 @@ func ParsePagination(r *http.Request) (int, int) {
 	return positiveInt(q.Get("page"), 1), positiveInt(q.Get("page_size"), 20)
 }
 
+// AdminResult carries a management API response and whether a module handled
+// the request path.
+type AdminResult struct {
+	Data    any
+	Handled bool
+	Status  int
+	Message string
+}
+
+// Handled returns a successful result for a matched route.
+func Handled(data any) AdminResult {
+	return AdminResult{Data: data, Handled: true}
+}
+
+// Unhandled indicates that the request path does not belong to the module.
+func Unhandled() AdminResult { return AdminResult{} }
+
+// HTTPError returns a handled result with an HTTP error response.
+func HTTPError(status int, message string) AdminResult {
+	return AdminResult{Handled: true, Status: status, Message: message}
+}
+
 // Result converts a store operation into the business module handler result.
-func Result(data any, err error) (any, bool, int, string) {
+func Result(data any, err error) AdminResult {
 	if err == nil {
-		return data, true, 0, ""
+		return Handled(data)
 	}
-	return nil, true, StatusFor(err), MessageFor(err)
+	return HTTPError(StatusFor(err), MessageFor(err))
 }
 
 // NoBody returns the common deletion response.
-func NoBody(err error) (any, bool, int, string) {
+func NoBody(err error) AdminResult {
 	if err != nil {
 		return Result(nil, err)
 	}
-	return map[string]any{"deleted": true}, true, 0, ""
+	return Handled(map[string]any{"deleted": true})
 }
 
 func StatusFor(err error) int {

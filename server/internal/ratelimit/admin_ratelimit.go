@@ -8,10 +8,10 @@ import (
 	"LLMGateway/server/internal/httpcommon"
 )
 
-func (a *Server) Data(r *http.Request) (any, bool, int, string) {
+func (a *Server) Data(r *http.Request) httpcommon.AdminResult {
 	parts := httpcommon.SplitPath(strings.TrimSuffix(r.URL.Path, "/"))
 	if len(parts) < 2 || parts[0] != "admin" || parts[1] != "rate-limits" {
-		return nil, false, 0, ""
+		return httpcommon.Unhandled()
 	}
 
 	if len(parts) == 2 {
@@ -21,12 +21,12 @@ func (a *Server) Data(r *http.Request) (any, bool, int, string) {
 		case http.MethodPost:
 			return a.createRateLimit(r)
 		}
-		return nil, true, http.StatusMethodNotAllowed, "method not allowed"
+		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
 
 	id, err := strconv.Atoi(parts[2])
 	if err != nil {
-		return nil, true, http.StatusBadRequest, "invalid rule id"
+		return httpcommon.HTTPError(http.StatusBadRequest, "invalid rule id")
 	}
 	if len(parts) == 3 {
 		switch r.Method {
@@ -35,12 +35,12 @@ func (a *Server) Data(r *http.Request) (any, bool, int, string) {
 		case http.MethodDelete:
 			return httpcommon.NoBody(a.DeleteRateLimit(id))
 		}
-		return nil, true, http.StatusMethodNotAllowed, "method not allowed"
+		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
-	return nil, false, 0, ""
+	return httpcommon.Unhandled()
 }
 
-func (a *Server) listRateLimits(r *http.Request) (any, bool, int, string) {
+func (a *Server) listRateLimits(r *http.Request) httpcommon.AdminResult {
 	page, pageSize := httpcommon.ParsePagination(r)
 
 	var enabled *bool
@@ -55,18 +55,18 @@ func (a *Server) listRateLimits(r *http.Request) (any, bool, int, string) {
 	return httpcommon.Result(a.ListRateLimits(enabled, page, pageSize))
 }
 
-func (a *Server) createRateLimit(r *http.Request) (any, bool, int, string) {
+func (a *Server) createRateLimit(r *http.Request) httpcommon.AdminResult {
 	var req RateLimitInput
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
-		return nil, true, http.StatusBadRequest, "invalid json"
+		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 	}
 	return httpcommon.Result(a.CreateRateLimit(req))
 }
 
-func (a *Server) updateRateLimit(r *http.Request, id int) (any, bool, int, string) {
+func (a *Server) updateRateLimit(r *http.Request, id int) httpcommon.AdminResult {
 	var req RateLimitInput
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
-		return nil, true, http.StatusBadRequest, "invalid json"
+		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 	}
 	return httpcommon.Result(a.UpdateRateLimit(id, req))
 }

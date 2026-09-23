@@ -49,8 +49,8 @@ func TestChannelTestTimeoutReturnsSafeError(t *testing.T) {
 	}
 	server.ConfigureTestTimeout(10 * time.Millisecond)
 	req := httptest.NewRequest(http.MethodPost, "/admin/channels/1/test", bytes.NewBufferString(`{}`))
-	result, _, _, _ := server.TestChannel(req, channel.ID)
-	item := result.(domain.ChannelTestResultDTO).List[0]
+	result := server.TestChannel(req, channel.ID)
+	item := result.Data.(domain.ChannelTestResultDTO).List[0]
 	if item.OK || item.HTTPStatus != 0 || item.Error != "upstream request timed out" || item.LatencyMs <= 0 {
 		t.Fatalf("timeout item = %+v", item)
 	}
@@ -88,8 +88,8 @@ func TestChannelTestCheckAllFalseOnlyTestsFirstEnabledModel(t *testing.T) {
 	checkAll := false
 	body, _ := json.Marshal(map[string]bool{"check_all": checkAll})
 	req := httptest.NewRequest(http.MethodPost, "/admin/channels/1/test", bytes.NewReader(body))
-	result, _, _, _ := server.TestChannel(req, channel.ID)
-	items := result.(domain.ChannelTestResultDTO).List
+	result := server.TestChannel(req, channel.ID)
+	items := result.Data.(domain.ChannelTestResultDTO).List
 	if len(items) != 1 || len(models) != 1 || models[0] != "first-upstream" {
 		t.Fatalf("items/models = %+v/%+v", items, models)
 	}
