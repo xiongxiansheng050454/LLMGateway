@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { adminGet } from '../api/client'
+import { listUsageLogs, getUsageLog } from '../api/usage'
 import { Modal } from '../components/feedback/Modal'
 import type { ListResponse, UsageLog } from '../types/api'
 
@@ -11,11 +11,11 @@ const localDateTime = (date: Date) => { const pad = (value: number) => String(va
 
 export function LogsPage() {
   const [draft, setDraft] = useState(initial); const [filter, setFilter] = useState(initial); const [detail, setDetail] = useState<Detail | null>(null); const [rangeError, setRangeError] = useState('')
-  const query = useQuery({ queryKey: ['logs', filter], queryFn: () => adminGet<ListResponse<UsageLog>>('/usage-logs', { user_id: filter.user_id || undefined, channel_id: filter.channel_id || undefined, model: filter.model || undefined, status: filter.status || undefined, page: filter.page, page_size: 20, start_time: filter.start_time ? new Date(filter.start_time).toISOString() : undefined, end_time: filter.end_time ? new Date(filter.end_time).toISOString() : undefined }) })
+  const query = useQuery({ queryKey: ['logs', filter], queryFn: () => listUsageLogs({ user_id: filter.user_id || undefined, channel_id: filter.channel_id || undefined, model: filter.model || undefined, status: filter.status || undefined, page: filter.page, page_size: 20, start_time: filter.start_time ? new Date(filter.start_time).toISOString() : undefined, end_time: filter.end_time ? new Date(filter.end_time).toISOString() : undefined }) })
   const update = (key: keyof Filter, value: string | number) => setDraft(current => ({ ...current, [key]: value }))
   const apply = (next: Filter) => { if (next.start_time && next.end_time && new Date(next.start_time) >= new Date(next.end_time)) { setRangeError('开始时间必须早于结束时间'); return } setRangeError(''); setFilter(next) }
   const setRange = (kind: 'today' | '24h' | '7d') => { const end = new Date(); const start = new Date(end); if (kind === 'today') start.setHours(0, 0, 0, 0); else start.setTime(end.getTime() - (kind === '24h' ? 86400000 : 7 * 86400000)); const next = { ...draft, start_time: localDateTime(start), end_time: localDateTime(end), page: 1 }; setDraft(next); apply(next) }
-  const openDetail = async (id: number) => { try { setDetail(await adminGet<Detail>(`/usage-logs/${id}`)) } catch { setRangeError('请求详情加载失败') } }
+  const openDetail = async (id: number) => { try { setDetail(await getUsageLog(id)) } catch { setRangeError('请求详情加载失败') } }
   const totalPages = Math.max(1, Math.ceil((query.data?.total || 0) / 20))
   return <>
     <section className="panel"><div className="panel-head"><div><h3>请求日志</h3><p className="muted">usage_logs · 支持按用户/渠道/模型/状态/时间筛选</p></div><button className="button ghost" onClick={() => void query.refetch()}>刷新</button></div>

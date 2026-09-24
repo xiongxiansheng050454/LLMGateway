@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { adminGet } from '../api/client'
-import { channels, health, resetHealth } from '../api/channels'
-import { daily, logs, overview } from '../api/usage'
+import { listChannels, listChannelHealth, listModels, resetChannelHealth } from '../api/catalog'
+import { daily, logs, overview, usageStats } from '../api/usage'
+import { listRateLimits } from '../api/ratelimit'
+import { listUsers } from '../api/accounts'
 import { AsyncState } from '../components/feedback/AsyncState'
-import type { Channel, CatalogModel, DailyStats, Health, ListResponse, RateLimit, Stats, UsageAggregate, UsageLog, User } from '../types/api'
+import type { Channel, DailyStats, Health, Stats, UsageLog } from '../types/api'
 
 const n = (value: unknown) => Number(value || 0)
 const money = (value: unknown) => Number(value || 0).toFixed(2)
@@ -35,13 +36,13 @@ export function DashboardPage() {
   const client = useQueryClient(); const [actionError, setActionError] = useState('')
   const overviewQuery = useQuery({ queryKey: ['overview'], queryFn: overview, staleTime: 30_000 })
   const dailyQuery = useQuery({ queryKey: ['daily'], queryFn: daily, staleTime: 30_000 })
-  const channelsQuery = useQuery({ queryKey: ['channels'], queryFn: channels, staleTime: 60_000 })
-  const healthQuery = useQuery({ queryKey: ['channel-health'], queryFn: health, staleTime: 30_000 })
+  const channelsQuery = useQuery({ queryKey: ['channels'], queryFn: listChannels, staleTime: 60_000 })
+  const healthQuery = useQuery({ queryKey: ['channel-health'], queryFn: listChannelHealth, staleTime: 30_000 })
   const logsQuery = useQuery({ queryKey: ['logs'], queryFn: logs, staleTime: 10_000 })
-  const models = useQuery({ queryKey: ['models'], queryFn: () => adminGet<ListResponse<CatalogModel>>('/models', { status: 1 }) })
-  const limits = useQuery({ queryKey: ['rate-limits'], queryFn: () => adminGet<ListResponse<RateLimit>>('/rate-limits', { page: 1, page_size: 100, enabled: 1 }) })
-  const users = useQuery({ queryKey: ['users'], queryFn: () => adminGet<ListResponse<User>>('/users', { page: 1, page_size: 100 }) })
-  const modelUsage = useQuery({ queryKey: ['model-usage'], queryFn: () => adminGet<ListResponse<UsageAggregate>>('/stats/usage', { group_by: 'model' }) })
+  const models = useQuery({ queryKey: ['models'], queryFn: () => listModels(1) })
+  const limits = useQuery({ queryKey: ['rate-limits'], queryFn: listRateLimits })
+  const users = useQuery({ queryKey: ['users'], queryFn: listUsers })
+  const modelUsage = useQuery({ queryKey: ['model-usage'], queryFn: () => usageStats('model') })
   const stats = overviewQuery.data
   const dailyRows = dailyQuery.data?.list || []
   const channelRows = channelsQuery.data?.list || []
@@ -55,7 +56,7 @@ export function DashboardPage() {
   const modelRows = modelUsage.data?.list?.length ? modelUsage.data.list.map(row => ({ name: row.model || 'unknown', value: n(row.total_tokens || row.request_count) })) : [...dist.entries()].map(([name, value]) => ({ name, value }))
   const totalDist = Math.max(1, modelRows.reduce((sum, row) => sum + row.value, 0))
   const errorMap = new Map<string, number>(); logRows.filter(row => row.status !== 'success').forEach(row => { const key = row.error_code || row.status || 'upstream_error'; errorMap.set(key, (errorMap.get(key) || 0) + 1) })
-  const reset = async (channel: Channel) => { if (!window.confirm(`确认恢复渠道「${channel.name}」的熔断状态？`)) return; try { await resetHealth(channel.id); await client.invalidateQueries({ queryKey: ['channel-health'] }) } catch (error) { setActionError(error instanceof Error ? error.message : '操作失败') } }
+  const reset = async (channel: Channel) => { if (!window.confirm(`确认恢复渠道「${channel.name}」的熔断状态？`)) return; try { await resetChannelHealth(channel.id); await client.invalidateQueries({ queryKey: ['channel-health'] }) } catch (error) { setActionError(error instanceof Error ? error.message : '操作失败') } }
   return <>
     {actionError && <div className="error action-error">{actionError}</div>}
      <div className="metric-grid">{overviewQuery.error && <AsyncState loading={false} error={overviewQuery.error} hasData={Boolean(overviewQuery.data)} onRetry={() => void overviewQuery.refetch()} />}{[['总请求量（7 天）', compact(stats?.request_count || 0), '12.4%'], ['请求成功率', `${successRate.toFixed(1)}%`, '0.6%'], ['消耗 Tokens（7 天）', compact(stats?.total_tokens || 0), '8.9%'], ['累计费用（美元）', `$${money(stats?.total_cost)}`, '15.2%']].map(([label, value, delta]) => <section className="metric" key={label}><span>{label}</span><strong>{value}</strong><small>{delta} 较昨日</small></section>)}</div>

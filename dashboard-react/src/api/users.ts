@@ -1,1 +1,1 @@
-import { adminGet } from './client'; import type { ListResponse } from '../types/api'; export const users = () => adminGet<ListResponse<Record<string, unknown>>>('/users', { page: 1, page_size: 100 })
+export { listUsers as users } from './accounts'

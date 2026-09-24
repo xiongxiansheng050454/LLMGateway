@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { daily as dailyAPI, overview, usageStats } from '../api/usage'
-import { adminGet } from '../api/client'
+import { channelStats } from '../api/usage'
 import { AsyncState } from '../components/feedback/AsyncState'
 import type { ChannelStats, DailyStats, ListResponse, Stats, UsageAggregate } from '../types/api'
 
@@ -31,7 +31,7 @@ export function UsagePage() {
   const [error, setError] = useState('')
   const daily = useQuery({ queryKey: ['usage-daily', active], queryFn: dailyAPI, staleTime: 30_000 })
   const summary = useQuery({ queryKey: ['usage-overview', active], queryFn: overview, staleTime: 30_000 })
-  const channels = useQuery({ queryKey: ['usage-channels', active], queryFn: () => adminGet<ListResponse<ChannelStats>>('/stats/channels', { start_time: `${active.from}T00:00:00Z`, end_time: `${active.to}T23:59:59Z` }), staleTime: 30_000 })
+  const channels = useQuery({ queryKey: ['usage-channels', active], queryFn: () => channelStats({ start_time: `${active.from}T00:00:00Z`, end_time: `${active.to}T23:59:59Z` }), staleTime: 30_000 })
   const models = useQuery({ queryKey: ['usage-models', active], queryFn: () => usageStats('model'), staleTime: 30_000 })
   const rows = useMemo(() => fillDays(active.from, active.to, daily.data?.list || []), [active, daily.data])
   const total = num(summary.data?.request_count)

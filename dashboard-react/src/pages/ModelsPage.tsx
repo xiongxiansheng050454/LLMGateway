@@ -1,12 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
-import { adminGet } from '../api/client'
+import { listModels } from '../api/catalog'
+import { usageStats } from '../api/usage'
 import type { CatalogModel, ListResponse, UsageAggregate } from '../types/api'
 
 const number = (value: number) => value || 0
 
 export function ModelsPage() {
-  const query = useQuery({ queryKey: ['models'], queryFn: () => adminGet<ListResponse<CatalogModel>>('/models', { status: 1 }) })
-  const usage = useQuery({ queryKey: ['model-usage'], queryFn: () => adminGet<ListResponse<UsageAggregate>>('/stats/usage', { group_by: 'model' }) })
+  const query = useQuery({ queryKey: ['models'], queryFn: () => listModels(1) })
+  const usage = useQuery({ queryKey: ['model-usage'], queryFn: () => usageStats('model') })
   const list = query.data?.list || []
   const usageRows = usage.data?.list || []
   const total = Math.max(1, usageRows.reduce((sum, row) => sum + number(row.total_tokens || row.request_count), 0))
