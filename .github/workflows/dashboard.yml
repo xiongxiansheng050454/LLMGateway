@@ -19,6 +19,7 @@ jobs:
           cache: npm
           cache-dependency-path: dashboard-react/package-lock.json
       - run: npm ci
+      - run: npm run api:check
       - run: npm run typecheck
       - run: npm test
       - run: npm run build

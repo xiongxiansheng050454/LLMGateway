@@ -1,10 +1,10 @@
 # API Requirements
 
-本文档整理当前 `dashboard-react/` 前端项目对后端 API 的要求。后端实现时优先保证本文档中的管理端接口可用，Dashboard 才能正常启动和操作。
+本文档整理当前 `dashboard-react/` 前端项目对后端 API 的业务要求。可机器验证的路径、方法、请求和响应契约以仓库根目录 `contracts/openapi.yaml` 为唯一来源；本文档保留业务语义、时序和兼容性说明。后端实现时优先保证本文档中的管理端接口可用，Dashboard 才能正常启动和操作。
 
 ## 基础约定
 
-前端共享 DTO 位于 `dashboard-react/src/types/api.ts`，后端响应 DTO 由各业务模块持有。后端 `server/internal/httpapi/api_contract_test.go` 会验证关键 DTO 的 JSON 字段和敏感字段排除；修改响应字段时必须同步更新这两处及对应页面 API 调用。
+前端 API 类型由 `contracts/openapi.yaml` 生成到 `dashboard-react/src/api/generated/schema.ts`，后端响应 DTO 仍由各业务模块持有。后端 `server/internal/httpapi/api_contract_test.go` 会验证关键 DTO 的 JSON 字段和敏感字段排除；修改接口字段时先更新 OpenAPI 契约，再重新生成前端类型并同步后端实现和页面 API 调用。
 
 ### 管理端地址
 

@@ -6,7 +6,7 @@ import type { Balance, BalanceTransaction, ClientKey, CreateKeyInput, Deleted, K
 export const listUsers = () => adminGet<ListResponse<User>>(apiPaths.users(), { page: 1, page_size: 100 })
 export const createUser = (input: UserInput) => adminSend<User, UserInput>('POST', apiPaths.users(), input)
 export const updateUser = (id: number, input: UserInput) => adminSend<User, UserInput>('PUT', apiPaths.user(id), input)
-export const updateUserStatus = (id: number, status: string) => adminSend<User, { status: string }>('PUT', apiPaths.userStatus(id), { status })
+export const updateUserStatus = (id: number, status: User['status']) => adminSend<User, { status: User['status'] }>('PUT', apiPaths.userStatus(id), { status })
 export const deleteUser = (id: number) => adminSend<Deleted>('DELETE', apiPaths.user(id))
 export const rechargeUser = (id: number, input: RechargeInput) => adminSend<{ balance_after: string }, RechargeInput>('POST', apiPaths.userRecharge(id), input)
 export const getUserBalance = (id: number) => adminGet<Balance>(apiPaths.userBalance(id))
