@@ -40,6 +40,9 @@ jobs:
       - name: go test (unit fakes; PostgreSQL tests skip)
         run: go test ./...
 
+      - name: real HTTP contract integration
+        run: go test ./cmd/llmgateway -run HTTPIntegration -count=1
+
       - name: Set up sqlc
         uses: sqlc-dev/setup-sqlc@v4
         with:
