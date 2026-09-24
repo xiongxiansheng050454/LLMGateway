@@ -51,15 +51,6 @@ type RechargeInput struct {
 	Description    string `json:"description"`
 }
 
-type BalanceTransaction struct {
-	ID           int    `json:"id"`
-	TxType       string `json:"tx_type"`
-	Amount       string `json:"amount"`
-	BalanceAfter string `json:"balance_after"`
-	Description  string `json:"description"`
-	CreatedAt    string `json:"created_at"`
-}
-
 type BalanceTransactionDTO struct {
 	ID           int    `json:"id"`
 	TxType       string `json:"tx_type"`

@@ -60,7 +60,6 @@ type BalanceUpdateDTO = accounts.BalanceUpdateDTO
 type UserInput = accounts.UserInput
 type UserStatusInput = accounts.UserStatusInput
 type RechargeInput = accounts.RechargeInput
-type BalanceTransaction = accounts.BalanceTransaction
 type BalanceTransactionDTO = accounts.BalanceTransactionDTO
 type ClientKey = accounts.ClientKey
 type ClientKeyDTO = accounts.ClientKeyDTO

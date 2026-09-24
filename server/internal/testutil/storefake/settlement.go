@@ -59,7 +59,7 @@ func (t *settlementTx) UpdateUserBalance(userID int, available string) (bool, er
 }
 
 func (t *settlementTx) InsertBalanceTransaction(in accounts.BalanceTransactionInput) error {
-	tx := accounts.BalanceTransaction{
+	tx := balanceTransaction{
 		ID:           t.s.nextTxID,
 		TxType:       in.TxType,
 		Amount:       in.Amount,
@@ -116,8 +116,8 @@ func (t *settlementTx) InsertUsageLog(in usage.UsageLogInput) (int, error) {
 // callback can be rolled back.
 type settlementSnapshot struct {
 	users             map[int]*accounts.User
-	transactions      map[int][]accounts.BalanceTransaction
-	orders            map[string]accounts.BalanceTransaction
+	transactions      map[int][]balanceTransaction
+	orders            map[string]balanceTransaction
 	channels          map[int]*catalog.Channel
 	usageLogs         []usage.UsageLog
 	quotaBuckets      map[string]*fakeQuotaBucket
@@ -129,8 +129,8 @@ type settlementSnapshot struct {
 func (s *Store) snapshotSettlement() settlementSnapshot {
 	snapshot := settlementSnapshot{
 		users:             make(map[int]*accounts.User, len(s.users)),
-		transactions:      make(map[int][]accounts.BalanceTransaction, len(s.transactions)),
-		orders:            make(map[string]accounts.BalanceTransaction, len(s.orders)),
+		transactions:      make(map[int][]balanceTransaction, len(s.transactions)),
+		orders:            make(map[string]balanceTransaction, len(s.orders)),
 		channels:          make(map[int]*catalog.Channel, len(s.channels)),
 		usageLogs:         append([]usage.UsageLog(nil), s.usageLogs...),
 		quotaBuckets:      make(map[string]*fakeQuotaBucket, len(s.quotaBuckets)),
@@ -143,7 +143,7 @@ func (s *Store) snapshotSettlement() settlementSnapshot {
 		snapshot.users[id] = &copied
 	}
 	for id, txs := range s.transactions {
-		snapshot.transactions[id] = append([]accounts.BalanceTransaction(nil), txs...)
+		snapshot.transactions[id] = append([]balanceTransaction(nil), txs...)
 	}
 	for key, tx := range s.orders {
 		snapshot.orders[key] = tx

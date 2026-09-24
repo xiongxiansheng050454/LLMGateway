@@ -30,9 +30,9 @@ type Store struct {
 	nextKeyID    int
 	nextTxID     int
 	users        map[int]*accounts.User
-	transactions map[int][]accounts.BalanceTransaction
+	transactions map[int][]balanceTransaction
 	keys         map[int]*memoryKey
-	orders       map[string]accounts.BalanceTransaction
+	orders       map[string]balanceTransaction
 
 	nextRateLimitID int
 	rateLimits      map[int]*ratelimit.RateLimitRule
@@ -50,6 +50,18 @@ type Store struct {
 	breaker                    catalog.ChannelBreakerConfig
 	now                        func() time.Time
 	probes                     map[int]time.Time
+}
+
+// balanceTransaction is the fake store's private ledger record. The accounts
+// package exposes only the management response DTO; persistence-only state
+// belongs to the store implementation.
+type balanceTransaction struct {
+	ID           int
+	TxType       string
+	Amount       string
+	BalanceAfter string
+	Description  string
+	CreatedAt    string
 }
 
 var (
@@ -102,9 +114,9 @@ func New() *Store {
 		nextKeyID:                  1,
 		nextTxID:                   1,
 		users:                      map[int]*accounts.User{},
-		transactions:               map[int][]accounts.BalanceTransaction{},
+		transactions:               map[int][]balanceTransaction{},
 		keys:                       map[int]*memoryKey{},
-		orders:                     map[string]accounts.BalanceTransaction{},
+		orders:                     map[string]balanceTransaction{},
 		nextRateLimitID:            1,
 		rateLimits:                 map[int]*ratelimit.RateLimitRule{},
 		nextUsageLogID:             1,

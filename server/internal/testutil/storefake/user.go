@@ -231,7 +231,7 @@ func (t *accountsTx) UpdateUserBalance(userID int, available string) (bool, erro
 }
 
 func (t *accountsTx) InsertBalanceTransaction(in domain.BalanceTransactionInput) error {
-	tx := domain.BalanceTransaction{
+	tx := balanceTransaction{
 		ID:           t.s.nextTxID,
 		TxType:       in.TxType,
 		Amount:       in.Amount,
