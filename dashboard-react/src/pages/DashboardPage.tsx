@@ -1,7 +1,9 @@
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { adminGet } from '../api/client'
-import { resetHealth } from '../api/channels'
+import { channels, health, resetHealth } from '../api/channels'
+import { daily, logs, overview } from '../api/usage'
+import { AsyncState } from '../components/feedback/AsyncState'
 import type { Channel, CatalogModel, DailyStats, Health, ListResponse, RateLimit, Stats, UsageAggregate, UsageLog, User } from '../types/api'
 
 const n = (value: unknown) => Number(value || 0)
@@ -29,31 +31,41 @@ function Progress({ label, value, right }: { label: string; value: number; right
   return <div><div className="muted progress-label"><span>{label}</span><span>{right || `${value.toFixed(0)}%`}</span></div><div className="progress"><i style={{ width: `${Math.min(100, Math.max(0, value))}%` }} /></div></div>
 }
 
-export function DashboardPage({ stats, daily, channels, health, logs }: { stats?: Stats; daily: DailyStats[]; channels: Channel[]; health: Health[]; logs: UsageLog[] }) {
+export function DashboardPage() {
   const client = useQueryClient(); const [actionError, setActionError] = useState('')
+  const overviewQuery = useQuery({ queryKey: ['overview'], queryFn: overview, staleTime: 30_000 })
+  const dailyQuery = useQuery({ queryKey: ['daily'], queryFn: daily, staleTime: 30_000 })
+  const channelsQuery = useQuery({ queryKey: ['channels'], queryFn: channels, staleTime: 60_000 })
+  const healthQuery = useQuery({ queryKey: ['channel-health'], queryFn: health, staleTime: 30_000 })
+  const logsQuery = useQuery({ queryKey: ['logs'], queryFn: logs, staleTime: 10_000 })
   const models = useQuery({ queryKey: ['models'], queryFn: () => adminGet<ListResponse<CatalogModel>>('/models', { status: 1 }) })
   const limits = useQuery({ queryKey: ['rate-limits'], queryFn: () => adminGet<ListResponse<RateLimit>>('/rate-limits', { page: 1, page_size: 100, enabled: 1 }) })
   const users = useQuery({ queryKey: ['users'], queryFn: () => adminGet<ListResponse<User>>('/users', { page: 1, page_size: 100 }) })
   const modelUsage = useQuery({ queryKey: ['model-usage'], queryFn: () => adminGet<ListResponse<UsageAggregate>>('/stats/usage', { group_by: 'model' }) })
-  const healthMap = new Map(health.map(item => [item.channel_id, item]))
+  const stats = overviewQuery.data
+  const dailyRows = dailyQuery.data?.list || []
+  const channelRows = channelsQuery.data?.list || []
+  const healthRows = healthQuery.data?.list || []
+  const logRows = logsQuery.data?.list || []
+  const healthMap = new Map(healthRows.map(item => [item.channel_id, item]))
   const successRate = stats ? stats.success_count / Math.max(stats.request_count, 1) * 100 : 0
-  const trend = recentDays(daily); const max = Math.max(1, ...trend.map(row => n(row.request_count)))
+  const trend = recentDays(dailyRows); const max = Math.max(1, ...trend.map(row => n(row.request_count)))
   const dist = new Map<string, number>()
-  logs.forEach(row => dist.set(row.model || 'unknown', (dist.get(row.model || 'unknown') || 0) + row.total_tokens))
+  logRows.forEach(row => dist.set(row.model || 'unknown', (dist.get(row.model || 'unknown') || 0) + row.total_tokens))
   const modelRows = modelUsage.data?.list?.length ? modelUsage.data.list.map(row => ({ name: row.model || 'unknown', value: n(row.total_tokens || row.request_count) })) : [...dist.entries()].map(([name, value]) => ({ name, value }))
   const totalDist = Math.max(1, modelRows.reduce((sum, row) => sum + row.value, 0))
-  const errorMap = new Map<string, number>(); logs.filter(row => row.status !== 'success').forEach(row => { const key = row.error_code || row.status || 'upstream_error'; errorMap.set(key, (errorMap.get(key) || 0) + 1) })
+  const errorMap = new Map<string, number>(); logRows.filter(row => row.status !== 'success').forEach(row => { const key = row.error_code || row.status || 'upstream_error'; errorMap.set(key, (errorMap.get(key) || 0) + 1) })
   const reset = async (channel: Channel) => { if (!window.confirm(`确认恢复渠道「${channel.name}」的熔断状态？`)) return; try { await resetHealth(channel.id); await client.invalidateQueries({ queryKey: ['channel-health'] }) } catch (error) { setActionError(error instanceof Error ? error.message : '操作失败') } }
   return <>
     {actionError && <div className="error action-error">{actionError}</div>}
-    <div className="metric-grid">{[['总请求量（7 天）', compact(stats?.request_count || 0), '12.4%'], ['请求成功率', `${successRate.toFixed(1)}%`, '0.6%'], ['消耗 Tokens（7 天）', compact(stats?.total_tokens || 0), '8.9%'], ['累计费用（美元）', `$${money(stats?.total_cost)}`, '15.2%']].map(([label, value, delta]) => <section className="metric" key={label}><span>{label}</span><strong>{value}</strong><small>{delta} 较昨日</small></section>)}</div>
+     <div className="metric-grid">{overviewQuery.error && <AsyncState loading={false} error={overviewQuery.error} hasData={Boolean(overviewQuery.data)} onRetry={() => void overviewQuery.refetch()} />}{[['总请求量（7 天）', compact(stats?.request_count || 0), '12.4%'], ['请求成功率', `${successRate.toFixed(1)}%`, '0.6%'], ['消耗 Tokens（7 天）', compact(stats?.total_tokens || 0), '8.9%'], ['累计费用（美元）', `$${money(stats?.total_cost)}`, '15.2%']].map(([label, value, delta]) => <section className="metric" key={label}><span>{label}</span><strong>{value}</strong><small>{delta} 较昨日</small></section>)}</div>
     <div className="bento-grid">
-      <Panel title="请求趋势（近 14 天）" desc="按 user_daily_stats 自然日汇总 · 含成功 / 失败" className="span-8"><div className="trend-meta"><span>今日 <b>{n(trend.at(-1)?.request_count).toLocaleString()}</b> 次</span><span>成功率 <b>{successRate.toFixed(1)}%</b></span><span>错误 <b>{(stats?.error_count || 0).toLocaleString()}</b> 次</span></div><div className="chart trend-chart">{trend.map((row, index) => <div className="bar" key={String(row.stat_date || index)}><i style={{ '--h': `${n(row.request_count) / max * 100}%` } as React.CSSProperties} /><small>{String(row.stat_date || '').slice(5)}</small></div>)}</div></Panel>
+      <Panel title="请求趋势（近 14 天）" desc="按 user_daily_stats 自然日汇总 · 含成功 / 失败" className="span-8"><AsyncState loading={dailyQuery.isLoading} error={dailyQuery.error} hasData={Boolean(dailyQuery.data)} onRetry={() => void dailyQuery.refetch()} />{dailyQuery.data && <><div className="trend-meta"><span>今日 <b>{n(trend.at(-1)?.request_count).toLocaleString()}</b> 次</span><span>成功率 <b>{successRate.toFixed(1)}%</b></span><span>错误 <b>{(stats?.error_count || 0).toLocaleString()}</b> 次</span></div><div className="chart trend-chart">{trend.map((row, index) => <div className="bar" key={String(row.stat_date || index)}><i style={{ '--h': `${n(row.request_count) / max * 100}%` } as React.CSSProperties} /><small>{String(row.stat_date || '').slice(5)}</small></div>)}</div></>}</Panel>
       <Panel title="看 API 文档" desc="下游兼容接口与管理端接口速查" className="span-4"><div className="doc-list"><button onClick={() => window.location.hash = '#/docs'}>后端结构 <span>查看</span></button><button onClick={() => window.location.hash = '#/docs'}>API 需求 <span>查看</span></button><button onClick={() => window.location.hash = '#/docs'}>全部文档 <span>查看</span></button></div></Panel>
       <Panel title="模型用量分布" desc="按对外模型名聚合 · tokens" className="span-4"><div className="distribution"><div className="donut"><strong>{compact(totalDist)}</strong><small>tokens</small></div><div className="distribution-list">{modelRows.slice(0, 6).map(row => <div key={row.name}><span>{row.name}</span><b>{(row.value / totalDist * 100).toFixed(1)}%</b></div>)}{!modelRows.length && <div className="empty">暂无请求</div>}</div></div></Panel>
-      <Panel title="渠道健康状态" desc="路由 · 熔断 · 成功率" className="span-4"><div className="channel-list">{channels.slice(0, 6).map(channel => { const item = healthMap.get(channel.id); const open = item?.state === 'open'; return <div className="channel-row" key={channel.id}><i className={`dot ${open ? 'danger' : 'ok'}`} /><b>{channel.name}</b><span className="url">{open ? '熔断中' : `${item?.success_count || 0} 成功 / ${item?.failure_count || 0} 失败`}</span>{open && <button className="button ghost" onClick={() => void reset(channel)}>恢复</button>}</div> })}{!channels.length && <div className="empty">暂无渠道</div>}</div></Panel>
-      <Panel title="路由策略雷达" desc="权重优先级 · 余额过滤 · 熔断探测" className="span-4"><div className="route-summary"><strong>{channels.filter(channel => channel.status === 1).length}</strong><span>当前启用渠道</span></div><div className="progress-list"><Progress label="健康渠道" value={channels.length ? channels.filter(channel => healthMap.get(channel.id)?.state !== 'open').length / channels.length * 100 : 0} /><Progress label="正常熔断器" value={channels.length ? channels.filter(channel => healthMap.get(channel.id)?.state === 'closed').length / channels.length * 100 : 0} /><Progress label="已启用渠道" value={channels.length ? channels.filter(channel => channel.status === 1).length / channels.length * 100 : 0} /></div></Panel>
-      <Panel title="实时请求日志" desc="usage_logs · 预冻结 → 按实际 usage 结算" className="span-8"><LogTable logs={logs} /></Panel>
+      <Panel title="渠道健康状态" desc="路由 · 熔断 · 成功率" className="span-4"><AsyncState loading={channelsQuery.isLoading || healthQuery.isLoading} error={channelsQuery.error || healthQuery.error} hasData={Boolean(channelsQuery.data || healthQuery.data)} onRetry={() => { void channelsQuery.refetch(); void healthQuery.refetch() }} />{(channelsQuery.data || healthQuery.data) && <div className="channel-list">{channelRows.slice(0, 6).map(channel => { const item = healthMap.get(channel.id); const open = item?.state === 'open'; return <div className="channel-row" key={channel.id}><i className={`dot ${open ? 'danger' : 'ok'}`} /><b>{channel.name}</b><span className="url">{healthQuery.error ? '状态未知' : open ? '熔断中' : `${item?.success_count || 0} 成功 / ${item?.failure_count || 0} 失败`}</span>{open && <button className="button ghost" onClick={() => void reset(channel)}>恢复</button>}</div> })}{!channelRows.length && <div className="empty">暂无渠道</div>}</div>}</Panel>
+      <Panel title="路由策略雷达" desc="权重优先级 · 余额过滤 · 熔断探测" className="span-4"><div className="route-summary"><strong>{channelRows.filter(channel => channel.status === 1).length}</strong><span>当前启用渠道</span></div><div className="progress-list"><Progress label="健康渠道" value={channelRows.length ? channelRows.filter(channel => healthMap.get(channel.id)?.state !== 'open').length / channelRows.length * 100 : 0} /><Progress label="正常熔断器" value={channelRows.length ? channelRows.filter(channel => healthMap.get(channel.id)?.state === 'closed').length / channelRows.length * 100 : 0} /><Progress label="已启用渠道" value={channelRows.length ? channelRows.filter(channel => channel.status === 1).length / channelRows.length * 100 : 0} /></div></Panel>
+      <Panel title="实时请求日志" desc="usage_logs · 预冻结 → 按实际 usage 结算" className="span-8"><AsyncState loading={logsQuery.isLoading} error={logsQuery.error} hasData={Boolean(logsQuery.data)} onRetry={() => void logsQuery.refetch()} />{logsQuery.data && <LogTable logs={logRows} />}</Panel>
       <Panel title="错误画像" desc="近 7 天非成功请求聚合" className="span-4"><div className="error-list">{[...errorMap.entries()].map(([name, count]) => <div key={name}><span>{name}</span><b>{count}</b></div>)}{!errorMap.size && <div className="empty">暂无错误</div>}</div></Panel>
       <Panel title="限流配额水位" desc="rate_limit_rules · 当前消耗占比" className="span-4"><div className="progress-list">{(limits.data?.list || []).slice(0, 5).map(row => <Progress key={String(row.id)} label={row.rule_name} value={0} right={`0 / ${row.limit_value}`} />)}{!limits.data?.list?.length && <div className="empty">暂无启用规则</div>}</div></Panel>
       <Panel title="用户余额 Top" desc="user_balances · 可用 / 冻结（美元）" className="span-4"><div className="user-list">{(users.data?.list || []).slice(0, 5).map(user => <div key={user.id}><span>{user.nickname || `User #${user.id}`}</span><b>${money(user.balance.available_balance)}</b></div>)}{!users.data?.list?.length && <div className="empty">暂无用户</div>}</div></Panel>
