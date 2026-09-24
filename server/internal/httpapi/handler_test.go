@@ -16,7 +16,7 @@ import (
 func TestHealthz(t *testing.T) {
 	res := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
-	newTestServer().Healthy(res, req)
+	newTestServer().Healthz(res, req)
 
 	if res.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d", res.Code, http.StatusOK)

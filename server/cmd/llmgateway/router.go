@@ -11,7 +11,7 @@ func newRouter(st httpapi.Port, opts ...httpapi.Option) http.Handler {
 	server := httpapi.NewServer(st, opts...)
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/healthz", server.Healthy)
+	mux.HandleFunc("/healthz", server.Healthz)
 	mux.HandleFunc("/admin/", server.Admin)
 	mux.HandleFunc("/admin", server.Admin)
 	mux.HandleFunc("/v1/", server.OpenAI)
