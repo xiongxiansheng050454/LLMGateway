@@ -3,29 +3,9 @@ package accounts
 import (
 	"net/http"
 	"strconv"
-	"strings"
 
 	"LLMGateway/server/internal/httpcommon"
 )
-
-// Data userData dispatches /admin/users and /admin/keys requests.
-func (a *Server) Data(r *http.Request) httpcommon.AdminResult {
-	parts := httpcommon.SplitPath(strings.TrimSuffix(r.URL.Path, "/"))
-	if len(parts) < 2 || parts[0] != "admin" {
-		return httpcommon.Unhandled()
-	}
-
-	if parts[1] == "keys" && len(parts) == 2 {
-		if r.Method == http.MethodGet {
-			return a.listKeys(r)
-		}
-		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
-	}
-	if parts[1] != "users" {
-		return httpcommon.Unhandled()
-	}
-	return a.userRoutes(r, parts)
-}
 
 func (a *Server) userRoutes(r *http.Request, parts []string) httpcommon.AdminResult {
 	if len(parts) == 2 {
@@ -71,38 +51,6 @@ func (a *Server) userRoutes(r *http.Request, parts []string) httpcommon.AdminRes
 			if r.Method == http.MethodGet {
 				return a.listBalanceTransactions(r, userID)
 			}
-		case "keys":
-			switch r.Method {
-			case http.MethodGet:
-				return a.listUserKeys(r, userID)
-			case http.MethodPost:
-				return a.createKey(r, userID)
-			}
-		}
-		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
-	}
-
-	if len(parts) == 5 && parts[3] == "keys" {
-		keyID, err := strconv.Atoi(parts[4])
-		if err != nil {
-			return httpcommon.HTTPError(http.StatusBadRequest, "invalid key id")
-		}
-		switch r.Method {
-		case http.MethodPut:
-			return a.updateKey(r, userID, keyID)
-		case http.MethodDelete:
-			return httpcommon.NoBody(a.DeleteKey(userID, keyID))
-		}
-		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
-	}
-
-	if len(parts) == 6 && parts[3] == "keys" && parts[5] == "reset" {
-		keyID, err := strconv.Atoi(parts[4])
-		if err != nil {
-			return httpcommon.HTTPError(http.StatusBadRequest, "invalid key id")
-		}
-		if r.Method == http.MethodPost {
-			return httpcommon.Result(a.ResetKey(userID, keyID))
 		}
 		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
