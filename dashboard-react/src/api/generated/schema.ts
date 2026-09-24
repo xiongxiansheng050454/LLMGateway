@@ -644,7 +644,7 @@ export interface components {
             balance: components["schemas"]["Money"] | null;
             model_count: number;
         };
-        ChannelInput: {
+        ChannelCreateInput: {
             name: string;
             /** Format: uri */
             base_url: string;
@@ -673,7 +673,7 @@ export interface components {
             balance?: components["schemas"]["Money"];
             delta?: components["schemas"]["Money"];
             description?: string;
-        };
+        } & (unknown | unknown);
         ChannelModel: {
             id: number;
             model_name: string;
@@ -712,7 +712,7 @@ export interface components {
             cached_input_price_per_1m: components["schemas"]["Money"];
             currency: string;
         };
-        PricingInput: {
+        PricingCreateInput: {
             channel_id: number;
             model_name: string;
             input_price_per_1m: components["schemas"]["Money"];
@@ -743,11 +743,16 @@ export interface components {
             status: "active" | "suspended";
             balance: components["schemas"]["Balance"];
         };
-        UserInput: {
+        UserCreateInput: {
             nickname: string;
             user_group?: string;
             /** @enum {string} */
             status?: "active" | "suspended";
+            password?: string;
+        };
+        UserUpdateInput: {
+            nickname?: string;
+            user_group?: string;
             password?: string;
         };
         RechargeInput: {
@@ -774,7 +779,7 @@ export interface components {
             /** Format: date-time */
             expires_at: string | null;
         };
-        CreateKeyInput: {
+        KeyCreateInput: {
             key_name: string;
             prefix: string;
             permissions?: {
@@ -786,6 +791,9 @@ export interface components {
             /** Format: date-time */
             expires_at?: string;
             is_active?: boolean;
+        };
+        KeyUpdateInput: {
+            is_active: boolean;
         };
         KeySecret: {
             id?: number;
@@ -869,11 +877,30 @@ export interface components {
                 [key: string]: unknown;
             };
         };
-        RateLimitInput: {
-            rule_name?: string;
-            target_type?: string;
+        RateLimitCreateInput: {
+            rule_name: string;
+            /** @enum {string} */
+            target_type: "global" | "user" | "api_key" | "model" | "channel";
             target_value?: string;
-            metric?: string;
+            /** @enum {string} */
+            metric: "rpm" | "tpm" | "rpd" | "tpd" | "concurrency";
+            limit_value: number;
+            window_seconds: number;
+            /** @enum {string} */
+            action?: "reject";
+            priority?: number;
+            enabled?: boolean;
+            extras?: {
+                [key: string]: unknown;
+            };
+        };
+        RateLimitUpdateInput: {
+            rule_name?: string;
+            /** @enum {string} */
+            target_type?: "global" | "user" | "api_key" | "model" | "channel";
+            target_value?: string;
+            /** @enum {string} */
+            metric?: "rpm" | "tpm" | "rpd" | "tpd" | "concurrency";
             limit_value?: number;
             window_seconds?: number;
             /** @enum {string} */
@@ -896,7 +923,18 @@ export interface components {
             cost_limit: string | null;
             enabled: boolean;
         };
-        QuotaPolicyInput: {
+        QuotaPolicyCreateInput: {
+            policy_name: string;
+            /** @enum {string} */
+            scope_type: "user" | "api_key";
+            scope_id: number;
+            /** @enum {string} */
+            period_type: "day" | "month";
+            token_limit?: number;
+            cost_limit?: components["schemas"]["Money"];
+            enabled?: boolean;
+        } & (unknown | unknown);
+        QuotaPolicyUpdateInput: {
             policy_name?: string;
             /** @enum {string} */
             scope_type?: "user" | "api_key";
@@ -1474,7 +1512,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["ChannelInput"];
+                "application/json": components["schemas"]["ChannelCreateInput"];
             };
         };
         responses: {
@@ -1741,7 +1779,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["PricingInput"];
+                "application/json": components["schemas"]["PricingCreateInput"];
             };
         };
         responses: {
@@ -1790,7 +1828,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["UserInput"];
+                "application/json": components["schemas"]["UserCreateInput"];
             };
         };
         responses: {
@@ -1809,7 +1847,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["UserInput"];
+                "application/json": components["schemas"]["UserUpdateInput"];
             };
         };
         responses: {
@@ -1947,7 +1985,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CreateKeyInput"];
+                "application/json": components["schemas"]["KeyCreateInput"];
             };
         };
         responses: {
@@ -1967,9 +2005,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": {
-                    is_active: boolean;
-                };
+                "application/json": components["schemas"]["KeyUpdateInput"];
             };
         };
         responses: {
@@ -2070,7 +2106,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["RateLimitInput"];
+                "application/json": components["schemas"]["RateLimitCreateInput"];
             };
         };
         responses: {
@@ -2089,7 +2125,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["RateLimitInput"];
+                "application/json": components["schemas"]["RateLimitUpdateInput"];
             };
         };
         responses: {
@@ -2136,7 +2172,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["QuotaPolicyInput"];
+                "application/json": components["schemas"]["QuotaPolicyCreateInput"];
             };
         };
         responses: {
@@ -2155,7 +2191,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["QuotaPolicyInput"];
+                "application/json": components["schemas"]["QuotaPolicyUpdateInput"];
             };
         };
         responses: {

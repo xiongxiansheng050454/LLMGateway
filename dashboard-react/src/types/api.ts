@@ -5,17 +5,22 @@ export type ListResponse<T> = { list: T[]; total: number }
 
 export type Balance = components['schemas']['Balance']
 export type User = components['schemas']['User']
-export type UserInput = components['schemas']['UserInput']
+export type UserCreateInput = components['schemas']['UserCreateInput']
+export type UserUpdateInput = components['schemas']['UserUpdateInput']
+export type UserStatusInput = { status: User['status'] }
 export type BalanceTransaction = components['schemas']['BalanceTransaction']
 export type RechargeInput = components['schemas']['RechargeInput']
 
 export type ClientKey = components['schemas']['Key']
-export type CreateKeyInput = components['schemas']['CreateKeyInput']
+export type KeyCreateInput = components['schemas']['KeyCreateInput']
+export type KeyUpdateInput = components['schemas']['KeyUpdateInput']
 export type KeySecret = components['schemas']['KeySecret']
 
 export type Channel = components['schemas']['Channel']
-export type ChannelInput = components['schemas']['ChannelInput']
-export type ChannelBalanceInput = components['schemas']['ChannelBalanceInput']
+export type ChannelCreateInput = components['schemas']['ChannelCreateInput']
+export type ChannelUpdateInput = components['schemas']['ChannelUpdateInput']
+type ChannelBalanceFields = { balance?: string; delta?: string; description?: string }
+export type ChannelBalanceInput = ChannelBalanceFields & ({ balance: string } | { delta: string })
 export type ChannelStatusInput = components['schemas']['ChannelStatusInput']
 export type ChannelModel = components['schemas']['ChannelModel']
 export type ChannelModelInput = components['schemas']['ChannelModelInput']
@@ -28,7 +33,7 @@ export type Health = components['schemas']['Health']
 export type CatalogChannel = components['schemas']['CatalogChannel']
 export type CatalogModel = components['schemas']['CatalogModel']
 export type Pricing = components['schemas']['Pricing']
-export type PricingInput = components['schemas']['PricingInput']
+export type PricingCreateInput = components['schemas']['PricingCreateInput']
 export type DeletePricingInput = components['schemas']['DeletePricingInput']
 
 export type UsageLog = components['schemas']['UsageLog']
@@ -38,9 +43,12 @@ export type ChannelStats = components['schemas']['ChannelStats']
 export type UsageAggregate = components['schemas']['UsageAggregate']
 
 export type RateLimit = components['schemas']['RateLimit']
-export type RateLimitInput = components['schemas']['RateLimitInput']
+export type RateLimitCreateInput = components['schemas']['RateLimitCreateInput']
+export type RateLimitUpdateInput = components['schemas']['RateLimitUpdateInput']
 export type QuotaPolicy = components['schemas']['QuotaPolicy']
-export type QuotaPolicyInput = components['schemas']['QuotaPolicyInput']
+type QuotaPolicyCreateFields = { policy_name: string; scope_type: 'user' | 'api_key'; scope_id: number; period_type: 'day' | 'month'; enabled?: boolean }
+export type QuotaPolicyCreateInput = QuotaPolicyCreateFields & ({ token_limit: number; cost_limit?: string } | { token_limit?: number; cost_limit: string })
+export type QuotaPolicyUpdateInput = components['schemas']['QuotaPolicyUpdateInput']
 export type QuotaUsage = components['schemas']['QuotaUsage']
 
 export type Deleted = { deleted: true }
