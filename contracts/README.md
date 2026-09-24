@@ -10,6 +10,11 @@ The Go backend keeps ownership of business DTOs and rules. Its HTTP contract
 tests are the runtime implementation check; the OpenAPI document owns the
 external paths, methods, request shapes, response shapes, and enums.
 
+High-risk Dashboard responses are also checked at runtime by hand-maintained
+Zod schemas under `dashboard-react/src/api/runtime/`. These schemas validate
+the response `data` at the API boundary; pages do not duplicate response
+validation logic.
+
 ## Local workflow
 
 From `dashboard-react/`:
