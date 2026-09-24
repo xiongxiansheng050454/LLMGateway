@@ -8,8 +8,8 @@ const value = (input: unknown, fallback = '—') => input == null || input === '
 
 export function UsersPage() {
   const client = useQueryClient()
-  const users = useQuery({ queryKey: ['users'], queryFn: listUsers })
-  const keys = useQuery({ queryKey: ['keys'], queryFn: listKeys })
+  const users = useQuery({ queryKey: ['users'], queryFn: () => listUsers() })
+  const keys = useQuery({ queryKey: ['keys'], queryFn: () => listKeys() })
   const [editor, setEditor] = useState<User | null | undefined>()
   const [recharge, setRecharge] = useState<User | null>(null)
   const [account, setAccount] = useState<User | null>(null)

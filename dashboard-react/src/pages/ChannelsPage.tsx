@@ -14,7 +14,7 @@ type Editor = Partial<Channel> | null
 
 export function ChannelsPage() {
   const client = useQueryClient()
-  const channels = useQuery({ queryKey: ['channels'], queryFn: listChannels, staleTime: 60_000 })
+  const channels = useQuery({ queryKey: ['channels'], queryFn: () => listChannels(), staleTime: 60_000 })
   const health = useQuery({ queryKey: ['channel-health'], queryFn: listChannelHealth, staleTime: 30_000 })
   const [editor, setEditor] = useState<Editor | undefined>()
   const [selected, setSelected] = useState<Channel | null>(null)

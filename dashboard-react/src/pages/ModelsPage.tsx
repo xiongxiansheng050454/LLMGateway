@@ -6,8 +6,8 @@ import type { CatalogModel, ListResponse, UsageAggregate } from '../types/api'
 const number = (value: number) => value || 0
 
 export function ModelsPage() {
-  const query = useQuery({ queryKey: ['models'], queryFn: () => listModels(1) })
-  const usage = useQuery({ queryKey: ['model-usage'], queryFn: () => usageStats('model') })
+  const query = useQuery({ queryKey: ['models'], queryFn: () => listModels({ status: 1 }) })
+  const usage = useQuery({ queryKey: ['model-usage'], queryFn: () => usageStats({ group_by: 'model', page: 1, page_size: 100 }) })
   const list = query.data?.list || []
   const usageRows = usage.data?.list || []
   const total = Math.max(1, usageRows.reduce((sum, row) => sum + number(row.total_tokens || row.request_count), 0))

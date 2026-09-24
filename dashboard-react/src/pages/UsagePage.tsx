@@ -9,6 +9,7 @@ const day = (date: Date) => date.toISOString().slice(0, 10)
 const num = (value: unknown) => Number(value || 0)
 const compact = (value: number) => value >= 1_000_000 ? `${(value / 1_000_000).toFixed(2)}M` : value >= 1_000 ? `${(value / 1_000).toFixed(1)}K` : value.toLocaleString()
 const emptyDay = (date: string): DailyStats => ({ stat_date: date, request_count: 0, success_count: 0, error_count: 0, total_tokens: 0, total_cost: '0.000000' })
+const nextDay = (date: string) => { const value = new Date(`${date}T00:00:00Z`); value.setUTCDate(value.getUTCDate() + 1); return value.toISOString().slice(0, 10) }
 
 function fillDays(from: string, to: string, source: DailyStats[]) {
   const values = new Map(source.map(row => [row.stat_date, row]))
@@ -29,10 +30,10 @@ export function UsagePage() {
   const [range, setRange] = useState(initial)
   const [active, setActive] = useState(initial)
   const [error, setError] = useState('')
-  const daily = useQuery({ queryKey: ['usage-daily', active], queryFn: dailyAPI, staleTime: 30_000 })
-  const summary = useQuery({ queryKey: ['usage-overview', active], queryFn: overview, staleTime: 30_000 })
-  const channels = useQuery({ queryKey: ['usage-channels', active], queryFn: () => channelStats({ start_time: `${active.from}T00:00:00Z`, end_time: `${active.to}T23:59:59Z` }), staleTime: 30_000 })
-  const models = useQuery({ queryKey: ['usage-models', active], queryFn: () => usageStats('model'), staleTime: 30_000 })
+  const daily = useQuery({ queryKey: ['usage-daily', active], queryFn: () => dailyAPI({ date_from: active.from, date_to: active.to, page: 1, page_size: 100 }), staleTime: 30_000 })
+  const summary = useQuery({ queryKey: ['usage-overview', active], queryFn: () => overview({ start_time: `${active.from}T00:00:00Z`, end_time: `${nextDay(active.to)}T00:00:00Z` }), staleTime: 30_000 })
+  const channels = useQuery({ queryKey: ['usage-channels', active], queryFn: () => channelStats({ start_time: `${active.from}T00:00:00Z`, end_time: `${nextDay(active.to)}T00:00:00Z` }), staleTime: 30_000 })
+  const models = useQuery({ queryKey: ['usage-models', active], queryFn: () => usageStats({ group_by: 'model', date_from: active.from, date_to: active.to, page: 1, page_size: 100 }), staleTime: 30_000 })
   const rows = useMemo(() => fillDays(active.from, active.to, daily.data?.list || []), [active, daily.data])
   const total = num(summary.data?.request_count)
   const success = num(summary.data?.success_count)

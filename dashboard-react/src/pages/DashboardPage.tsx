@@ -34,15 +34,15 @@ function Progress({ label, value, right }: { label: string; value: number; right
 
 export function DashboardPage() {
   const client = useQueryClient(); const [actionError, setActionError] = useState('')
-  const overviewQuery = useQuery({ queryKey: ['overview'], queryFn: overview, staleTime: 30_000 })
-  const dailyQuery = useQuery({ queryKey: ['daily'], queryFn: daily, staleTime: 30_000 })
-  const channelsQuery = useQuery({ queryKey: ['channels'], queryFn: listChannels, staleTime: 60_000 })
+  const overviewQuery = useQuery({ queryKey: ['overview'], queryFn: () => overview(), staleTime: 30_000 })
+  const dailyQuery = useQuery({ queryKey: ['daily'], queryFn: () => daily(), staleTime: 30_000 })
+  const channelsQuery = useQuery({ queryKey: ['channels'], queryFn: () => listChannels(), staleTime: 60_000 })
   const healthQuery = useQuery({ queryKey: ['channel-health'], queryFn: listChannelHealth, staleTime: 30_000 })
-  const logsQuery = useQuery({ queryKey: ['logs'], queryFn: logs, staleTime: 10_000 })
-  const models = useQuery({ queryKey: ['models'], queryFn: () => listModels(1) })
-  const limits = useQuery({ queryKey: ['rate-limits'], queryFn: listRateLimits })
-  const users = useQuery({ queryKey: ['users'], queryFn: listUsers })
-  const modelUsage = useQuery({ queryKey: ['model-usage'], queryFn: () => usageStats('model') })
+  const logsQuery = useQuery({ queryKey: ['logs'], queryFn: () => logs(), staleTime: 10_000 })
+  const models = useQuery({ queryKey: ['models'], queryFn: () => listModels({ status: 1 }) })
+  const limits = useQuery({ queryKey: ['rate-limits'], queryFn: () => listRateLimits() })
+  const users = useQuery({ queryKey: ['users'], queryFn: () => listUsers() })
+  const modelUsage = useQuery({ queryKey: ['model-usage'], queryFn: () => usageStats({ group_by: 'model', page: 1, page_size: 100 }) })
   const stats = overviewQuery.data
   const dailyRows = dailyQuery.data?.list || []
   const channelRows = channelsQuery.data?.list || []

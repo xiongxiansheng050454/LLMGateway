@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { listUsageLogs, getUsageLog } from '../api/usage'
+import { listUsageLogs, getUsageLog, type UsageLogParams } from '../api/usage'
 import { Modal } from '../components/feedback/Modal'
 import type { ListResponse, UsageLog } from '../types/api'
 
@@ -8,10 +8,11 @@ type Filter = { user_id: string; channel_id: string; model: string; status: stri
 type Detail = UsageLog
 const initial: Filter = { user_id: '', channel_id: '', model: '', status: '', start_time: '', end_time: '', page: 1 }
 const localDateTime = (date: Date) => { const pad = (value: number) => String(value).padStart(2, '0'); return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}` }
+const parseID = (value: string) => /^\d+$/.test(value) ? Number(value) : undefined
 
 export function LogsPage() {
   const [draft, setDraft] = useState(initial); const [filter, setFilter] = useState(initial); const [detail, setDetail] = useState<Detail | null>(null); const [rangeError, setRangeError] = useState('')
-  const query = useQuery({ queryKey: ['logs', filter], queryFn: () => listUsageLogs({ user_id: filter.user_id || undefined, channel_id: filter.channel_id || undefined, model: filter.model || undefined, status: filter.status || undefined, page: filter.page, page_size: 20, start_time: filter.start_time ? new Date(filter.start_time).toISOString() : undefined, end_time: filter.end_time ? new Date(filter.end_time).toISOString() : undefined }) })
+  const query = useQuery({ queryKey: ['logs', filter], queryFn: () => { const params: UsageLogParams = { user_id: parseID(filter.user_id), channel_id: parseID(filter.channel_id), model: filter.model || undefined, status: filter.status || undefined, page: filter.page, page_size: 20, start_time: filter.start_time ? new Date(filter.start_time).toISOString() : undefined, end_time: filter.end_time ? new Date(filter.end_time).toISOString() : undefined }; return listUsageLogs(params) } })
   const update = (key: keyof Filter, value: string | number) => setDraft(current => ({ ...current, [key]: value }))
   const apply = (next: Filter) => { if (next.start_time && next.end_time && new Date(next.start_time) >= new Date(next.end_time)) { setRangeError('开始时间必须早于结束时间'); return } setRangeError(''); setFilter(next) }
   const setRange = (kind: 'today' | '24h' | '7d') => { const end = new Date(); const start = new Date(end); if (kind === 'today') start.setHours(0, 0, 0, 0); else start.setTime(end.getTime() - (kind === '24h' ? 86400000 : 7 * 86400000)); const next = { ...draft, start_time: localDateTime(start), end_time: localDateTime(end), page: 1 }; setDraft(next); apply(next) }

@@ -5,6 +5,7 @@ import { z } from 'zod'
 
 type AdminPath = Extract<keyof paths, `/admin/${string}`>
 type ContractPath = AdminPath | `/admin/channels/${number}` | `/admin/channels/${number}/status` | `/admin/channels/${number}/balance` | `/admin/channels/${number}/health` | `/admin/channels/${number}/models` | `/admin/channels/${number}/models/${number}` | `/admin/channels/${number}/remote-models` | `/admin/channels/${number}/test` | `/admin/channels/${number}/health/reset` | `/admin/users/${number}` | `/admin/users/${number}/status` | `/admin/users/${number}/balance` | `/admin/users/${number}/recharge` | `/admin/users/${number}/balance-transactions` | `/admin/users/${number}/keys` | `/admin/users/${number}/keys/${number}` | `/admin/users/${number}/keys/${number}/reset` | `/admin/usage-logs/${number}` | `/admin/rate-limits/${number}` | `/admin/quota-policies/${number}`
+export type QueryParams = Record<string, string | number | boolean | undefined>
 
 export class ApiContractError extends Error {
   constructor(readonly path: string, readonly issues: z.ZodIssue[]) {
@@ -13,9 +14,9 @@ export class ApiContractError extends Error {
   }
 }
 
-export async function adminGet<T>(path: ContractPath, params: Record<string, string | number | undefined>, schema: z.ZodType<T>): Promise<T>
+export async function adminGet<T>(path: ContractPath, params: QueryParams, schema: z.ZodType<T>): Promise<T>
 export async function adminGet<T>(path: ContractPath, schema: z.ZodType<T>): Promise<T>
-export async function adminGet<T>(path: ContractPath, paramsOrSchema: Record<string, string | number | undefined> | z.ZodType<T>, maybeSchema?: z.ZodType<T>): Promise<T> {
+export async function adminGet<T>(path: ContractPath, paramsOrSchema: QueryParams | z.ZodType<T>, maybeSchema?: z.ZodType<T>): Promise<T> {
   const params = paramsOrSchema instanceof z.ZodType ? {} : paramsOrSchema
   const schema = paramsOrSchema instanceof z.ZodType ? paramsOrSchema : maybeSchema
   // Domain API modules use concrete URLs; openapi-fetch normally receives path templates.
