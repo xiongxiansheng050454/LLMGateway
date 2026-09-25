@@ -4,36 +4,36 @@ import (
 	"context"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"LLMGateway/server/internal/httpcommon"
 )
 
-func (a *Server) Data(r *http.Request) httpcommon.AdminResult {
-	parts := httpcommon.SplitPath(strings.TrimSuffix(r.URL.Path, "/"))
-	if len(parts) < 2 || parts[0] != "admin" {
-		return httpcommon.Unhandled()
+func (a *Server) RegisterAdminRoutes(mux *http.ServeMux) {
+	httpcommon.HandleAdmin(mux, "/admin/quota-usage", a.quotaUsage)
+	httpcommon.HandleAdmin(mux, "/admin/quota-policies", a.quotaPolicies)
+	httpcommon.HandleAdmin(mux, "/admin/quota-policies/{id}", a.quotaPolicy)
+}
+
+func (a *Server) quotaUsage(r *http.Request) httpcommon.AdminResult {
+	if r.Method != http.MethodGet {
+		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
-	if parts[1] == "quota-usage" && len(parts) == 2 {
-		if r.Method != http.MethodGet {
-			return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
-		}
-		return a.listUsage(r)
+	return a.listUsage(r)
+}
+
+func (a *Server) quotaPolicies(r *http.Request) httpcommon.AdminResult {
+	switch r.Method {
+	case http.MethodGet:
+		return a.listPolicies(r)
+	case http.MethodPost:
+		return a.createPolicy(r)
+	default:
+		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
-	if parts[1] != "quota-policies" {
-		return httpcommon.Unhandled()
-	}
-	if len(parts) == 2 {
-		switch r.Method {
-		case http.MethodGet:
-			return a.listPolicies(r)
-		case http.MethodPost:
-			return a.createPolicy(r)
-		default:
-			return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
-		}
-	}
-	id, err := strconv.Atoi(parts[2])
+}
+
+func (a *Server) quotaPolicy(r *http.Request) httpcommon.AdminResult {
+	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		return httpcommon.HTTPError(http.StatusBadRequest, "invalid policy id")
 	}

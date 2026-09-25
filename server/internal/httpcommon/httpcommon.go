@@ -37,6 +37,27 @@ type AdminResult struct {
 	Message string
 }
 
+// AdminHandler adapts a module's AdminResult handler to net/http.
+func AdminHandler(fn func(*http.Request) AdminResult) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		result := fn(r)
+		if result.Status != 0 {
+			writeAdminError(w, result.Status, result.Message)
+			return
+		}
+		if !result.Handled {
+			writeAdminError(w, http.StatusNotFound, "not found")
+			return
+		}
+		writeJSON(w, http.StatusOK, adminResponse{Code: 0, Message: "ok", Data: result.Data})
+	})
+}
+
+// HandleAdmin registers an AdminResult handler on a ServeMux.
+func HandleAdmin(mux *http.ServeMux, pattern string, fn func(*http.Request) AdminResult) {
+	mux.Handle(pattern, AdminHandler(fn))
+}
+
 // Handled returns a successful result for a matched route.
 func Handled(data any) AdminResult {
 	return AdminResult{Data: data, Handled: true}
@@ -89,4 +110,20 @@ func positiveInt(value string, fallback int) int {
 		return fallback
 	}
 	return n
+}
+
+type adminResponse struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Data    any    `json:"data"`
+}
+
+func writeAdminError(w http.ResponseWriter, status int, message string) {
+	writeJSON(w, status, adminResponse{Code: status, Message: message, Data: map[string]any{}})
+}
+
+func writeJSON(w http.ResponseWriter, status int, body any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(body)
 }

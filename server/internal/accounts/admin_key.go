@@ -7,55 +7,64 @@ import (
 	"LLMGateway/server/internal/httpcommon"
 )
 
-func (a *Server) keyRoutes(r *http.Request, parts []string) httpcommon.AdminResult {
-	if len(parts) == 2 {
-		if parts[1] == "keys" && r.Method == http.MethodGet {
-			return a.listKeys(r)
-		}
+func (a *Server) keys(r *http.Request) httpcommon.AdminResult {
+	if r.Method != http.MethodGet {
 		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
+	return a.listKeys(r)
+}
 
-	if len(parts) < 4 || parts[1] != "users" || parts[3] != "keys" {
-		return httpcommon.Unhandled()
-	}
-	userID, err := strconv.Atoi(parts[2])
+func (a *Server) userKeys(r *http.Request) httpcommon.AdminResult {
+	userID, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		return httpcommon.HTTPError(http.StatusBadRequest, "invalid user id")
 	}
-
-	if len(parts) == 4 {
-		switch r.Method {
-		case http.MethodGet:
-			return a.listUserKeys(r, userID)
-		case http.MethodPost:
-			return a.createKey(r, userID)
-		default:
-			return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
-		}
+	switch r.Method {
+	case http.MethodGet:
+		return a.listUserKeys(r, userID)
+	case http.MethodPost:
+		return a.createKey(r, userID)
+	default:
+		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
 
-	if len(parts) == 5 || (len(parts) == 6 && parts[5] == "reset") {
-		keyID, err := strconv.Atoi(parts[4])
-		if err != nil {
-			return httpcommon.HTTPError(http.StatusBadRequest, "invalid key id")
-		}
-		if len(parts) == 6 {
-			if r.Method == http.MethodPost {
-				return httpcommon.Result(a.ResetKey(userID, keyID))
-			}
-			return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
-		}
-		switch r.Method {
-		case http.MethodPut:
-			return a.updateKey(r, userID, keyID)
-		case http.MethodDelete:
-			return httpcommon.NoBody(a.DeleteKey(userID, keyID))
-		default:
-			return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
-		}
+func (a *Server) userKey(r *http.Request) httpcommon.AdminResult {
+	userID, keyID, result := a.keyPathIDs(r)
+	if result.Status != 0 {
+		return result
 	}
+	switch r.Method {
+	case http.MethodPut:
+		return a.updateKey(r, userID, keyID)
+	case http.MethodDelete:
+		return httpcommon.NoBody(a.DeleteKey(userID, keyID))
+	default:
+		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
 
-	return httpcommon.Unhandled()
+func (a *Server) userKeyReset(r *http.Request) httpcommon.AdminResult {
+	if r.Method != http.MethodPost {
+		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
+	}
+	userID, keyID, result := a.keyPathIDs(r)
+	if result.Status != 0 {
+		return result
+	}
+	return httpcommon.Result(a.ResetKey(userID, keyID))
+}
+
+func (a *Server) keyPathIDs(r *http.Request) (int, int, httpcommon.AdminResult) {
+	userID, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		return 0, 0, httpcommon.HTTPError(http.StatusBadRequest, "invalid user id")
+	}
+	keyID, err := strconv.Atoi(r.PathValue("key_id"))
+	if err != nil {
+		return 0, 0, httpcommon.HTTPError(http.StatusBadRequest, "invalid key id")
+	}
+	return userID, keyID, httpcommon.AdminResult{}
 }
 
 func (a *Server) listKeys(r *http.Request) httpcommon.AdminResult {

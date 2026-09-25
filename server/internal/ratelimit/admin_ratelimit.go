@@ -3,41 +3,39 @@ package ratelimit
 import (
 	"net/http"
 	"strconv"
-	"strings"
 
 	"LLMGateway/server/internal/httpcommon"
 )
 
-func (a *Server) Data(r *http.Request) httpcommon.AdminResult {
-	parts := httpcommon.SplitPath(strings.TrimSuffix(r.URL.Path, "/"))
-	if len(parts) < 2 || parts[0] != "admin" || parts[1] != "rate-limits" {
-		return httpcommon.Unhandled()
-	}
+func (a *Server) RegisterAdminRoutes(mux *http.ServeMux) {
+	httpcommon.HandleAdmin(mux, "/admin/rate-limits", a.rateLimits)
+	httpcommon.HandleAdmin(mux, "/admin/rate-limits/{id}", a.rateLimit)
+}
 
-	if len(parts) == 2 {
-		switch r.Method {
-		case http.MethodGet:
-			return a.listRateLimits(r)
-		case http.MethodPost:
-			return a.createRateLimit(r)
-		}
+func (a *Server) rateLimits(r *http.Request) httpcommon.AdminResult {
+	switch r.Method {
+	case http.MethodGet:
+		return a.listRateLimits(r)
+	case http.MethodPost:
+		return a.createRateLimit(r)
+	default:
 		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
+}
 
-	id, err := strconv.Atoi(parts[2])
+func (a *Server) rateLimit(r *http.Request) httpcommon.AdminResult {
+	id, err := strconv.Atoi(r.PathValue("id"))
 	if err != nil {
 		return httpcommon.HTTPError(http.StatusBadRequest, "invalid rule id")
 	}
-	if len(parts) == 3 {
-		switch r.Method {
-		case http.MethodPut:
-			return a.updateRateLimit(r, id)
-		case http.MethodDelete:
-			return httpcommon.NoBody(a.DeleteRateLimit(id))
-		}
+	switch r.Method {
+	case http.MethodPut:
+		return a.updateRateLimit(r, id)
+	case http.MethodDelete:
+		return httpcommon.NoBody(a.DeleteRateLimit(id))
+	default:
 		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
-	return httpcommon.Unhandled()
 }
 
 func (a *Server) listRateLimits(r *http.Request) httpcommon.AdminResult {

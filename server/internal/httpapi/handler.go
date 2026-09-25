@@ -4,13 +4,11 @@ import (
 	"encoding/json"
 	"math/rand"
 	"net/http"
-	"strings"
 	"time"
 
 	"LLMGateway/server/internal/accounts"
 	"LLMGateway/server/internal/catalog"
 	"LLMGateway/server/internal/crypto"
-	"LLMGateway/server/internal/httpcommon"
 	"LLMGateway/server/internal/proxy"
 	openaiwire "LLMGateway/server/internal/proxy/openai"
 	"LLMGateway/server/internal/quota"
@@ -18,9 +16,6 @@ import (
 	"LLMGateway/server/internal/usage"
 )
 
-// Server holds the HTTP entry points for the gateway. The concrete route table
-// (which path maps to which entry point) lives in cmd/llmgateway/router.go.
-// adminResponse is the unified envelope for /admin endpoints.
 type adminResponse struct {
 	Code    int    `json:"code"`
 	Message string `json:"message"`
@@ -36,6 +31,7 @@ type Server struct {
 	usage     *usage.Server
 	ratelimit *ratelimit.Server
 	quota     *quota.Server
+	adminMux  *http.ServeMux
 }
 
 // Port is the process assembly contract. Each business server receives its
@@ -159,15 +155,27 @@ func NewServer(st Port, opts ...Option) *Server {
 	proxyService.ConfigureQuota(settings.quotaDefaultMaxTokens, settings.quotaReservationTTL)
 	proxyService.ConfigureRequest(settings.upstreamTimeout, settings.upstreamMaxAttempts)
 	proxyService.ConfigureMinimumRouteBalance(settings.minimumRouteBalance)
+	adminMux := http.NewServeMux()
+	adminMux.HandleFunc("/admin/", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusNotFound, map[string]any{"code": http.StatusNotFound, "message": "not found", "data": map[string]any{}})
+	})
+	catalogServer.RegisterAdminRoutes(adminMux)
+	accountsServer := accounts.New(st, st.AccountsTx())
+	accountsServer.RegisterAdminRoutes(adminMux)
+	ratelimitServer.RegisterAdminRoutes(adminMux)
+	quotaServer.RegisterAdminRoutes(adminMux)
+	usageServer := usage.New(st)
+	usageServer.RegisterAdminRoutes(adminMux)
 	return &Server{
 		store:     st,
 		client:    client,
 		proxy:     proxyService,
 		catalog:   catalogServer,
-		accounts:  accounts.New(st, st.AccountsTx()),
-		usage:     usage.New(st),
+		accounts:  accountsServer,
+		usage:     usageServer,
 		ratelimit: ratelimitServer,
 		quota:     quotaServer,
+		adminMux:  adminMux,
 	}
 }
 
@@ -188,44 +196,7 @@ func (a *Server) Admin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result := a.adminData(r)
-	if result.Status != 0 {
-		writeAdminError(w, result.Status, result.Message)
-		return
-	}
-	if !result.Handled {
-		writeAdminError(w, http.StatusNotFound, "not found")
-		return
-	}
-	writeAdminOK(w, result.Data)
-}
-
-func (a *Server) adminData(r *http.Request) httpcommon.AdminResult {
-	parts := httpcommon.SplitPath(strings.TrimSuffix(r.URL.Path, "/"))
-	if result := a.catalog.Data(r, parts); result.Handled || result.Status != 0 {
-		return result
-	}
-	if result := a.accounts.Data(r); result.Handled || result.Status != 0 {
-		return result
-	}
-	if result := a.ratelimit.Data(r); result.Handled || result.Status != 0 {
-		return result
-	}
-	if result := a.quota.Data(r); result.Handled || result.Status != 0 {
-		return result
-	}
-	if result := a.usage.Data(r); result.Handled || result.Status != 0 {
-		return result
-	}
-	return httpcommon.Unhandled()
-}
-
-func writeAdminOK(w http.ResponseWriter, data any) {
-	writeJSON(w, http.StatusOK, adminResponse{Code: 0, Message: "ok", Data: data})
-}
-
-func writeAdminError(w http.ResponseWriter, status int, message string) {
-	writeJSON(w, status, adminResponse{Code: status, Message: message, Data: map[string]any{}})
+	a.adminMux.ServeHTTP(w, r)
 }
 
 func writeMethodNotAllowed(w http.ResponseWriter) {

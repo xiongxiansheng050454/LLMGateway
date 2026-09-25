@@ -3,7 +3,6 @@ package usage
 import (
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"LLMGateway/server/internal/httpcommon"
@@ -16,41 +15,32 @@ const (
 	defaultDateTo    = "9999-12-31"
 )
 
-func (a *Server) Data(r *http.Request) httpcommon.AdminResult {
-	parts := httpcommon.SplitPath(strings.TrimSuffix(r.URL.Path, "/"))
-	if len(parts) < 2 || parts[0] != "admin" {
-		return httpcommon.Unhandled()
-	}
+func (a *Server) RegisterAdminRoutes(mux *http.ServeMux) {
+	httpcommon.HandleAdmin(mux, "/admin/usage-logs", a.usageLogs)
+	httpcommon.HandleAdmin(mux, "/admin/usage-logs/{id}", a.usageLog)
+	httpcommon.HandleAdmin(mux, "/admin/stats/overview", a.statsOverview)
+	httpcommon.HandleAdmin(mux, "/admin/stats/daily", a.statsDaily)
+	httpcommon.HandleAdmin(mux, "/admin/stats/channels", a.statsChannels)
+	httpcommon.HandleAdmin(mux, "/admin/stats/ttft", a.statsTTFT)
+	httpcommon.HandleAdmin(mux, "/admin/stats/usage", a.aggregateUsage)
+}
 
-	if parts[1] == "usage-logs" {
-		if len(parts) == 2 && r.Method == http.MethodGet {
-			return a.listUsageLogs(r)
-		}
-		if len(parts) == 3 && r.Method == http.MethodGet {
-			id, err := strconv.Atoi(parts[2])
-			if err != nil {
-				return httpcommon.HTTPError(http.StatusBadRequest, "invalid log id")
-			}
-			return httpcommon.Result(a.store.GetUsageLog(id))
-		}
+func (a *Server) usageLogs(r *http.Request) httpcommon.AdminResult {
+	if r.Method != http.MethodGet {
 		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
+	return a.listUsageLogs(r)
+}
 
-	if parts[1] == "stats" && len(parts) == 3 && r.Method == http.MethodGet {
-		switch parts[2] {
-		case "overview":
-			return a.statsOverview(r)
-		case "daily":
-			return a.statsDaily(r)
-		case "channels":
-			return a.statsChannels(r)
-		case "ttft":
-			return a.statsTTFT(r)
-		case "usage":
-			return a.aggregateUsage(r)
-		}
+func (a *Server) usageLog(r *http.Request) httpcommon.AdminResult {
+	if r.Method != http.MethodGet {
+		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
-	return httpcommon.Unhandled()
+	id, err := strconv.Atoi(r.PathValue("id"))
+	if err != nil {
+		return httpcommon.HTTPError(http.StatusBadRequest, "invalid log id")
+	}
+	return httpcommon.Result(a.store.GetUsageLog(id))
 }
 
 func (a *Server) listUsageLogs(r *http.Request) httpcommon.AdminResult {
