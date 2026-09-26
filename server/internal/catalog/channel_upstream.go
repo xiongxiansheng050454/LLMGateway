@@ -15,7 +15,7 @@ func (a *Server) remoteModels(ctx context.Context, channelID int) httpcommon.Adm
 	if err != nil {
 		return httpcommon.Result(nil, err)
 	}
-	req, err := http.NewRequest(http.MethodGet, strings.TrimRight(ch.BaseURL, "/")+"/v1/models", nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, strings.TrimRight(ch.BaseURL, "/")+"/v1/models", nil)
 	if err != nil {
 		return httpcommon.Handled(map[string]any{"ok": false, "error": err.Error()})
 	}
