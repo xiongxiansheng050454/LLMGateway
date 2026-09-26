@@ -1,0 +1,46 @@
+package catalog
+
+import (
+	"net/http"
+
+	"LLMGateway/server/internal/httpcommon"
+)
+
+func (a *Server) channelHealth(r *http.Request) httpcommon.AdminResult {
+	if r.Method != http.MethodGet {
+		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
+	}
+	id, result := parseID(r.PathValue("id"), "channel")
+	if result.Status != 0 {
+		return result
+	}
+	if _, err := a.GetChannelSecret(r.Context(), id); err != nil {
+		return httpcommon.Result(nil, err)
+	}
+	health, err := a.GetChannelHealth(r.Context(), id)
+	if err != nil {
+		return httpcommon.Result(nil, err)
+	}
+	return httpcommon.Result(ChannelHealthDTO{ChannelID: health.ChannelID, State: string(health.State), ConsecutiveFailures: health.ConsecutiveFailures, SuccessCount: health.SuccessCount, FailureCount: health.FailureCount, OpenedAt: health.OpenedAt, UpdatedAt: health.UpdatedAt}, nil)
+}
+
+func (a *Server) channelHealthReset(r *http.Request) httpcommon.AdminResult {
+	if r.Method != http.MethodPost {
+		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
+	}
+	id, result := parseID(r.PathValue("id"), "channel")
+	if result.Status != 0 {
+		return result
+	}
+	if _, err := a.GetChannelSecret(r.Context(), id); err != nil {
+		return httpcommon.NoBody(err)
+	}
+	return httpcommon.NoBody(a.ResetChannelHealth(r.Context(), id))
+}
+
+func (a *Server) channelHealthList(r *http.Request) httpcommon.AdminResult {
+	if r.Method != http.MethodGet {
+		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
+	}
+	return httpcommon.Result(a.ListChannelHealth(r.Context()))
+}

@@ -6,6 +6,54 @@ import (
 	"LLMGateway/server/internal/httpcommon"
 )
 
+func (a *Server) channels(r *http.Request) httpcommon.AdminResult {
+	switch r.Method {
+	case http.MethodGet:
+		return httpcommon.Result(a.ListChannels(r.Context()))
+	case http.MethodPost:
+		return a.createChannel(r)
+	default:
+		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func (a *Server) channel(r *http.Request) httpcommon.AdminResult {
+	id, result := parseID(r.PathValue("id"), "channel")
+	if result.Status != 0 {
+		return result
+	}
+	switch r.Method {
+	case http.MethodPut:
+		return a.updateChannel(r, id)
+	case http.MethodDelete:
+		return httpcommon.NoBody(a.DeleteChannel(r.Context(), id))
+	default:
+		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
+	}
+}
+
+func (a *Server) channelStatus(r *http.Request) httpcommon.AdminResult {
+	if r.Method != http.MethodPut {
+		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
+	}
+	id, result := parseID(r.PathValue("id"), "channel")
+	if result.Status != 0 {
+		return result
+	}
+	return a.updateChannelStatus(r, id)
+}
+
+func (a *Server) channelBalance(r *http.Request) httpcommon.AdminResult {
+	if r.Method != http.MethodPut {
+		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
+	}
+	id, result := parseID(r.PathValue("id"), "channel")
+	if result.Status != 0 {
+		return result
+	}
+	return a.updateChannelBalance(r, id)
+}
+
 func (a *Server) createChannel(r *http.Request) httpcommon.AdminResult {
 	var req ChannelInput
 	if err := httpcommon.ReadJSON(r, &req); err != nil {

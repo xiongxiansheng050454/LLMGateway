@@ -15,21 +15,3 @@ type HealthPort interface {
 	GetChannelHealthRow(ctx context.Context, channelID int) (ChannelHealth, bool, error)
 	AcquireChannelProbe(ctx context.Context, channelID int, lease time.Duration) (bool, error)
 }
-
-// Tx is the transaction-scoped persistence surface for catalog writes. It
-// exposes only primitives; Server owns the state transitions and balance math.
-type Tx interface {
-	EnsureChannelHealth(channelID int) error
-	GetChannelHealthForUpdate(channelID int) (ChannelHealth, error)
-	UpdateChannelHealth(health ChannelHealth) (bool, error)
-	DeleteChannelHealth(channelID int) error
-
-	LockChannel(channelID int) error
-	GetChannelBalanceText(channelID int) (string, error)
-	UpdateChannelBalance(channelID int, balance string) (bool, error)
-}
-
-// TxManager runs fn inside a single database transaction.
-type TxManager interface {
-	InTx(ctx context.Context, fn func(Tx) error) error
-}
