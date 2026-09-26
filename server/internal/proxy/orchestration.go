@@ -178,12 +178,11 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 			if ctx.Err() != nil {
 				return ChatResponse{}, ctx.Err()
 			}
-			reason, retry := classifyUpstreamResult(0, err)
-			if retry {
+			if reason := classifyUpstreamResult(0, err); reason.CountsAsChannelFailure() {
 				a.recordChannelHealth(ctx, candidate.ChannelID, false, reason)
-			}
-			if retry && attempt+1 < len(candidates) {
-				continue
+				if attempt+1 < len(candidates) {
+					continue
+				}
 			}
 			a.logUsage(ctx, requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", "upstream_unreachable")
 			return ChatResponse{}, ErrUpstream
@@ -207,7 +206,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 			break
 		}
-		if reason, retry := classifyUpstreamResult(resp.StatusCode, nil); retry {
+		if reason := classifyUpstreamResult(resp.StatusCode, nil); reason.CountsAsChannelFailure() {
 			a.recordChannelHealth(ctx, candidate.ChannelID, false, reason)
 			healthRecorded = true
 			if attempt+1 < len(candidates) {
@@ -219,8 +218,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 	if resp == nil {
 		return ChatResponse{}, ErrUpstream
 	}
-	_, finalRetryable := classifyUpstreamResult(resp.StatusCode, nil)
-	if finalRetryable && len(candidates) > 1 {
+	if classifyUpstreamResult(resp.StatusCode, nil).CountsAsChannelFailure() && len(candidates) > 1 {
 		a.logUsage(ctx, requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", elapsedMs(start, a.now()), clientIP, "error", fmt.Sprintf("upstream_%d", resp.StatusCode))
 		return ChatResponse{}, ErrUpstream
 	}
@@ -252,7 +250,7 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		if reason, failure := classifyUpstreamResult(resp.StatusCode, nil); failure && !healthRecorded {
+		if reason := classifyUpstreamResult(resp.StatusCode, nil); reason.CountsAsChannelFailure() && !healthRecorded {
 			a.recordChannelHealth(ctx, candidate.ChannelID, false, reason)
 		}
 		a.logUsage(ctx, requestID, auth, &candidate.ChannelID, candidate.UpstreamModel, req.Model, nil, "0.000000", "", "", durationMs, clientIP, "error", fmt.Sprintf("upstream_%d", resp.StatusCode))
@@ -307,31 +305,33 @@ func (a *Service) ChatCompletions(ctx context.Context, auth *accounts.AuthContex
 	return ChatResponse{Status: http.StatusOK, Body: a.adapter.RewriteResponse(responseBody, req.Model), Usage: usage}, nil
 }
 
-// classifyUpstreamResult decides whether an upstream outcome should count as a
-// channel failure. Only transport errors, upstream 429/401/403/402 and 5xx are
-// penalised; other client errors (400/404/...) are passed through without
-// tripping the breaker, so a bad caller cannot open a healthy channel.
-func classifyUpstreamResult(statusCode int, err error) (catalog.FailureReason, bool) {
+// classifyUpstreamResult maps an upstream outcome to a channel failure reason,
+// or the zero value when the outcome must not count against the channel. Only
+// transport errors, upstream 429/401/403/402 and 5xx are penalised; other client
+// errors (400/404/...) pass through without tripping the breaker, so a bad
+// caller cannot open a healthy channel. Callers use
+// FailureReason.CountsAsChannelFailure as the single decision point.
+func classifyUpstreamResult(statusCode int, err error) catalog.FailureReason {
 	if err != nil {
 		if errors.Is(err, context.DeadlineExceeded) {
-			return catalog.FailureUpstreamTimeout, true
+			return catalog.FailureUpstreamTimeout
 		}
-		return catalog.FailureUpstreamUnreachable, true
+		return catalog.FailureUpstreamUnreachable
 	}
 	switch statusCode {
 	case http.StatusTooManyRequests:
-		return catalog.FailureUpstream429, true
+		return catalog.FailureUpstream429
 	case http.StatusUnauthorized:
-		return catalog.FailureUpstream401, true
+		return catalog.FailureUpstream401
 	case http.StatusForbidden:
-		return catalog.FailureUpstream403, true
+		return catalog.FailureUpstream403
 	case http.StatusPaymentRequired:
-		return catalog.FailureUpstream402, true
+		return catalog.FailureUpstream402
 	}
 	if statusCode >= 500 && statusCode <= 599 {
-		return catalog.FailureUpstream5xx, true
+		return catalog.FailureUpstream5xx
 	}
-	return "", false
+	return ""
 }
 
 // recordChannelHealth drives the circuit breaker state machine. It is

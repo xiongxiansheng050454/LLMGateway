@@ -69,13 +69,17 @@ func TestBreakerWindowOpensOnlyAfterMinimumSamplesAndIntegerThreshold(t *testing
 	}
 }
 
-func TestCallerErrorsDoNotCountAsChannelFailures(t *testing.T) {
-	for _, reason := range []FailureReason{FailureCaller400, FailureCaller404, FailureCaller422, FailureClientCanceled} {
-		if reason.CountsAsChannelFailure() {
-			t.Fatalf("%s counted as channel failure", reason)
-		}
+func TestOnlyUpstreamFailuresCountAsChannelFailures(t *testing.T) {
+	if FailureReason("").CountsAsChannelFailure() {
+		t.Fatal("zero reason must not count as a channel failure")
 	}
-	if !FailureUpstreamTimeout.CountsAsChannelFailure() {
-		t.Fatal("timeout must count")
+	for _, reason := range []FailureReason{
+		FailureUpstreamUnreachable, FailureUpstreamTimeout, FailureUpstreamProtocol,
+		FailureUpstream401, FailureUpstream402, FailureUpstream403,
+		FailureUpstream429, FailureUpstream5xx,
+	} {
+		if !reason.CountsAsChannelFailure() {
+			t.Fatalf("%s must count as a channel failure", reason)
+		}
 	}
 }

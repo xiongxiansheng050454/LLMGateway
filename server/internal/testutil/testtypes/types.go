@@ -42,10 +42,6 @@ const (
 	FailureUpstream5xx         = catalog.FailureUpstream5xx
 	FailureUpstreamProtocol    = catalog.FailureUpstreamProtocol
 	FailureUpstreamTimeout     = catalog.FailureUpstreamTimeout
-	FailureCaller400           = catalog.FailureCaller400
-	FailureCaller404           = catalog.FailureCaller404
-	FailureCaller422           = catalog.FailureCaller422
-	FailureClientCanceled      = catalog.FailureClientCanceled
 	MaxRateLimitWindowSeconds  = ratelimit.MaxRateLimitWindowSeconds
 	QuotaScopeUser             = quota.QuotaScopeUser
 	QuotaScopeAPIKey           = quota.QuotaScopeAPIKey
