@@ -17,6 +17,13 @@ func TestLoadDefaults(t *testing.T) {
 	t.Setenv("QUOTA_REAPER_INTERVAL_SECONDS", "")
 	t.Setenv("QUOTA_REAPER_BATCH_SIZE", "")
 	t.Setenv("CHANNEL_MIN_ROUTE_BALANCE", "")
+	t.Setenv(EnvChannelBreakerFailureThreshold, "")
+	t.Setenv(EnvChannelBreakerCooldownSeconds, "")
+	t.Setenv(EnvChannelBreakerWindowSeconds, "")
+	t.Setenv(EnvChannelBreakerMinimumSamples, "")
+	t.Setenv(EnvChannelBreakerErrorRatePercent, "")
+	t.Setenv(EnvChannelBreakerTimeoutRatePercent, "")
+	t.Setenv(EnvChannelBreakerBucketRetentionSeconds, "")
 
 	cfg := Load()
 	if cfg.Addr != ":8080" {
@@ -34,6 +41,9 @@ func TestLoadDefaults(t *testing.T) {
 	if cfg.UpstreamTimeoutSeconds != 60 || cfg.UpstreamMaxAttempts != 3 || cfg.QuotaDefaultMaxTokens != 4096 || cfg.QuotaReservationTTLSeconds != 120 || cfg.QuotaReaperIntervalSeconds != 30 || cfg.QuotaReaperBatchSize != 100 || cfg.ChannelMinRouteBalance != "0.000000" {
 		t.Fatalf("quota defaults = %+v", cfg)
 	}
+	if cfg.ChannelBreakerFailureThreshold != 5 || cfg.ChannelBreakerCooldownSeconds != 30 || cfg.ChannelBreakerWindowSeconds != 60 || cfg.ChannelBreakerMinimumSamples != 10 || cfg.ChannelBreakerErrorRatePercent != 50 || cfg.ChannelBreakerTimeoutRatePercent != 50 || cfg.ChannelBreakerBucketRetentionSeconds != 600 {
+		t.Fatalf("breaker defaults = %+v", cfg)
+	}
 }
 
 func TestLoadOverrides(t *testing.T) {
@@ -49,6 +59,13 @@ func TestLoadOverrides(t *testing.T) {
 	t.Setenv("QUOTA_REAPER_INTERVAL_SECONDS", "15")
 	t.Setenv("QUOTA_REAPER_BATCH_SIZE", "50")
 	t.Setenv("CHANNEL_MIN_ROUTE_BALANCE", "2.5")
+	t.Setenv(EnvChannelBreakerFailureThreshold, "9")
+	t.Setenv(EnvChannelBreakerCooldownSeconds, "45")
+	t.Setenv(EnvChannelBreakerWindowSeconds, "120")
+	t.Setenv(EnvChannelBreakerMinimumSamples, "25")
+	t.Setenv(EnvChannelBreakerErrorRatePercent, "80")
+	t.Setenv(EnvChannelBreakerTimeoutRatePercent, "70")
+	t.Setenv(EnvChannelBreakerBucketRetentionSeconds, "900")
 
 	cfg := Load()
 	if cfg.Addr != ":9999" {
@@ -65,6 +82,17 @@ func TestLoadOverrides(t *testing.T) {
 	}
 	if cfg.UpstreamTimeoutSeconds != 90 || cfg.UpstreamMaxAttempts != 5 || cfg.QuotaDefaultMaxTokens != 8192 || cfg.QuotaReservationTTLSeconds != 180 || cfg.QuotaReaperIntervalSeconds != 15 || cfg.QuotaReaperBatchSize != 50 || cfg.ChannelMinRouteBalance != "2.500000" {
 		t.Fatalf("quota overrides = %+v", cfg)
+	}
+	if cfg.ChannelBreakerFailureThreshold != 9 || cfg.ChannelBreakerCooldownSeconds != 45 || cfg.ChannelBreakerWindowSeconds != 120 || cfg.ChannelBreakerMinimumSamples != 25 || cfg.ChannelBreakerErrorRatePercent != 80 || cfg.ChannelBreakerTimeoutRatePercent != 70 || cfg.ChannelBreakerBucketRetentionSeconds != 900 {
+		t.Fatalf("breaker overrides = %+v", cfg)
+	}
+}
+
+func TestBreakerPercentRejectsOutOfRange(t *testing.T) {
+	t.Setenv(EnvChannelBreakerErrorRatePercent, "150")
+	t.Setenv(EnvChannelBreakerTimeoutRatePercent, "0")
+	if cfg := Load(); cfg.ChannelBreakerErrorRatePercent != 50 || cfg.ChannelBreakerTimeoutRatePercent != 50 {
+		t.Fatalf("percent clamps = %d/%d, want 50/50", cfg.ChannelBreakerErrorRatePercent, cfg.ChannelBreakerTimeoutRatePercent)
 	}
 }
 

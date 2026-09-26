@@ -29,6 +29,8 @@ export type ChannelTestItem = components['schemas']['ChannelTestItem']
 export type RemoteModel = components['schemas']['RemoteModel']
 export type RemoteModelsResult = { ok: boolean; models?: RemoteModel[]; error?: string }
 export type Health = components['schemas']['Health']
+export type ChannelBreakerConfig = components['schemas']['ChannelBreakerConfig']
+export type ChannelBreakerConfigInput = components['schemas']['ChannelBreakerConfigInput']
 
 export type CatalogChannel = components['schemas']['CatalogChannel']
 export type CatalogModel = components['schemas']['CatalogModel']

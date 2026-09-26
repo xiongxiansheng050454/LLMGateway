@@ -247,8 +247,8 @@ func (s *Store) GetPricing(ctx context.Context, channelID int, modelName string)
 
 func (s *Store) RouteCandidates(ctx context.Context, modelName string, cooldownSeconds int) (domain.ListResponse[domain.RouteCandidate], error) {
 	rows, err := s.queries.ListRouteCandidates(ctx, sqlc.ListRouteCandidatesParams{
-		ModelName:       modelName,
-		CooldownSeconds: int32(cooldownSeconds),
+		ModelName:              modelName,
+		DefaultCooldownSeconds: int32(cooldownSeconds),
 	})
 	if err != nil {
 		return domain.ListResponse[domain.RouteCandidate]{}, mapError(err)

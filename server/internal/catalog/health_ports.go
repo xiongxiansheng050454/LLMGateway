@@ -14,4 +14,12 @@ type HealthPort interface {
 	// GetChannelHealthRow returns the stored row and whether it exists.
 	GetChannelHealthRow(ctx context.Context, channelID int) (ChannelHealth, bool, error)
 	AcquireChannelProbe(ctx context.Context, channelID int, lease time.Duration) (bool, error)
+
+	// GetChannelBreakerConfigRow returns the per-channel override and whether it
+	// exists; a missing row means the channel inherits the global defaults.
+	GetChannelBreakerConfigRow(ctx context.Context, channelID int) (ChannelBreakerConfig, bool, error)
+	ListChannelBreakerConfigRows(ctx context.Context) (map[int]ChannelBreakerConfig, error)
+	// DeleteStaleChannelHealthBuckets drops buckets older than before and
+	// returns the number removed. Callers size before from the largest window.
+	DeleteStaleChannelHealthBuckets(ctx context.Context, before time.Time) (int, error)
 }

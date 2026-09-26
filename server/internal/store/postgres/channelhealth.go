@@ -55,6 +55,74 @@ func (s *Store) AcquireChannelProbe(ctx context.Context, channelID int, lease ti
 	return result.RowsAffected() == 1, nil
 }
 
+func (s *Store) GetChannelBreakerConfigRow(ctx context.Context, channelID int) (domain.ChannelBreakerConfig, bool, error) {
+	row, err := s.queries.GetChannelBreakerConfig(ctx, int64(channelID))
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return domain.ChannelBreakerConfig{}, false, nil
+		}
+		return domain.ChannelBreakerConfig{}, false, mapError(err)
+	}
+	return channelBreakerConfig(row.WindowSeconds, row.MinimumSamples, row.ErrorRatePercent, row.TimeoutRatePercent, row.CooldownSeconds), true, nil
+}
+
+func (s *Store) ListChannelBreakerConfigRows(ctx context.Context) (map[int]domain.ChannelBreakerConfig, error) {
+	rows, err := s.queries.ListChannelBreakerConfigs(ctx)
+	if err != nil {
+		return nil, mapError(err)
+	}
+	result := make(map[int]domain.ChannelBreakerConfig, len(rows))
+	for _, row := range rows {
+		result[int(row.ChannelID)] = channelBreakerConfig(row.WindowSeconds, row.MinimumSamples, row.ErrorRatePercent, row.TimeoutRatePercent, row.CooldownSeconds)
+	}
+	return result, nil
+}
+
+func (s *Store) DeleteStaleChannelHealthBuckets(ctx context.Context, before time.Time) (int, error) {
+	affected, err := s.queries.DeleteStaleChannelHealthBuckets(ctx, pgtype.Timestamptz{Time: before.UTC(), Valid: true})
+	if err != nil {
+		return 0, mapError(err)
+	}
+	return int(affected), nil
+}
+
+func (t *Tx) UpsertChannelHealthBucket(channelID int, bucketStart time.Time, requests, errors, timeouts int64) error {
+	return mapError(t.queries.UpsertChannelHealthBucket(t.ctx, sqlc.UpsertChannelHealthBucketParams{
+		ChannelID:   int64(channelID),
+		BucketStart: pgtype.Timestamptz{Time: bucketStart.UTC(), Valid: true},
+		Requests:    requests,
+		Errors:      errors,
+		Timeouts:    timeouts,
+	}))
+}
+
+func (t *Tx) GetChannelHealthWindow(channelID int, since time.Time) (domain.ChannelHealthWindow, error) {
+	row, err := t.queries.SumChannelHealthWindow(t.ctx, sqlc.SumChannelHealthWindowParams{
+		ChannelID: int64(channelID),
+		Since:     pgtype.Timestamptz{Time: since.UTC(), Valid: true},
+	})
+	if err != nil {
+		return domain.ChannelHealthWindow{}, mapError(err)
+	}
+	return domain.ChannelHealthWindow{Requests: row.Requests, Errors: row.Errors, Timeouts: row.Timeouts}, nil
+}
+
+func (t *Tx) UpsertChannelBreakerConfig(channelID int, cfg domain.ChannelBreakerConfig) error {
+	return mapError(t.queries.UpsertChannelBreakerConfig(t.ctx, sqlc.UpsertChannelBreakerConfigParams{
+		ChannelID:          int64(channelID),
+		WindowSeconds:      int32(cfg.WindowSeconds),
+		MinimumSamples:     int32(cfg.MinimumSamples),
+		ErrorRatePercent:   int32(cfg.ErrorRatePercent),
+		TimeoutRatePercent: int32(cfg.TimeoutRatePercent),
+		CooldownSeconds:    int32(cfg.Cooldown.Seconds()),
+	}))
+}
+
+func (t *Tx) DeleteChannelBreakerConfig(channelID int) error {
+	_, err := t.queries.DeleteChannelBreakerConfig(t.ctx, int64(channelID))
+	return mapError(err)
+}
+
 func (t *Tx) EnsureChannelHealth(channelID int) error {
 	return mapError(t.queries.EnsureChannelHealth(t.ctx, int64(channelID)))
 }
@@ -96,6 +164,18 @@ func (t *Tx) DeleteChannelHealth(channelID int) error {
 		}
 	}
 	return nil
+}
+
+// channelBreakerConfig maps a per-channel override row. FailureThreshold has no
+// column, so it stays zero and the catalog layer inherits the global default.
+func channelBreakerConfig(windowSeconds, minimumSamples, errorRatePercent, timeoutRatePercent, cooldownSeconds int32) domain.ChannelBreakerConfig {
+	return domain.ChannelBreakerConfig{
+		Cooldown:           time.Duration(cooldownSeconds) * time.Second,
+		WindowSeconds:      int(windowSeconds),
+		MinimumSamples:     int(minimumSamples),
+		ErrorRatePercent:   int(errorRatePercent),
+		TimeoutRatePercent: int(timeoutRatePercent),
+	}
 }
 
 func channelHealthFromRow(row sqlc.ChannelHealth) domain.ChannelHealth {

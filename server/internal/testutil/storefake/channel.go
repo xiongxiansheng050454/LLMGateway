@@ -252,14 +252,18 @@ func (s *Store) RouteCandidates(_ context.Context, modelName string, cooldownSec
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	cfg := s.breaker
-	cfg.Cooldown = time.Duration(cooldownSeconds) * time.Second
+	base := s.breaker
+	base.Cooldown = time.Duration(cooldownSeconds) * time.Second
 
 	candidates := []domain.RouteCandidate{}
 	for channelID, models := range s.models {
 		channel := s.channels[channelID]
 		if channel == nil || channel.Status != 1 {
 			continue
+		}
+		cfg := base
+		if override, ok := s.breakerConfigs[channelID]; ok {
+			cfg = domain.ResolveChannelBreakerConfig(base, &override)
 		}
 		// Exclude open (tripped) channels; a missing health row means closed and
 		// a cooled-down open channel is treated as half-open.

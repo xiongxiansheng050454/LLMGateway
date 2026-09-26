@@ -44,3 +44,24 @@ func (a *Server) channelHealthList(r *http.Request) httpcommon.AdminResult {
 	}
 	return httpcommon.Result(a.ListChannelHealth(r.Context()))
 }
+
+func (a *Server) channelBreakerConfig(r *http.Request) httpcommon.AdminResult {
+	id, result := parseID(r.PathValue("id"), "channel")
+	if result.Status != 0 {
+		return result
+	}
+	switch r.Method {
+	case http.MethodGet:
+		return httpcommon.Result(a.GetChannelBreakerConfig(r.Context(), id))
+	case http.MethodPut:
+		var req ChannelBreakerConfigInput
+		if err := httpcommon.ReadJSON(r, &req); err != nil {
+			return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
+		}
+		return httpcommon.Result(a.UpdateChannelBreakerConfig(r.Context(), id, req))
+	case http.MethodDelete:
+		return httpcommon.NoBody(a.DeleteChannelBreakerConfig(r.Context(), id))
+	default:
+		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
+	}
+}

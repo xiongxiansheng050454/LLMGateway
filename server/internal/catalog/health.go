@@ -59,11 +59,49 @@ func DefaultChannelBreakerConfig() ChannelBreakerConfig {
 
 type ChannelHealthWindow struct{ Requests, Errors, Timeouts int64 }
 
+// channelHealthBucketSeconds is the fixed width of channel_health_buckets rows.
+// Fixed buckets let the window query sum whole rows without per-request
+// timestamp alignment and keep cleanup cheap.
+const channelHealthBucketSeconds = 10
+
+// ChannelHealthBucketStart aligns t to the channel health bucket grid in UTC.
+func ChannelHealthBucketStart(t time.Time) time.Time {
+	return t.UTC().Truncate(channelHealthBucketSeconds * time.Second)
+}
+
 func ShouldOpenChannelBreaker(window ChannelHealthWindow, cfg ChannelBreakerConfig) bool {
 	if window.Requests < int64(cfg.MinimumSamples) || window.Requests <= 0 {
 		return false
 	}
 	return (cfg.ErrorRatePercent > 0 && window.Errors*100 >= window.Requests*int64(cfg.ErrorRatePercent)) || (cfg.TimeoutRatePercent > 0 && window.Timeouts*100 >= window.Requests*int64(cfg.TimeoutRatePercent))
+}
+
+// ResolveChannelBreakerConfig overlays a per-channel override on the global
+// defaults. A nil override or a non-positive field means "inherit".
+func ResolveChannelBreakerConfig(base ChannelBreakerConfig, override *ChannelBreakerConfig) ChannelBreakerConfig {
+	if override == nil {
+		return base
+	}
+	resolved := base
+	if override.FailureThreshold > 0 {
+		resolved.FailureThreshold = override.FailureThreshold
+	}
+	if override.Cooldown > 0 {
+		resolved.Cooldown = override.Cooldown
+	}
+	if override.WindowSeconds > 0 {
+		resolved.WindowSeconds = override.WindowSeconds
+	}
+	if override.MinimumSamples > 0 {
+		resolved.MinimumSamples = override.MinimumSamples
+	}
+	if override.ErrorRatePercent > 0 {
+		resolved.ErrorRatePercent = override.ErrorRatePercent
+	}
+	if override.TimeoutRatePercent > 0 {
+		resolved.TimeoutRatePercent = override.TimeoutRatePercent
+	}
+	return resolved
 }
 
 // NewChannelHealth returns the default closed state for a channel.
@@ -100,14 +138,20 @@ func ApplyChannelSuccess(current ChannelHealth, now time.Time) ChannelHealth {
 	return current
 }
 
-// ApplyChannelFailure records a failed attempt and may trip the breaker.
-func ApplyChannelFailure(current ChannelHealth, reason FailureReason, now time.Time, cfg ChannelBreakerConfig) ChannelHealth {
+// ApplyChannelFailure records a failed attempt and may trip the breaker. It
+// opens on a deterministic failure, a half-open probe failure, a window
+// error/timeout rate above threshold (when the window has enough samples), or
+// the consecutive-failure threshold as a low-traffic fallback. The three
+// judgements are a union so partial degradation and burst failures are both
+// caught.
+func ApplyChannelFailure(current ChannelHealth, reason FailureReason, window ChannelHealthWindow, now time.Time, cfg ChannelBreakerConfig) ChannelHealth {
 	current.FailureCount++
 	current.ConsecutiveFailures++
 	current.UpdatedAt = now.UTC().Format(time.RFC3339)
 
 	shouldOpen := reason.IsDeterministic() ||
 		current.State == HealthHalfOpen ||
+		ShouldOpenChannelBreaker(window, cfg) ||
 		current.ConsecutiveFailures >= cfg.FailureThreshold
 	if shouldOpen {
 		current.State = HealthOpen

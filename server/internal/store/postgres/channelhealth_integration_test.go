@@ -210,6 +210,48 @@ func runHealthScenario(t *testing.T, cat *catalog.Server, clock *time.Time) heal
 	return snapshot
 }
 
+func TestPGChannelHealthWindowAndConfig(t *testing.T) {
+	st := testStore(t)
+	cat := testCatalog(t, st)
+	ctx := context.Background()
+	channelID := createHealthTestChannel(t, cat)
+
+	override := catalog.ChannelBreakerConfig{Cooldown: 5 * time.Second, WindowSeconds: 60, MinimumSamples: 4, ErrorRatePercent: 50, TimeoutRatePercent: 50}
+	if err := st.CatalogTx().InTx(ctx, func(tx catalog.Tx) error {
+		return tx.UpsertChannelBreakerConfig(channelID, override)
+	}); err != nil {
+		t.Fatalf("UpsertChannelBreakerConfig: %v", err)
+	}
+	row, found, err := st.GetChannelBreakerConfigRow(ctx, channelID)
+	if err != nil || !found {
+		t.Fatalf("GetChannelBreakerConfigRow found=%v err=%v", found, err)
+	}
+	if row.Cooldown != override.Cooldown || row.WindowSeconds != override.WindowSeconds || row.ErrorRatePercent != override.ErrorRatePercent {
+		t.Fatalf("breaker config = %+v", row)
+	}
+
+	bucket := catalog.ChannelHealthBucketStart(st.now().UTC())
+	var window catalog.ChannelHealthWindow
+	if err := st.CatalogTx().InTx(ctx, func(tx catalog.Tx) error {
+		if err := tx.UpsertChannelHealthBucket(channelID, bucket, 1, 1, 0); err != nil {
+			return err
+		}
+		var sumErr error
+		window, sumErr = tx.GetChannelHealthWindow(channelID, bucket)
+		return sumErr
+	}); err != nil {
+		t.Fatalf("bucket tx: %v", err)
+	}
+	if window.Requests != 1 || window.Errors != 1 || window.Timeouts != 0 {
+		t.Fatalf("window = %+v, want 1/1/0", window)
+	}
+
+	removed, err := st.DeleteStaleChannelHealthBuckets(ctx, st.now().UTC().Add(time.Hour))
+	if err != nil || removed != 1 {
+		t.Fatalf("DeleteStaleChannelHealthBuckets removed=%d err=%v", removed, err)
+	}
+}
+
 func TestPGChannelHealthScenario(t *testing.T) {
 	fixed := time.Date(2026, 9, 16, 12, 0, 0, 0, time.UTC)
 	pg := testStore(t)

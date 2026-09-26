@@ -18,13 +18,18 @@ func newHealthTestStore() (*Store, *time.Time) {
 }
 
 func newHealthCatalog(st *Store, clock *time.Time) *catalog.Server {
+	return newHealthCatalogWithBreaker(st, clock, catalog.ChannelBreakerConfig{})
+}
+
+func newHealthCatalogWithBreaker(st *Store, clock *time.Time, breaker catalog.ChannelBreakerConfig) *catalog.Server {
 	return catalog.New(catalog.Deps{
-		Store:  st,
-		Health: st,
-		Tx:     st.CatalogTx(),
-		Cipher: testCipher(),
-		Client: &http.Client{},
-		Now:    func() time.Time { return *clock },
+		Store:   st,
+		Health:  st,
+		Tx:      st.CatalogTx(),
+		Cipher:  testCipher(),
+		Client:  &http.Client{},
+		Now:     func() time.Time { return *clock },
+		Breaker: breaker,
 	})
 }
 
@@ -172,6 +177,111 @@ func TestChannelProbeLeaseAllowsOnlyOneConcurrentProbe(t *testing.T) {
 	second, err := st.AcquireChannelProbe(context.Background(), 1, time.Minute)
 	if err != nil || second {
 		t.Fatalf("second probe = %v,%v, want denied", second, err)
+	}
+}
+
+func TestWindowErrorRateOpensDespiteInterleavedSuccesses(t *testing.T) {
+	st, clock := newHealthTestStore()
+	cat := newHealthCatalogWithBreaker(st, clock, catalog.ChannelBreakerConfig{
+		FailureThreshold:   99,
+		Cooldown:           30 * time.Second,
+		WindowSeconds:      60,
+		MinimumSamples:     4,
+		ErrorRatePercent:   50,
+		TimeoutRatePercent: 50,
+	})
+	// Interleaved successes keep resetting the consecutive counter, but the
+	// window error rate crosses the threshold.
+	for i := 0; i < 2; i++ {
+		if _, err := cat.RecordChannelFailure(context.Background(), 1, domain.FailureUpstream5xx); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := cat.RecordChannelSuccess(context.Background(), 1); err != nil {
+			t.Fatal(err)
+		}
+	}
+	health, err := cat.RecordChannelFailure(context.Background(), 1, domain.FailureUpstream5xx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.State != domain.HealthOpen {
+		t.Fatalf("state = %s, want open via window error rate", health.State)
+	}
+}
+
+func TestPerChannelBreakerConfigOverridesCooldown(t *testing.T) {
+	st, clock := newHealthTestStore()
+	st.breakerConfigs[1] = catalog.ChannelBreakerConfig{Cooldown: 5 * time.Second}
+	cat := newHealthCatalog(st, clock)
+	for i := 0; i < 5; i++ {
+		if _, err := cat.RecordChannelFailure(context.Background(), 1, domain.FailureUpstream5xx); err != nil {
+			t.Fatal(err)
+		}
+	}
+	*clock = clock.Add(5 * time.Second)
+	health, err := cat.GetChannelHealth(context.Background(), 1)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if health.State != domain.HealthHalfOpen {
+		t.Fatalf("state = %s, want half-open after per-channel cooldown", health.State)
+	}
+}
+
+func TestChannelBreakerConfigAdminLifecycle(t *testing.T) {
+	st, clock := newHealthTestStore()
+	cat := newHealthCatalog(st, clock)
+	created, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "c", BaseURL: "https://c.test", APIKey: "sk", Status: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := created.ID
+
+	got, err := cat.GetChannelBreakerConfig(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.WindowSeconds != 60 || got.CooldownSeconds != 30 || got.ErrorRatePercent != 50 {
+		t.Fatalf("defaults = %+v, want global defaults", got)
+	}
+
+	updated, err := cat.UpdateChannelBreakerConfig(context.Background(), id, catalog.ChannelBreakerConfigInput{WindowSeconds: 120, MinimumSamples: 20, ErrorRatePercent: 30, TimeoutRatePercent: 40, CooldownSeconds: 15})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.WindowSeconds != 120 || updated.CooldownSeconds != 15 || updated.MinimumSamples != 20 {
+		t.Fatalf("updated = %+v", updated)
+	}
+	if _, err := cat.UpdateChannelBreakerConfig(context.Background(), id, catalog.ChannelBreakerConfigInput{WindowSeconds: 0, MinimumSamples: 1, ErrorRatePercent: 50, TimeoutRatePercent: 50, CooldownSeconds: 10}); err == nil {
+		t.Fatal("expected validation error for non-positive window")
+	}
+
+	if err := cat.DeleteChannelBreakerConfig(context.Background(), id); err != nil {
+		t.Fatal(err)
+	}
+	back, _ := cat.GetChannelBreakerConfig(context.Background(), id)
+	if back.WindowSeconds != 60 || back.CooldownSeconds != 30 {
+		t.Fatalf("after delete = %+v, want global defaults", back)
+	}
+}
+
+func TestReapChannelHealthBuckets(t *testing.T) {
+	st, clock := newHealthTestStore()
+	cat := newHealthCatalog(st, clock)
+	if _, err := cat.RecordChannelFailure(context.Background(), 1, domain.FailureUpstream5xx); err != nil {
+		t.Fatal(err)
+	}
+	// Advance well past the retention window, record again, then reap.
+	*clock = clock.Add(20 * time.Minute)
+	if _, err := cat.RecordChannelSuccess(context.Background(), 1); err != nil {
+		t.Fatal(err)
+	}
+	removed, err := cat.ReapChannelHealthBuckets(context.Background(), 10*time.Minute)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if removed != 1 {
+		t.Fatalf("removed = %d, want 1 stale bucket", removed)
 	}
 }
 

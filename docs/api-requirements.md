@@ -293,6 +293,45 @@ page_size=20
 - `balance` 表示设置绝对值。
 - `delta` 表示增减值，可为负数。
 
+### GET /admin/channels/:id/breaker
+
+读取渠道熔断配置。返回全局默认值与渠道覆盖合并后的生效值：
+
+```json
+{
+  "channel_id": 1,
+  "window_seconds": 60,
+  "minimum_samples": 10,
+  "error_rate_percent": 50,
+  "timeout_rate_percent": 50,
+  "cooldown_seconds": 30
+}
+```
+
+### PUT /admin/channels/:id/breaker
+
+写入渠道级熔断覆盖，覆盖全局默认值。
+
+```json
+{
+  "window_seconds": 60,
+  "minimum_samples": 10,
+  "error_rate_percent": 50,
+  "timeout_rate_percent": 50,
+  "cooldown_seconds": 30
+}
+```
+
+要求：
+
+- `window_seconds`、`minimum_samples`、`cooldown_seconds` 必须为正整数。
+- `error_rate_percent`、`timeout_rate_percent` 取值 1–100。
+- 连续失败阈值（`CHANNEL_BREAKER_FAILURE_THRESHOLD`）不可按渠道覆盖。
+
+### DELETE /admin/channels/:id/breaker
+
+删除渠道覆盖，恢复继承全局默认值。
+
 ### POST /admin/channels/:id/test
 
 请求体：

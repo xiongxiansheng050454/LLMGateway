@@ -1,6 +1,9 @@
 package catalog
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Port is the catalog persistence primitive surface. It exposes only CRUD and
 // query primitives: business rules, defaults, encryption and orchestration live
@@ -41,6 +44,15 @@ type Tx interface {
 	GetChannelHealthForUpdate(channelID int) (ChannelHealth, error)
 	UpdateChannelHealth(health ChannelHealth) (bool, error)
 	DeleteChannelHealth(channelID int) error
+
+	// UpsertChannelHealthBucket adds one attempt to the fixed-width bucket that
+	// contains bucketStart. GetChannelHealthWindow sums the buckets at or after
+	// since, so both must run in the caller's transaction to stay consistent.
+	UpsertChannelHealthBucket(channelID int, bucketStart time.Time, requests, errors, timeouts int64) error
+	GetChannelHealthWindow(channelID int, since time.Time) (ChannelHealthWindow, error)
+
+	UpsertChannelBreakerConfig(channelID int, cfg ChannelBreakerConfig) error
+	DeleteChannelBreakerConfig(channelID int) error
 
 	LockChannel(channelID int) error
 	GetChannelBalanceText(channelID int) (string, error)

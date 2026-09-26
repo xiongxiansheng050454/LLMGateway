@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"encoding/json"
 	"math/rand"
 	"net/http"
@@ -62,6 +63,7 @@ type options struct {
 	upstreamMaxAttempts   int
 	minimumRouteBalance   string
 	cipher                *crypto.Cipher
+	breaker               catalog.ChannelBreakerConfig
 }
 
 func WithQuotaConfig(defaultMaxTokens int, reservationTTL time.Duration) Option {
@@ -126,6 +128,14 @@ func WithCipher(cipher *crypto.Cipher) Option {
 	}
 }
 
+// WithChannelBreakerConfig sets the global channel breaker defaults. Per-channel
+// overrides in channel_breaker_configs take precedence over these values.
+func WithChannelBreakerConfig(breaker catalog.ChannelBreakerConfig) Option {
+	return func(o *options) {
+		o.breaker = breaker
+	}
+}
+
 // NewServer builds the HTTP entry points around an injected store. Route
 // registration is done by cmd/llmgateway/router.go.
 func NewServer(st Port, opts ...Option) *Server {
@@ -142,12 +152,13 @@ func NewServer(st Port, opts ...Option) *Server {
 	}
 	client := &http.Client{Timeout: settings.upstreamTimeout}
 	catalogServer := catalog.New(catalog.Deps{
-		Store:  st,
-		Health: st,
-		Tx:     st.CatalogTx(),
-		Cipher: settings.cipher,
-		Client: client,
-		Now:    settings.now,
+		Store:   st,
+		Health:  st,
+		Tx:      st.CatalogTx(),
+		Cipher:  settings.cipher,
+		Client:  client,
+		Now:     settings.now,
+		Breaker: settings.breaker,
 	})
 	quotaServer := quota.New(st, st.QuotaTx(), settings.now)
 	ratelimitServer := ratelimit.New(st, settings.now)
@@ -186,6 +197,12 @@ func (a *Server) Healthz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+// ReapChannelHealthBuckets prunes stale channel attempt buckets using the
+// catalog retention policy. It is called from the process background workers.
+func (a *Server) ReapChannelHealthBuckets(ctx context.Context, retention time.Duration) (int, error) {
+	return a.catalog.ReapChannelHealthBuckets(ctx, retention)
 }
 
 // Admin handles the /admin management API.

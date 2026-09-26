@@ -19,6 +19,18 @@ const (
 	EnvUpstreamMaxAttempts    = "UPSTREAM_MAX_ATTEMPTS"
 )
 
+// Channel breaker tuning. Thresholds are global defaults; per-channel overrides
+// live in channel_breaker_configs and are managed through the admin API.
+const (
+	EnvChannelBreakerFailureThreshold       = "CHANNEL_BREAKER_FAILURE_THRESHOLD"
+	EnvChannelBreakerCooldownSeconds        = "CHANNEL_BREAKER_COOLDOWN_SECONDS"
+	EnvChannelBreakerWindowSeconds          = "CHANNEL_BREAKER_WINDOW_SECONDS"
+	EnvChannelBreakerMinimumSamples         = "CHANNEL_BREAKER_MINIMUM_SAMPLES"
+	EnvChannelBreakerErrorRatePercent       = "CHANNEL_BREAKER_ERROR_RATE_PERCENT"
+	EnvChannelBreakerTimeoutRatePercent     = "CHANNEL_BREAKER_TIMEOUT_RATE_PERCENT"
+	EnvChannelBreakerBucketRetentionSeconds = "CHANNEL_BREAKER_BUCKET_RETENTION_SECONDS"
+)
+
 type Config struct {
 	Addr          string
 	DatabaseURL   string
@@ -35,6 +47,14 @@ type Config struct {
 	QuotaReaperIntervalSeconds int
 	QuotaReaperBatchSize       int
 	ChannelMinRouteBalance     string
+
+	ChannelBreakerFailureThreshold       int
+	ChannelBreakerCooldownSeconds        int
+	ChannelBreakerWindowSeconds          int
+	ChannelBreakerMinimumSamples         int
+	ChannelBreakerErrorRatePercent       int
+	ChannelBreakerTimeoutRatePercent     int
+	ChannelBreakerBucketRetentionSeconds int
 }
 
 func Load() Config {
@@ -60,7 +80,22 @@ func Load() Config {
 	cfg.QuotaReaperIntervalSeconds = parsePositiveInt(os.Getenv("QUOTA_REAPER_INTERVAL_SECONDS"), 30)
 	cfg.QuotaReaperBatchSize = parsePositiveInt(os.Getenv("QUOTA_REAPER_BATCH_SIZE"), 100)
 	cfg.ChannelMinRouteBalance = parseNonNegativeAmount(os.Getenv("CHANNEL_MIN_ROUTE_BALANCE"), "0.000000")
+	cfg.ChannelBreakerFailureThreshold = parsePositiveInt(os.Getenv(EnvChannelBreakerFailureThreshold), 5)
+	cfg.ChannelBreakerCooldownSeconds = parsePositiveInt(os.Getenv(EnvChannelBreakerCooldownSeconds), 30)
+	cfg.ChannelBreakerWindowSeconds = parsePositiveInt(os.Getenv(EnvChannelBreakerWindowSeconds), 60)
+	cfg.ChannelBreakerMinimumSamples = parsePositiveInt(os.Getenv(EnvChannelBreakerMinimumSamples), 10)
+	cfg.ChannelBreakerErrorRatePercent = parsePercent(os.Getenv(EnvChannelBreakerErrorRatePercent), 50)
+	cfg.ChannelBreakerTimeoutRatePercent = parsePercent(os.Getenv(EnvChannelBreakerTimeoutRatePercent), 50)
+	cfg.ChannelBreakerBucketRetentionSeconds = parsePositiveInt(os.Getenv(EnvChannelBreakerBucketRetentionSeconds), 600)
 	return cfg
+}
+
+func parsePercent(value string, fallback int) int {
+	parsed := parsePositiveInt(value, fallback)
+	if parsed > 100 {
+		return fallback
+	}
+	return parsed
 }
 
 func parsePositiveInt(value string, fallback int) int {

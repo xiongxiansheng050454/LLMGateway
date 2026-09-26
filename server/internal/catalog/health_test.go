@@ -11,12 +11,12 @@ func TestApplyChannelFailureOpensAtThreshold(t *testing.T) {
 	cfg := ChannelBreakerConfig{FailureThreshold: 3, Cooldown: 30 * time.Second}
 	health := NewChannelHealth(1)
 	for i := 1; i <= 2; i++ {
-		health = ApplyChannelFailure(health, FailureUpstream5xx, breakerTestNow, cfg)
+		health = ApplyChannelFailure(health, FailureUpstream5xx, ChannelHealthWindow{}, breakerTestNow, cfg)
 		if health.State != HealthClosed {
 			t.Fatalf("after %d failures state = %s, want closed", i, health.State)
 		}
 	}
-	health = ApplyChannelFailure(health, FailureUpstream5xx, breakerTestNow, cfg)
+	health = ApplyChannelFailure(health, FailureUpstream5xx, ChannelHealthWindow{}, breakerTestNow, cfg)
 	if health.State != HealthOpen || health.OpenedAt == nil {
 		t.Fatalf("health = %+v, want open with timestamp", health)
 	}
@@ -27,7 +27,7 @@ func TestApplyChannelFailureOpensAtThreshold(t *testing.T) {
 
 func TestDeterministicFailureOpensImmediately(t *testing.T) {
 	cfg := ChannelBreakerConfig{FailureThreshold: 5, Cooldown: 30 * time.Second}
-	if got := ApplyChannelFailure(NewChannelHealth(1), FailureUpstream401, breakerTestNow, cfg); got.State != HealthOpen {
+	if got := ApplyChannelFailure(NewChannelHealth(1), FailureUpstream401, ChannelHealthWindow{}, breakerTestNow, cfg); got.State != HealthOpen {
 		t.Fatalf("state = %s, want open", got.State)
 	}
 }
@@ -51,7 +51,7 @@ func TestHalfOpenSuccessClosesAndFailureReopens(t *testing.T) {
 	if got := ApplyChannelSuccess(halfOpen, breakerTestNow); got.State != HealthClosed || got.ConsecutiveFailures != 0 || got.OpenedAt != nil {
 		t.Fatalf("closed health = %+v", got)
 	}
-	if got := ApplyChannelFailure(halfOpen, FailureUpstream5xx, breakerTestNow, cfg); got.State != HealthOpen {
+	if got := ApplyChannelFailure(halfOpen, FailureUpstream5xx, ChannelHealthWindow{}, breakerTestNow, cfg); got.State != HealthOpen {
 		t.Fatalf("reopened state = %s", got.State)
 	}
 }
@@ -66,6 +66,43 @@ func TestBreakerWindowOpensOnlyAfterMinimumSamplesAndIntegerThreshold(t *testing
 	}
 	if !ShouldOpenChannelBreaker(ChannelHealthWindow{Requests: 4, Timeouts: 3}, cfg) {
 		t.Fatal("did not open at timeout threshold")
+	}
+}
+
+func TestWindowErrorRateOpensBreakerRegardlessOfOrder(t *testing.T) {
+	cfg := ChannelBreakerConfig{FailureThreshold: 99, Cooldown: 30 * time.Second, WindowSeconds: 60, MinimumSamples: 10, ErrorRatePercent: 50, TimeoutRatePercent: 50}
+	health := NewChannelHealth(1)
+	// Interleaved successes reset the consecutive counter, but the window error
+	// rate stays above threshold so the breaker must still open.
+	for i := 0; i < 5; i++ {
+		health = ApplyChannelSuccess(health, breakerTestNow)
+		health = ApplyChannelFailure(health, FailureUpstream5xx, ChannelHealthWindow{Requests: 10, Errors: 6}, breakerTestNow, cfg)
+	}
+	if health.State != HealthOpen {
+		t.Fatalf("state = %s, want open via window rate", health.State)
+	}
+}
+
+func TestConsecutiveFailureFallbackBelowMinimumSamples(t *testing.T) {
+	cfg := ChannelBreakerConfig{FailureThreshold: 3, Cooldown: 30 * time.Second, WindowSeconds: 60, MinimumSamples: 100, ErrorRatePercent: 50, TimeoutRatePercent: 50}
+	health := NewChannelHealth(1)
+	for i := 0; i < 3; i++ {
+		health = ApplyChannelFailure(health, FailureUpstream5xx, ChannelHealthWindow{Requests: 2, Errors: 2}, breakerTestNow, cfg)
+	}
+	if health.State != HealthOpen {
+		t.Fatalf("state = %s, want open via consecutive fallback", health.State)
+	}
+}
+
+func TestResolveChannelBreakerConfigOverrides(t *testing.T) {
+	base := DefaultChannelBreakerConfig()
+	override := ChannelBreakerConfig{WindowSeconds: 120, ErrorRatePercent: 20}
+	got := ResolveChannelBreakerConfig(base, &override)
+	if got.WindowSeconds != 120 || got.ErrorRatePercent != 20 {
+		t.Fatalf("override not applied: %+v", got)
+	}
+	if got.FailureThreshold != base.FailureThreshold || got.Cooldown != base.Cooldown || got.MinimumSamples != base.MinimumSamples || got.TimeoutRatePercent != base.TimeoutRatePercent {
+		t.Fatalf("unset fields must inherit defaults: %+v", got)
 	}
 }
 

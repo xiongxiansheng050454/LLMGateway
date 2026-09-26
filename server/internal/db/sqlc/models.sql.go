@@ -190,19 +190,24 @@ SELECT
 FROM channel_models cm
 JOIN channels c ON c.id = cm.channel_id
 LEFT JOIN channel_health h ON h.channel_id = c.id
+LEFT JOIN channel_breaker_configs cbc ON cbc.channel_id = c.id
 WHERE cm.model_name = $1 AND cm.enabled = true AND c.status = 1
   -- Exclude open channels, but treat them as half-open (allowed) once the
-  -- cooldown has elapsed; a missing health row means closed.
+  -- cooldown has elapsed; a missing health row means closed. The cooldown is
+  -- the per-channel override when set, otherwise the global default.
   AND NOT (
       COALESCE(h.state, 'closed') = 'open'
-      AND (h.opened_at IS NULL OR h.opened_at + ($2::int * interval '1 second') > now())
+      AND (
+          h.opened_at IS NULL
+          OR h.opened_at + (COALESCE(cbc.cooldown_seconds, $2::int) * interval '1 second') > now()
+      )
   )
 ORDER BY c.priority DESC, c.weight DESC, c.id
 `
 
 type ListRouteCandidatesParams struct {
-	ModelName       string `json:"model_name"`
-	CooldownSeconds int32  `json:"cooldown_seconds"`
+	ModelName              string `json:"model_name"`
+	DefaultCooldownSeconds int32  `json:"default_cooldown_seconds"`
 }
 
 type ListRouteCandidatesRow struct {
@@ -215,7 +220,7 @@ type ListRouteCandidatesRow struct {
 }
 
 func (q *Queries) ListRouteCandidates(ctx context.Context, arg ListRouteCandidatesParams) ([]ListRouteCandidatesRow, error) {
-	rows, err := q.db.Query(ctx, listRouteCandidates, arg.ModelName, arg.CooldownSeconds)
+	rows, err := q.db.Query(ctx, listRouteCandidates, arg.ModelName, arg.DefaultCooldownSeconds)
 	if err != nil {
 		return nil, err
 	}

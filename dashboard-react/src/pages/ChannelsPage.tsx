@@ -1,9 +1,9 @@
 import { useEffect, useState, type FormEvent } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
-  createChannel, createChannelModel, deleteChannel, deleteChannelModel,
-  listChannelHealth, listChannelModels, listChannels, loadRemoteModels,
-  testChannel, updateChannel, updateChannelBalance, updateChannelModel,
+  createChannel, createChannelModel, deleteChannel, deleteChannelBreakerConfig, deleteChannelModel,
+  getChannelBreakerConfig, listChannelHealth, listChannelModels, listChannels, loadRemoteModels,
+  testChannel, updateChannel, updateChannelBalance, updateChannelBreakerConfig, updateChannelModel,
   updateChannelStatus,
 } from '../api/catalog'
 import { AsyncState } from '../components/feedback/AsyncState'
@@ -18,6 +18,7 @@ export function ChannelsPage() {
   const health = useQuery({ queryKey: ['channel-health'], queryFn: listChannelHealth, staleTime: 30_000 })
   const [editor, setEditor] = useState<Editor | undefined>()
   const [selected, setSelected] = useState<Channel | null>(null)
+  const [breaker, setBreaker] = useState<Channel | null>(null)
   const [error, setError] = useState('')
   const rows = channels.data?.list || []
   const healthMap = new Map((health.data?.list || []).map(row => [row.channel_id, row]))
@@ -26,10 +27,28 @@ export function ChannelsPage() {
 
   return <>
     <AsyncState loading={channels.isLoading || health.isLoading} error={channels.error || health.error} hasData={Boolean(channels.data || health.data)} onRetry={() => { void refresh() }} />
-    <section className="panel"><div className="panel-head"><div><h3>渠道管理</h3><p className="muted">上游渠道 · 状态 / 权重 / 优先级 / 余额</p></div><div className="panel-actions"><button className="button ghost" onClick={() => void refresh()}>刷新</button><button className="button primary" onClick={() => setEditor(null)}>新建渠道</button></div></div>{error && <p className="error">{error}</p>}<div className="table-wrap"><table><thead><tr><th>ID</th><th>名称</th><th>Base URL</th><th>状态</th><th>权重/优先级</th><th>余额</th><th>模型</th><th>熔断</th><th>操作</th></tr></thead><tbody>{rows.map(channel => { const state = healthMap.get(channel.id)?.state || 'closed'; return <tr key={channel.id}><td className="mono">#{channel.id}</td><td><b>{channel.name}</b></td><td className="mono channel-url">{channel.base_url}</td><td>{channel.status === 1 ? '启用' : '停用'}</td><td className="mono">{channel.weight} / {channel.priority}</td><td className="mono">{channel.balance == null ? '不限' : `$${channel.balance}`}</td><td>{channel.model_count}</td><td>{state}</td><td className="table-actions"><button className="button ghost" onClick={() => setEditor(channel)}>编辑</button><button className="button ghost" onClick={() => setSelected(channel)}>映射</button><button className="button ghost" onClick={() => void action(() => updateChannelStatus(channel.id, { status: channel.status === 1 ? 0 : 1 }))}>切换状态</button><button className="button delete" onClick={() => { if (window.confirm(`确认删除渠道「${channel.name}」？`)) void action(() => deleteChannel(channel.id)) }}>删除</button></td></tr> })}</tbody></table>{!rows.length && <div className="empty">暂无渠道</div>}</div></section>
+    <section className="panel"><div className="panel-head"><div><h3>渠道管理</h3><p className="muted">上游渠道 · 状态 / 权重 / 优先级 / 余额</p></div><div className="panel-actions"><button className="button ghost" onClick={() => void refresh()}>刷新</button><button className="button primary" onClick={() => setEditor(null)}>新建渠道</button></div></div>{error && <p className="error">{error}</p>}<div className="table-wrap"><table><thead><tr><th>ID</th><th>名称</th><th>Base URL</th><th>状态</th><th>权重/优先级</th><th>余额</th><th>模型</th><th>熔断</th><th>操作</th></tr></thead><tbody>{rows.map(channel => { const state = healthMap.get(channel.id)?.state || 'closed'; return <tr key={channel.id}><td className="mono">#{channel.id}</td><td><b>{channel.name}</b></td><td className="mono channel-url">{channel.base_url}</td><td>{channel.status === 1 ? '启用' : '停用'}</td><td className="mono">{channel.weight} / {channel.priority}</td><td className="mono">{channel.balance == null ? '不限' : `$${channel.balance}`}</td><td>{channel.model_count}</td><td>{state}</td><td className="table-actions"><button className="button ghost" onClick={() => setEditor(channel)}>编辑</button><button className="button ghost" onClick={() => setSelected(channel)}>映射</button><button className="button ghost" onClick={() => void action(() => updateChannelStatus(channel.id, { status: channel.status === 1 ? 0 : 1 }))}>切换状态</button><button className="button ghost" onClick={() => setBreaker(channel)}>熔断</button><button className="button delete" onClick={() => { if (window.confirm(`确认删除渠道「${channel.name}」？`)) void action(() => deleteChannel(channel.id)) }}>删除</button></td></tr> })}</tbody></table>{!rows.length && <div className="empty">暂无渠道</div>}</div></section>
     {editor !== undefined && <ChannelEditor channel={editor} onClose={() => setEditor(undefined)} onSaved={() => { setEditor(undefined); void refresh() }} />}
     {selected && <Mappings channel={selected} onClose={() => setSelected(null)} onChanged={() => void client.invalidateQueries({ queryKey: ['channels'] })} />}
+    {breaker && <BreakerConfig channel={breaker} onClose={() => setBreaker(null)} />}
   </>
+}
+
+function BreakerConfig({ channel, onClose }: { channel: Channel; onClose: () => void }) {
+  const query = useQuery({ queryKey: ['channel-breaker', channel.id], queryFn: () => getChannelBreakerConfig(channel.id) })
+  return <Modal title={`熔断配置 · ${channel.name}`} submitText="保存" onClose={onClose} onSubmit={async event => {
+    const form = new FormData(event.currentTarget)
+    await updateChannelBreakerConfig(channel.id, {
+      window_seconds: Number(form.get('window_seconds')),
+      minimum_samples: Number(form.get('minimum_samples')),
+      error_rate_percent: Number(form.get('error_rate_percent')),
+      timeout_rate_percent: Number(form.get('timeout_rate_percent')),
+      cooldown_seconds: Number(form.get('cooldown_seconds')),
+    })
+    onClose()
+  }}>
+    {query.isLoading ? <div className="empty">加载中…</div> : <><div className="form-grid"><Field label="窗口秒数" name="window_seconds" type="number" defaultValue={query.data?.window_seconds ?? 60} required /><Field label="最小样本" name="minimum_samples" type="number" defaultValue={query.data?.minimum_samples ?? 10} required /><Field label="错误率(%)" name="error_rate_percent" type="number" defaultValue={query.data?.error_rate_percent ?? 50} required /><Field label="超时率(%)" name="timeout_rate_percent" type="number" defaultValue={query.data?.timeout_rate_percent ?? 50} required /><Field label="冷却秒数" name="cooldown_seconds" type="number" defaultValue={query.data?.cooldown_seconds ?? 30} required /></div><button type="button" className="button ghost" onClick={() => void deleteChannelBreakerConfig(channel.id).then(() => { void query.refetch(); onClose() })}>恢复全局默认</button></>}
+  </Modal>
 }
 
 function ChannelEditor({ channel, onClose, onSaved }: { channel: Editor; onClose: () => void; onSaved: () => void }) {

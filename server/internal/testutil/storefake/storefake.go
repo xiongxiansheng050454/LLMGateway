@@ -40,6 +40,8 @@ type Store struct {
 	usageLogs       []usage.UsageLog
 
 	channelHealth              map[int]*catalog.ChannelHealth
+	healthBuckets              map[int]map[int64]*fakeHealthBucket
+	breakerConfigs             map[int]catalog.ChannelBreakerConfig
 	nextQuotaPolicyID          int
 	nextQuotaReservationID     int64
 	quotaPolicies              map[int]*quota.QuotaPolicy
@@ -62,6 +64,14 @@ type balanceTransaction struct {
 	BalanceAfter string
 	Description  string
 	CreatedAt    string
+}
+
+// fakeHealthBucket is one fixed-width channel attempt bucket, keyed by its
+// start time in Unix seconds.
+type fakeHealthBucket struct {
+	requests int64
+	errors   int64
+	timeouts int64
 }
 
 var (
@@ -128,6 +138,8 @@ func New() *Store {
 		quotaBuckets:               map[string]*fakeQuotaBucket{},
 		quotaReservations:          map[int64]*fakeQuotaReservation{},
 		channelHealth:              map[int]*catalog.ChannelHealth{},
+		healthBuckets:              map[int]map[int64]*fakeHealthBucket{},
+		breakerConfigs:             map[int]catalog.ChannelBreakerConfig{},
 		breaker:                    catalog.DefaultChannelBreakerConfig(),
 		now:                        time.Now,
 		probes:                     map[int]time.Time{},

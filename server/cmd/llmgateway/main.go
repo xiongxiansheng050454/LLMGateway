@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"LLMGateway/server/internal/catalog"
 	"LLMGateway/server/internal/config"
 	"LLMGateway/server/internal/crypto"
 	"LLMGateway/server/internal/db/migrate"
@@ -41,20 +42,26 @@ func run() error {
 	}
 	defer closeStore()
 
-	server := &http.Server{
-		Addr: cfg.Addr,
-		Handler: newRouter(st,
-			httpapi.WithCipher(cipher),
-			httpapi.WithUpstreamTimeout(time.Duration(cfg.UpstreamTimeoutSeconds)*time.Second),
-			httpapi.WithUpstreamMaxAttempts(cfg.UpstreamMaxAttempts),
-			httpapi.WithMinimumRouteBalance(cfg.ChannelMinRouteBalance),
-			httpapi.WithQuotaConfig(cfg.QuotaDefaultMaxTokens, time.Duration(cfg.QuotaReservationTTLSeconds)*time.Second)),
-	}
+	apiServer, handler := newRouterServer(st,
+		httpapi.WithCipher(cipher),
+		httpapi.WithUpstreamTimeout(time.Duration(cfg.UpstreamTimeoutSeconds)*time.Second),
+		httpapi.WithUpstreamMaxAttempts(cfg.UpstreamMaxAttempts),
+		httpapi.WithMinimumRouteBalance(cfg.ChannelMinRouteBalance),
+		httpapi.WithChannelBreakerConfig(catalog.ChannelBreakerConfig{
+			FailureThreshold:   cfg.ChannelBreakerFailureThreshold,
+			Cooldown:           time.Duration(cfg.ChannelBreakerCooldownSeconds) * time.Second,
+			WindowSeconds:      cfg.ChannelBreakerWindowSeconds,
+			MinimumSamples:     cfg.ChannelBreakerMinimumSamples,
+			ErrorRatePercent:   cfg.ChannelBreakerErrorRatePercent,
+			TimeoutRatePercent: cfg.ChannelBreakerTimeoutRatePercent,
+		}),
+		httpapi.WithQuotaConfig(cfg.QuotaDefaultMaxTokens, time.Duration(cfg.QuotaReservationTTLSeconds)*time.Second))
+	server := &http.Server{Addr: cfg.Addr, Handler: handler}
 	var workers sync.WaitGroup
 	workers.Add(1)
 	go func() {
 		defer workers.Done()
-		runQuotaReaper(ctx, quota.New(st, st.QuotaTx(), time.Now), ratelimit.New(st, time.Now), time.Duration(cfg.QuotaReaperIntervalSeconds)*time.Second, cfg.QuotaReaperBatchSize)
+		runQuotaReaper(ctx, quota.New(st, st.QuotaTx(), time.Now), ratelimit.New(st, time.Now), apiServer, time.Duration(cfg.QuotaReaperIntervalSeconds)*time.Second, cfg.QuotaReaperBatchSize, time.Duration(cfg.ChannelBreakerBucketRetentionSeconds)*time.Second)
 	}()
 
 	serveErr := make(chan error, 1)
@@ -81,7 +88,7 @@ func run() error {
 	return err
 }
 
-func runQuotaReaper(ctx context.Context, quotaServer *quota.Server, rateServer *ratelimit.Server, interval time.Duration, batchSize int) {
+func runQuotaReaper(ctx context.Context, quotaServer *quota.Server, rateServer *ratelimit.Server, apiServer *httpapi.Server, interval time.Duration, batchSize int, bucketRetention time.Duration) {
 	if interval <= 0 {
 		interval = 30 * time.Second
 	}
@@ -97,6 +104,9 @@ func runQuotaReaper(ctx context.Context, quotaServer *quota.Server, rateServer *
 			}
 			if _, err := quotaServer.ReapExpiredQuotaReservations(ctx, batchSize); err != nil && !errors.Is(err, context.Canceled) {
 				log.Printf("reap expired quota reservations: %v", err)
+			}
+			if _, err := apiServer.ReapChannelHealthBuckets(ctx, bucketRetention); err != nil && !errors.Is(err, context.Canceled) {
+				log.Printf("reap channel health buckets: %v", err)
 			}
 		}
 	}

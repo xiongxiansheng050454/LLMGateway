@@ -51,6 +51,42 @@ func (s *Store) AcquireChannelProbe(_ context.Context, channelID int, lease time
 	return true, nil
 }
 
+func (s *Store) GetChannelBreakerConfigRow(_ context.Context, channelID int) (domain.ChannelBreakerConfig, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cfg, ok := s.breakerConfigs[channelID]
+	return cfg, ok, nil
+}
+
+func (s *Store) ListChannelBreakerConfigRows(_ context.Context) (map[int]domain.ChannelBreakerConfig, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	result := make(map[int]domain.ChannelBreakerConfig, len(s.breakerConfigs))
+	for id, cfg := range s.breakerConfigs {
+		result[id] = cfg
+	}
+	return result, nil
+}
+
+func (s *Store) DeleteStaleChannelHealthBuckets(_ context.Context, before time.Time) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	cutoff := before.UTC().Unix()
+	removed := 0
+	for channelID, buckets := range s.healthBuckets {
+		for start := range buckets {
+			if start < cutoff {
+				delete(buckets, start)
+				removed++
+			}
+		}
+		if len(buckets) == 0 {
+			delete(s.healthBuckets, channelID)
+		}
+	}
+	return removed, nil
+}
+
 // channelHealthLocked returns the channel health with the lazy open ->
 // half-open transition applied. It does not persist the transition.
 func (s *Store) channelHealthLocked(channelID int, cfg domain.ChannelBreakerConfig) domain.ChannelHealth {
@@ -102,6 +138,50 @@ func (t *catalogTx) UpdateChannelHealth(health domain.ChannelHealth) (bool, erro
 func (t *catalogTx) DeleteChannelHealth(channelID int) error {
 	delete(t.s.channelHealth, channelID)
 	delete(t.s.probes, channelID)
+	delete(t.s.healthBuckets, channelID)
+	delete(t.s.breakerConfigs, channelID)
+	return nil
+}
+
+func (t *catalogTx) UpsertChannelHealthBucket(channelID int, bucketStart time.Time, requests, errors, timeouts int64) error {
+	buckets := t.s.healthBuckets[channelID]
+	if buckets == nil {
+		buckets = map[int64]*fakeHealthBucket{}
+		t.s.healthBuckets[channelID] = buckets
+	}
+	key := bucketStart.UTC().Unix()
+	bucket := buckets[key]
+	if bucket == nil {
+		bucket = &fakeHealthBucket{}
+		buckets[key] = bucket
+	}
+	bucket.requests += requests
+	bucket.errors += errors
+	bucket.timeouts += timeouts
+	return nil
+}
+
+func (t *catalogTx) GetChannelHealthWindow(channelID int, since time.Time) (domain.ChannelHealthWindow, error) {
+	cutoff := since.UTC().Unix()
+	var window domain.ChannelHealthWindow
+	for start, bucket := range t.s.healthBuckets[channelID] {
+		if start < cutoff {
+			continue
+		}
+		window.Requests += bucket.requests
+		window.Errors += bucket.errors
+		window.Timeouts += bucket.timeouts
+	}
+	return window, nil
+}
+
+func (t *catalogTx) UpsertChannelBreakerConfig(channelID int, cfg domain.ChannelBreakerConfig) error {
+	t.s.breakerConfigs[channelID] = cfg
+	return nil
+}
+
+func (t *catalogTx) DeleteChannelBreakerConfig(channelID int) error {
+	delete(t.s.breakerConfigs, channelID)
 	return nil
 }
 

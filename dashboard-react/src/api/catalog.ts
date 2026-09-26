@@ -1,7 +1,7 @@
 import { adminGet, adminSend } from './client'
 import { apiPaths } from './paths'
-import { ChannelListSchema, ChannelModelListSchema, ChannelModelSchema, ChannelSchema, CatalogModelListSchema, ChannelTestSchema, HealthListSchema, PricingListSchema, PricingSchema, RemoteModelsSchema, DeletedSchema } from './runtime/catalog'
-import type { Channel, ChannelBalanceInput, ChannelCreateInput, ChannelModel, ChannelModelInput, ChannelModelUpdate, ChannelStatusInput, ChannelTestItem, CatalogModel, Deleted, Health, ListResponse, Pricing, PricingCreateInput, RemoteModelsResult, ChannelUpdateInput, DeletePricingInput } from '../types/api'
+import { ChannelBreakerConfigSchema, ChannelListSchema, ChannelModelListSchema, ChannelModelSchema, ChannelSchema, CatalogModelListSchema, ChannelTestSchema, HealthListSchema, PricingListSchema, PricingSchema, RemoteModelsSchema, DeletedSchema } from './runtime/catalog'
+import type { Channel, ChannelBalanceInput, ChannelBreakerConfigInput, ChannelCreateInput, ChannelModel, ChannelModelInput, ChannelModelUpdate, ChannelStatusInput, ChannelTestItem, CatalogModel, Deleted, Health, ListResponse, Pricing, PricingCreateInput, RemoteModelsResult, ChannelUpdateInput, DeletePricingInput } from '../types/api'
 
 export type ListParams = { page?: number; page_size?: number }
 export type ListModelsParams = ListParams & { status?: number }
@@ -14,6 +14,9 @@ export const deleteChannel = (id: number) => adminSend('DELETE', apiPaths.channe
 export const updateChannelStatus = (id: number, input: ChannelStatusInput) => adminSend('PUT', apiPaths.channelStatus(id), input, ChannelSchema)
 export const updateChannelBalance = (id: number, input: ChannelBalanceInput) => adminSend('PUT', apiPaths.channelBalance(id), input, ChannelSchema)
 export const resetChannelHealth = (id: number) => adminSend('POST', apiPaths.channelHealthReset(id), DeletedSchema)
+export const getChannelBreakerConfig = (id: number) => adminGet(apiPaths.channelBreaker(id), ChannelBreakerConfigSchema)
+export const updateChannelBreakerConfig = (id: number, input: ChannelBreakerConfigInput) => adminSend('PUT', apiPaths.channelBreaker(id), input, ChannelBreakerConfigSchema)
+export const deleteChannelBreakerConfig = (id: number) => adminSend('DELETE', apiPaths.channelBreaker(id), DeletedSchema)
 export const listChannelModels = (channelId: number) => adminGet(apiPaths.channelModels(channelId), ChannelModelListSchema)
 export const createChannelModel = (channelId: number, input: ChannelModelInput) => adminSend('POST', apiPaths.channelModels(channelId), input, ChannelModelSchema)
 export const updateChannelModel = (channelId: number, modelId: number, input: ChannelModelUpdate) => adminSend('PUT', apiPaths.channelModel(channelId, modelId), input, ChannelModelSchema)

@@ -2,8 +2,13 @@ package catalog
 
 import (
 	"context"
+	"fmt"
 	"time"
 )
+
+// channelHealthBucketRetention bounds how long attempt buckets are kept. It must
+// exceed the largest configurable window so a scan never misses live samples.
+const channelHealthBucketRetention = 10 * time.Minute
 
 func (a *Server) GetChannelHealth(ctx context.Context, channelID int) (ChannelHealth, error) {
 	row, found, err := a.health.GetChannelHealthRow(ctx, channelID)
@@ -13,22 +18,18 @@ func (a *Server) GetChannelHealth(ctx context.Context, channelID int) (ChannelHe
 	if !found {
 		return NewChannelHealth(channelID), nil
 	}
-	return EvaluateChannelHealth(row, a.now(), a.breaker), nil
+	return EvaluateChannelHealth(row, a.now(), a.breakerFor(ctx, channelID)), nil
 }
 
 func (a *Server) RecordChannelSuccess(ctx context.Context, channelID int) (ChannelHealth, error) {
-	return a.recordChannelHealth(ctx, channelID, func(current ChannelHealth) ChannelHealth {
-		return ApplyChannelSuccess(current, a.now())
-	})
+	return a.recordChannelHealth(ctx, channelID, true, "")
 }
 
 func (a *Server) RecordChannelFailure(ctx context.Context, channelID int, reason FailureReason) (ChannelHealth, error) {
 	if !reason.CountsAsChannelFailure() {
 		return a.GetChannelHealth(ctx, channelID)
 	}
-	return a.recordChannelHealth(ctx, channelID, func(current ChannelHealth) ChannelHealth {
-		return ApplyChannelFailure(current, reason, a.now(), a.breaker)
-	})
+	return a.recordChannelHealth(ctx, channelID, false, reason)
 }
 
 func (a *Server) RecordChannelAttempt(ctx context.Context, channelID int, success bool, reason FailureReason) (ChannelHealth, error) {
@@ -49,9 +50,17 @@ func (a *Server) ListChannelHealth(ctx context.Context) (ListResponse[ChannelHea
 	if err != nil {
 		return ListResponse[ChannelHealthDTO]{}, err
 	}
+	overrides, err := a.health.ListChannelBreakerConfigRows(ctx)
+	if err != nil {
+		return ListResponse[ChannelHealthDTO]{}, err
+	}
 	list := []ChannelHealthDTO{}
 	for i := range rows {
-		health := EvaluateChannelHealth(rows[i], a.now(), a.breaker)
+		cfg := a.breaker
+		if override, ok := overrides[rows[i].ChannelID]; ok {
+			cfg = ResolveChannelBreakerConfig(a.breaker, &override)
+		}
+		health := EvaluateChannelHealth(rows[i], a.now(), cfg)
 		list = append(list, channelHealthDTO(&health))
 	}
 	return ListResponse[ChannelHealthDTO]{List: list, Total: len(list)}, nil
@@ -61,9 +70,94 @@ func (a *Server) AcquireChannelProbe(ctx context.Context, channelID int, lease t
 	return a.health.AcquireChannelProbe(ctx, channelID, lease)
 }
 
+// ReapChannelHealthBuckets removes attempt buckets older than the retention
+// window. A non-positive retention falls back to the default.
+func (a *Server) ReapChannelHealthBuckets(ctx context.Context, retention time.Duration) (int, error) {
+	if retention <= 0 {
+		retention = channelHealthBucketRetention
+	}
+	return a.health.DeleteStaleChannelHealthBuckets(ctx, a.now().UTC().Add(-retention))
+}
+
+// GetChannelBreakerConfig returns the effective breaker config for a channel:
+// the global default overlaid with any per-channel override.
+func (a *Server) GetChannelBreakerConfig(ctx context.Context, channelID int) (ChannelBreakerConfigDTO, error) {
+	if _, err := a.store.GetChannelDTO(ctx, channelID); err != nil {
+		return ChannelBreakerConfigDTO{}, err
+	}
+	return breakerConfigDTO(channelID, a.breakerFor(ctx, channelID)), nil
+}
+
+// UpdateChannelBreakerConfig stores a per-channel override and invalidates the
+// config cache so the next recorded attempt uses it.
+func (a *Server) UpdateChannelBreakerConfig(ctx context.Context, channelID int, in ChannelBreakerConfigInput) (ChannelBreakerConfigDTO, error) {
+	if _, err := a.store.GetChannelDTO(ctx, channelID); err != nil {
+		return ChannelBreakerConfigDTO{}, err
+	}
+	cfg, err := validateBreakerConfig(in)
+	if err != nil {
+		return ChannelBreakerConfigDTO{}, err
+	}
+	if err := a.tx.InTx(ctx, func(tx Tx) error {
+		return tx.UpsertChannelBreakerConfig(channelID, cfg)
+	}); err != nil {
+		return ChannelBreakerConfigDTO{}, err
+	}
+	a.invalidateBreakerConfig(channelID)
+	return breakerConfigDTO(channelID, ResolveChannelBreakerConfig(a.breaker, &cfg)), nil
+}
+
+// DeleteChannelBreakerConfig removes the override so the channel inherits the
+// global defaults again.
+func (a *Server) DeleteChannelBreakerConfig(ctx context.Context, channelID int) error {
+	if _, err := a.store.GetChannelDTO(ctx, channelID); err != nil {
+		return err
+	}
+	if err := a.tx.InTx(ctx, func(tx Tx) error {
+		return tx.DeleteChannelBreakerConfig(channelID)
+	}); err != nil {
+		return err
+	}
+	a.invalidateBreakerConfig(channelID)
+	return nil
+}
+
+func validateBreakerConfig(in ChannelBreakerConfigInput) (ChannelBreakerConfig, error) {
+	if in.WindowSeconds <= 0 || in.MinimumSamples <= 0 || in.CooldownSeconds <= 0 {
+		return ChannelBreakerConfig{}, fmt.Errorf("%w: window_seconds, minimum_samples and cooldown_seconds must be positive", ErrInvalid)
+	}
+	if in.ErrorRatePercent < 1 || in.ErrorRatePercent > 100 || in.TimeoutRatePercent < 1 || in.TimeoutRatePercent > 100 {
+		return ChannelBreakerConfig{}, fmt.Errorf("%w: rate percentages must be between 1 and 100", ErrInvalid)
+	}
+	return ChannelBreakerConfig{
+		Cooldown:           time.Duration(in.CooldownSeconds) * time.Second,
+		WindowSeconds:      in.WindowSeconds,
+		MinimumSamples:     in.MinimumSamples,
+		ErrorRatePercent:   in.ErrorRatePercent,
+		TimeoutRatePercent: in.TimeoutRatePercent,
+	}, nil
+}
+
+func breakerConfigDTO(channelID int, cfg ChannelBreakerConfig) ChannelBreakerConfigDTO {
+	return ChannelBreakerConfigDTO{
+		ChannelID:          channelID,
+		WindowSeconds:      cfg.WindowSeconds,
+		MinimumSamples:     cfg.MinimumSamples,
+		ErrorRatePercent:   cfg.ErrorRatePercent,
+		TimeoutRatePercent: cfg.TimeoutRatePercent,
+		CooldownSeconds:    int(cfg.Cooldown.Seconds()),
+	}
+}
+
 // recordChannelHealth applies a state transition inside a transaction, holding
-// the row lock so concurrent recordings cannot lose updates.
-func (a *Server) recordChannelHealth(ctx context.Context, channelID int, apply func(ChannelHealth) ChannelHealth) (ChannelHealth, error) {
+// the row lock so concurrent recordings cannot lose updates, and updates the
+// fixed-width window bucket used by the rate-based breaker. The bucket write
+// and the window sum share the transaction so the current attempt is counted.
+func (a *Server) recordChannelHealth(ctx context.Context, channelID int, success bool, reason FailureReason) (ChannelHealth, error) {
+	cfg := a.breakerFor(ctx, channelID)
+	now := a.now()
+	bucket := ChannelHealthBucketStart(now)
+
 	var next ChannelHealth
 	err := a.tx.InTx(ctx, func(tx Tx) error {
 		if err := tx.EnsureChannelHealth(channelID); err != nil {
@@ -73,7 +167,26 @@ func (a *Server) recordChannelHealth(ctx context.Context, channelID int, apply f
 		if err != nil {
 			return err
 		}
-		next = apply(EvaluateChannelHealth(row, a.now(), a.breaker))
+		if success {
+			if err := tx.UpsertChannelHealthBucket(channelID, bucket, 1, 0, 0); err != nil {
+				return err
+			}
+			next = ApplyChannelSuccess(row, now)
+		} else {
+			timeouts := int64(0)
+			if reason == FailureUpstreamTimeout {
+				timeouts = 1
+			}
+			if err := tx.UpsertChannelHealthBucket(channelID, bucket, 1, 1, timeouts); err != nil {
+				return err
+			}
+			since := now.UTC().Add(-time.Duration(cfg.WindowSeconds) * time.Second)
+			window, err := tx.GetChannelHealthWindow(channelID, since)
+			if err != nil {
+				return err
+			}
+			next = ApplyChannelFailure(EvaluateChannelHealth(row, now, cfg), reason, window, now, cfg)
+		}
 		ok, err := tx.UpdateChannelHealth(next)
 		if err != nil {
 			return err
