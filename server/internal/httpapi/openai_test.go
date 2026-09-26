@@ -70,27 +70,27 @@ func newProxyFixtureWithStore(t *testing.T, upstream http.Handler, st Port, opts
 
 	handler := NewServer(st, append([]Option{WithCipher(testCipher())}, opts...)...)
 	acc := handler.accounts
-	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
+	if _, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
+	if _, err := acc.RechargeUser(context.Background(), 1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
 		t.Fatal(err)
 	}
-	created, err := acc.CreateKey(1, domain.KeyInput{KeyName: "default", Prefix: "sk-"})
+	created, err := acc.CreateKey(context.Background(), 1, domain.KeyInput{KeyName: "default", Prefix: "sk-"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	balance := "10.000000"
-	channel, err := handler.catalog.CreateChannel(domain.ChannelInput{Name: "upstream", BaseURL: server.URL, APIKey: upstreamKey, Status: 1, Priority: 10, Weight: 100, Balance: &balance})
+	channel, err := handler.catalog.CreateChannel(context.Background(), domain.ChannelInput{Name: "upstream", BaseURL: server.URL, APIKey: upstreamKey, Status: 1, Priority: 10, Weight: 100, Balance: &balance})
 	if err != nil {
 		t.Fatal(err)
 	}
 	channelID := channel.ID
-	if _, err := handler.catalog.CreateChannelModel(channelID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
+	if _, err := handler.catalog.CreateChannelModel(context.Background(), channelID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := handler.catalog.UpsertPricing(domain.PricingInput{ChannelID: channelID, ModelName: "gpt", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", CachedInputPricePer1M: "0.07500000", Currency: "USD"}); err != nil {
+	if _, err := handler.catalog.UpsertPricing(context.Background(), domain.PricingInput{ChannelID: channelID, ModelName: "gpt", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", CachedInputPricePer1M: "0.07500000", Currency: "USD"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -169,7 +169,7 @@ func TestChatCompletionsSuccess(t *testing.T) {
 		t.Fatalf("response leaked upstream key: %s", res.Body.String())
 	}
 
-	balance, err := f.store.GetUserBalance(1)
+	balance, err := f.store.GetUserBalance(context.Background(), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -177,7 +177,7 @@ func TestChatCompletionsSuccess(t *testing.T) {
 		t.Fatalf("user balance = %v, want 9.999550", balance.AvailableBalance)
 	}
 
-	channelBalance, err := f.catalog.GetChannelSecret(1)
+	channelBalance, err := f.catalog.GetChannelSecret(context.Background(), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -185,7 +185,7 @@ func TestChatCompletionsSuccess(t *testing.T) {
 		t.Fatalf("channel balance = %v, want 9.999550", channelBalance.Balance)
 	}
 
-	logs, err := f.store.ListUsageLogs(domain.UsageLogFilter{Page: 1, PageSize: 20})
+	logs, err := f.store.ListUsageLogs(context.Background(), domain.UsageLogFilter{Page: 1, PageSize: 20})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -206,7 +206,7 @@ func TestChatCompletionsSuccess(t *testing.T) {
 		t.Fatalf("usage log unit prices missing: %+v", entry)
 	}
 
-	keys, err := f.store.ListUserKeys(1, 1, 20)
+	keys, err := f.store.ListUserKeys(context.Background(), 1, 1, 20)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -232,11 +232,11 @@ func TestChatCompletionsCachedTokensBilling(t *testing.T) {
 	}
 
 	// (1000-200)*0.15/1e6 + 200*0.075/1e6 + 500*0.6/1e6 = 0.000435
-	balance, _ := f.store.GetUserBalance(1)
+	balance, _ := f.store.GetUserBalance(context.Background(), 1)
 	if balance.AvailableBalance != "9.999565" {
 		t.Fatalf("balance = %v, want 9.999565", balance.AvailableBalance)
 	}
-	logs, _ := f.store.ListUsageLogs(domain.UsageLogFilter{Page: 1, PageSize: 20})
+	logs, _ := f.store.ListUsageLogs(context.Background(), domain.UsageLogFilter{Page: 1, PageSize: 20})
 	entry := logs.List[0]
 	if entry.TotalCost != "0.000435" {
 		t.Fatalf("cost = %v, want 0.000435 (cached tokens must not be double charged)", entry.TotalCost)
@@ -258,12 +258,12 @@ func TestChatCompletionsAuthFailures(t *testing.T) {
 	}
 
 	// Disabled key.
-	created, err := f.accounts.CreateKey(1, domain.KeyInput{KeyName: "second"})
+	created, err := f.accounts.CreateKey(context.Background(), 1, domain.KeyInput{KeyName: "second"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	secondKey := created.FullKey
-	if _, err := f.accounts.UpdateKey(1, created.ID, domain.KeyUpdateInput{IsActive: boolPointer(false)}); err != nil {
+	if _, err := f.accounts.UpdateKey(context.Background(), 1, created.ID, domain.KeyUpdateInput{IsActive: boolPointer(false)}); err != nil {
 		t.Fatal(err)
 	}
 	if res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", secondKey, body); res.Code != http.StatusUnauthorized {
@@ -271,7 +271,7 @@ func TestChatCompletionsAuthFailures(t *testing.T) {
 	}
 
 	// Expired key.
-	expired, err := f.accounts.CreateKey(1, domain.KeyInput{KeyName: "expired", ExpiresAt: "2020-01-01T00:00:00Z"})
+	expired, err := f.accounts.CreateKey(context.Background(), 1, domain.KeyInput{KeyName: "expired", ExpiresAt: "2020-01-01T00:00:00Z"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -280,7 +280,7 @@ func TestChatCompletionsAuthFailures(t *testing.T) {
 	}
 
 	// Suspended user.
-	if _, err := f.accounts.UpdateUserStatus(1, "suspended"); err != nil {
+	if _, err := f.accounts.UpdateUserStatus(context.Background(), 1, "suspended"); err != nil {
 		t.Fatal(err)
 	}
 	if res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, body); res.Code != http.StatusForbidden {
@@ -317,11 +317,11 @@ func TestChatCompletionsStreamingSuccess(t *testing.T) {
 	if !strings.HasSuffix(res.Body.String(), "data: [DONE]\n\n") {
 		t.Fatalf("stream missing terminal DONE: %s", res.Body.String())
 	}
-	balance, _ := f.store.GetUserBalance(1)
+	balance, _ := f.store.GetUserBalance(context.Background(), 1)
 	if balance.AvailableBalance != "9.999550" {
 		t.Fatalf("balance = %s, want 9.999550", balance.AvailableBalance)
 	}
-	logs, _ := f.store.ListUsageLogs(domain.UsageLogFilter{Page: 1, PageSize: 10})
+	logs, _ := f.store.ListUsageLogs(context.Background(), domain.UsageLogFilter{Page: 1, PageSize: 10})
 	if logs.Total != 1 || logs.List[0].Status != "success" || logs.List[0].TTFTMs == nil {
 		t.Fatalf("usage logs = %+v, want one success with TTFT", logs)
 	}
@@ -340,11 +340,11 @@ func TestChatCompletionsStreamingWithoutUsageDoesNotCharge(t *testing.T) {
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "upstream_usage_missing") {
 		t.Fatalf("status/body = %d %s, want SSE usage error", res.Code, res.Body.String())
 	}
-	balance, _ := f.store.GetUserBalance(1)
+	balance, _ := f.store.GetUserBalance(context.Background(), 1)
 	if balance.AvailableBalance != "10.000000" {
 		t.Fatalf("balance changed without usage: %s", balance.AvailableBalance)
 	}
-	logs, _ := f.store.ListUsageLogs(domain.UsageLogFilter{Page: 1, PageSize: 10})
+	logs, _ := f.store.ListUsageLogs(context.Background(), domain.UsageLogFilter{Page: 1, PageSize: 10})
 	if logs.Total != 1 || logs.List[0].Status != "error" || logs.List[0].ErrorCode != "upstream_usage_missing" {
 		t.Fatalf("usage logs = %+v", logs)
 	}
@@ -359,18 +359,18 @@ func TestChatCompletionsStreamingWithoutDoneFailsAndTripsBreaker(t *testing.T) {
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "upstream_stream_interrupted") {
 		t.Fatalf("status/body = %d %s, want interrupted SSE error", res.Code, res.Body.String())
 	}
-	health, err := f.catalog.GetChannelHealth(1)
+	health, err := f.catalog.GetChannelHealth(context.Background(), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if health.ConsecutiveFailures != 1 {
 		t.Fatalf("consecutive failures = %d, want 1", health.ConsecutiveFailures)
 	}
-	balance, _ := f.store.GetUserBalance(1)
+	balance, _ := f.store.GetUserBalance(context.Background(), 1)
 	if balance.AvailableBalance != "10.000000" {
 		t.Fatalf("balance changed after interrupted stream: %s", balance.AvailableBalance)
 	}
-	logs, _ := f.store.ListUsageLogs(domain.UsageLogFilter{Page: 1, PageSize: 10})
+	logs, _ := f.store.ListUsageLogs(context.Background(), domain.UsageLogFilter{Page: 1, PageSize: 10})
 	if logs.Total != 1 || logs.List[0].TTFTMs == nil {
 		t.Fatalf("interrupted stream must retain observed TTFT: %+v", logs)
 	}
@@ -385,14 +385,14 @@ func TestChatCompletionsInterruptedStreamChargesForwardedTextEstimate(t *testing
 	if res.Code != http.StatusOK || !strings.Contains(res.Body.String(), "upstream_stream_interrupted") {
 		t.Fatalf("status/body = %d %s, want interrupted SSE error", res.Code, res.Body.String())
 	}
-	logs, err := f.store.ListUsageLogs(domain.UsageLogFilter{Page: 1, PageSize: 10})
+	logs, err := f.store.ListUsageLogs(context.Background(), domain.UsageLogFilter{Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if logs.Total != 1 || logs.List[0].ErrorCode != "partial_estimated_upstream_stream_interrupted" || logs.List[0].TotalTokens <= 0 || logs.List[0].TotalCost == "0.000000" {
 		t.Fatalf("partial usage log = %+v", logs)
 	}
-	balance, err := f.store.GetUserBalance(1)
+	balance, err := f.store.GetUserBalance(context.Background(), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -410,7 +410,7 @@ func TestChatCompletionsStreamingMalformedDataTripsBreaker(t *testing.T) {
 	if !strings.Contains(res.Body.String(), "upstream_stream_protocol_error") {
 		t.Fatalf("body = %s, want protocol error", res.Body.String())
 	}
-	health, _ := f.catalog.GetChannelHealth(1)
+	health, _ := f.catalog.GetChannelHealth(context.Background(), 1)
 	if health.ConsecutiveFailures != 1 {
 		t.Fatalf("consecutive failures = %d, want 1", health.ConsecutiveFailures)
 	}
@@ -441,7 +441,7 @@ func TestChatCompletionsStreamingCancellationReachesUpstream(t *testing.T) {
 		close(upstreamCanceled)
 	}))
 	name, scope, period, scopeID, limit := "stream daily", "user", "day", 1, int64(10000)
-	if _, err := f.quota.CreateQuotaPolicy(domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
+	if _, err := f.quota.CreateQuotaPolicy(context.Background(), domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
 		t.Fatal(err)
 	}
 	gateway := httptest.NewServer(http.HandlerFunc(f.server.OpenAI))
@@ -485,7 +485,7 @@ func TestChatCompletionsStreamingCancellationReachesUpstream(t *testing.T) {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-	logs, err := f.store.ListUsageLogs(domain.UsageLogFilter{Page: 1, PageSize: 10})
+	logs, err := f.store.ListUsageLogs(context.Background(), domain.UsageLogFilter{Page: 1, PageSize: 10})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -497,7 +497,7 @@ func TestChatCompletionsStreamingCancellationReachesUpstream(t *testing.T) {
 func TestChatCompletionsInsufficientBalance(t *testing.T) {
 	f := newProxyFixture(t, upstreamSuccess())
 	// Drain the user balance via a debit.
-	if _, err := f.accounts.DebitUserBalance(1, "10.000000", "drain"); err != nil {
+	if _, err := f.accounts.DebitUserBalance(context.Background(), 1, "10.000000", "drain"); err != nil {
 		t.Fatal(err)
 	}
 	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","messages":[]}`)
@@ -510,7 +510,7 @@ func TestChatCompletionsTokenRateLimitRejectsConservatively(t *testing.T) {
 	f := newProxyFixture(t, upstreamSuccess())
 	metric, target, action := "tpm", "user", "reject"
 	limit, window, priority := int64(1), 60, 1
-	if _, err := f.ratelimit.CreateRateLimit(domain.RateLimitInput{RuleName: stringPointer("token limit"), TargetType: &target, TargetValue: stringPointer("1"), Metric: &metric, LimitValue: &limit, WindowSeconds: &window, Action: &action, Priority: &priority}); err != nil {
+	if _, err := f.ratelimit.CreateRateLimit(context.Background(), domain.RateLimitInput{RuleName: stringPointer("token limit"), TargetType: &target, TargetValue: stringPointer("1"), Metric: &metric, LimitValue: &limit, WindowSeconds: &window, Action: &action, Priority: &priority}); err != nil {
 		t.Fatal(err)
 	}
 	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","messages":[]}`)
@@ -537,11 +537,11 @@ func TestChatCompletionsUpstreamFailureDoesNotCharge(t *testing.T) {
 		t.Fatalf("status = %d, want upstream 500 passthrough", res.Code)
 	}
 
-	balance, _ := f.store.GetUserBalance(1)
+	balance, _ := f.store.GetUserBalance(context.Background(), 1)
 	if balance.AvailableBalance != "10.000000" {
 		t.Fatalf("balance changed on upstream failure: %v", balance.AvailableBalance)
 	}
-	logs, _ := f.store.ListUsageLogs(domain.UsageLogFilter{Page: 1, PageSize: 20})
+	logs, _ := f.store.ListUsageLogs(context.Background(), domain.UsageLogFilter{Page: 1, PageSize: 20})
 	if logs.Total != 1 {
 		t.Fatalf("usage logs total = %d, want 1 failure log", logs.Total)
 	}
@@ -553,7 +553,7 @@ func TestChatCompletionsUpstreamFailureDoesNotCharge(t *testing.T) {
 
 func TestChatCompletionsRateLimited(t *testing.T) {
 	f := newProxyFixture(t, upstreamSuccess())
-	rule, err := f.ratelimit.CreateRateLimit(domain.RateLimitInput{
+	rule, err := f.ratelimit.CreateRateLimit(context.Background(), domain.RateLimitInput{
 		RuleName: stringPointer("global rpm"), TargetType: stringPointer("global"), Metric: stringPointer("rpm"),
 		LimitValue: int64Pointer(1), WindowSeconds: intPointer(60), Action: stringPointer("reject"),
 	})
@@ -583,7 +583,7 @@ func TestChatCompletionsQuotaExceededBeforeUpstream(t *testing.T) {
 	}))
 	name, scope, period, scopeID := "key daily", "api_key", "day", 1
 	limit := int64(10)
-	if _, err := f.quota.CreateQuotaPolicy(domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
+	if _, err := f.quota.CreateQuotaPolicy(context.Background(), domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -600,7 +600,7 @@ func TestChatCompletionsQuotaSettlementUsesActualUsage(t *testing.T) {
 	f := newProxyFixture(t, upstreamSuccess())
 	name, scope, period, scopeID := "user daily", "user", "day", 1
 	limit := int64(10000)
-	if _, err := f.quota.CreateQuotaPolicy(domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
+	if _, err := f.quota.CreateQuotaPolicy(context.Background(), domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -623,7 +623,7 @@ func TestChatCompletionsUpstreamFailureReleasesQuota(t *testing.T) {
 	}))
 	name, scope, period, scopeID := "user daily", "user", "day", 1
 	limit := int64(10000)
-	if _, err := f.quota.CreateQuotaPolicy(domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
+	if _, err := f.quota.CreateQuotaPolicy(context.Background(), domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
 		t.Fatal(err)
 	}
 	res := proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, `{"model":"gpt","max_tokens":100,"messages":[]}`)
@@ -640,16 +640,16 @@ func TestChatCompletionsModelRateLimitCountsOnlySameModel(t *testing.T) {
 	current := time.Now().UTC()
 	st := storefake.NewWithClock(func() time.Time { return current })
 	f := newProxyFixtureWithStore(t, upstreamSuccess(), st, WithClock(func() time.Time { return current }))
-	if _, err := f.catalog.CreateChannelModel(1, domain.ChannelModel{ModelName: "gpt-other", UpstreamModel: "up-other", Enabled: true}); err != nil {
+	if _, err := f.catalog.CreateChannelModel(context.Background(), 1, domain.ChannelModel{ModelName: "gpt-other", UpstreamModel: "up-other", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.catalog.UpsertPricing(domain.PricingInput{ChannelID: 1, ModelName: "gpt-other", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
+	if _, err := f.catalog.UpsertPricing(context.Background(), domain.PricingInput{ChannelID: 1, ModelName: "gpt-other", InputPricePer1M: "0.15000000", OutputPricePer1M: "0.60000000", Currency: "USD"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.store.InsertUsageLog(domain.UsageLogInput{RequestID: "prior-other", UserID: intPointer(1), APIKeyID: intPointer(1), ChannelID: intPointer(1), Model: "gpt-other", Status: "success"}); err != nil {
+	if _, err := f.store.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "prior-other", UserID: intPointer(1), APIKeyID: intPointer(1), ChannelID: intPointer(1), Model: "gpt-other", Status: "success"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.ratelimit.CreateRateLimit(domain.RateLimitInput{RuleName: stringPointer("gpt rpm"), TargetType: stringPointer("model"), TargetValue: stringPointer("gpt"), Metric: stringPointer("rpm"), LimitValue: int64Pointer(1), WindowSeconds: intPointer(60), Action: stringPointer("reject")}); err != nil {
+	if _, err := f.ratelimit.CreateRateLimit(context.Background(), domain.RateLimitInput{RuleName: stringPointer("gpt rpm"), TargetType: stringPointer("model"), TargetValue: stringPointer("gpt"), Metric: stringPointer("rpm"), LimitValue: int64Pointer(1), WindowSeconds: intPointer(60), Action: stringPointer("reject")}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -667,10 +667,10 @@ func TestChatCompletionsChannelRateLimitAfterRouting(t *testing.T) {
 		atomic.AddInt32(&calls, 1)
 		upstreamSuccess().ServeHTTP(w, r)
 	}), st, WithClock(func() time.Time { return current }))
-	if _, err := f.store.InsertUsageLog(domain.UsageLogInput{RequestID: "prior-channel", UserID: intPointer(1), APIKeyID: intPointer(1), ChannelID: intPointer(1), Model: "gpt", Status: "success"}); err != nil {
+	if _, err := f.store.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "prior-channel", UserID: intPointer(1), APIKeyID: intPointer(1), ChannelID: intPointer(1), Model: "gpt", Status: "success"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := f.ratelimit.CreateRateLimit(domain.RateLimitInput{RuleName: stringPointer("channel rpm"), TargetType: stringPointer("channel"), TargetValue: stringPointer("1"), Metric: stringPointer("rpm"), LimitValue: int64Pointer(1), WindowSeconds: intPointer(60), Action: stringPointer("reject")}); err != nil {
+	if _, err := f.ratelimit.CreateRateLimit(context.Background(), domain.RateLimitInput{RuleName: stringPointer("channel rpm"), TargetType: stringPointer("channel"), TargetValue: stringPointer("1"), Metric: stringPointer("rpm"), LimitValue: int64Pointer(1), WindowSeconds: intPointer(60), Action: stringPointer("reject")}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -681,7 +681,7 @@ func TestChatCompletionsChannelRateLimitAfterRouting(t *testing.T) {
 	if got := atomic.LoadInt32(&calls); got != 0 {
 		t.Fatalf("upstream calls = %d, want 0", got)
 	}
-	logs, _ := f.store.ListUsageLogs(domain.UsageLogFilter{Status: "error", Page: 1, PageSize: 20})
+	logs, _ := f.store.ListUsageLogs(context.Background(), domain.UsageLogFilter{Status: "error", Page: 1, PageSize: 20})
 	if logs.Total != 1 || logs.List[0].ErrorCode != "rate_limited" || logs.List[0].ChannelID == nil || *logs.List[0].ChannelID != 1 {
 		t.Fatalf("rate-limited usage log missing channel/error_code: %+v", logs)
 	}
@@ -703,7 +703,7 @@ func TestChatCompletionsTripsBreakerAndSkipsChannel(t *testing.T) {
 		}
 	}
 
-	health, err := f.catalog.GetChannelHealth(1)
+	health, err := f.catalog.GetChannelHealth(context.Background(), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -724,7 +724,7 @@ func TestChatCompletionsTripsBreakerAndSkipsChannel(t *testing.T) {
 	}
 
 	// The degraded request is recorded as a failure usage log.
-	logs, _ := f.store.ListUsageLogs(domain.UsageLogFilter{Page: 1, PageSize: 50})
+	logs, _ := f.store.ListUsageLogs(context.Background(), domain.UsageLogFilter{Page: 1, PageSize: 50})
 	found := false
 	for _, item := range logs.List {
 		if item.ErrorCode == "no_healthy_channel" {
@@ -760,7 +760,7 @@ func TestChatCompletionsHalfOpenRecovers(t *testing.T) {
 	for i := 0; i < 5; i++ {
 		proxyDo(t, f, http.MethodPost, "/v1/chat/completions", f.fullKey, body)
 	}
-	health, _ := f.catalog.GetChannelHealth(1)
+	health, _ := f.catalog.GetChannelHealth(context.Background(), 1)
 	if health.State != domain.HealthOpen {
 		t.Fatalf("state = %s, want open", health.State)
 	}
@@ -772,7 +772,7 @@ func TestChatCompletionsHalfOpenRecovers(t *testing.T) {
 	if res.Code != http.StatusOK {
 		t.Fatalf("probe status = %d, want 200; body=%s", res.Code, res.Body.String())
 	}
-	health, _ = f.catalog.GetChannelHealth(1)
+	health, _ = f.catalog.GetChannelHealth(context.Background(), 1)
 	if health.State != domain.HealthClosed {
 		t.Fatalf("state = %s, want closed after successful probe", health.State)
 	}
@@ -845,7 +845,7 @@ func TestChatCompletionsClientErrorDoesNotTripBreaker(t *testing.T) {
 		}
 	}
 
-	health, _ := f.catalog.GetChannelHealth(1)
+	health, _ := f.catalog.GetChannelHealth(context.Background(), 1)
 	if health.State != domain.HealthClosed {
 		t.Fatalf("state = %s, want closed (client errors must not trip the breaker)", health.State)
 	}

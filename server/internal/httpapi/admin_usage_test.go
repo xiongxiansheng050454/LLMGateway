@@ -1,6 +1,7 @@
 package httpapi
 
 import (
+	"context"
 	"net/http"
 	"testing"
 
@@ -51,10 +52,10 @@ func TestUsageLogsAndStats(t *testing.T) {
 		t.Fatalf("empty channels = %+v", channels["data"])
 	}
 
-	if _, err := st.InsertUsageLog(domain.UsageLogInput{RequestID: "req-1", UserID: intPtr(1), ChannelID: intPtr(1), Model: "gpt", Status: "success", TotalTokens: 100, TotalCost: "0.001000"}); err != nil {
+	if _, err := st.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "req-1", UserID: intPtr(1), ChannelID: intPtr(1), Model: "gpt", Status: "success", TotalTokens: 100, TotalCost: "0.001000"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.InsertUsageLog(domain.UsageLogInput{RequestID: "req-2", UserID: intPtr(1), ChannelID: intPtr(1), Model: "gpt-4o", Status: "error", TotalTokens: 200, TotalCost: "0.002000"}); err != nil {
+	if _, err := st.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "req-2", UserID: intPtr(1), ChannelID: intPtr(1), Model: "gpt-4o", Status: "error", TotalTokens: 200, TotalCost: "0.002000"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -122,7 +123,7 @@ func TestTTFTStatsFiltersAndPercentiles(t *testing.T) {
 		{RequestID: "ttft-no-value", UserID: &userID, APIKeyID: &keyID, ChannelID: &channelID, Model: "gpt", Status: "success"},
 		{RequestID: "ttft-other", Model: "other", Status: "success", TTFTMs: intPtr(1000)},
 	} {
-		if _, err := st.InsertUsageLog(input); err != nil {
+		if _, err := st.InsertUsageLog(context.Background(), input); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -161,7 +162,7 @@ func TestUsageLogsFilterAndAggregateByAPIKey(t *testing.T) {
 		{RequestID: "key-a-other", UserID: &userID, APIKeyID: &keyA, ChannelID: &channelA, Model: "other", Status: "success", TotalTokens: 30, TotalCost: "0.003000", DurationMs: 20},
 		{RequestID: "key-b-gpt", UserID: &userID, APIKeyID: &keyB, ChannelID: &channelA, Model: "gpt", Status: "success", TotalTokens: 999, TotalCost: "9.000000", DurationMs: 99},
 	} {
-		if _, err := st.InsertUsageLog(input); err != nil {
+		if _, err := st.InsertUsageLog(context.Background(), input); err != nil {
 			t.Fatal(err)
 		}
 	}

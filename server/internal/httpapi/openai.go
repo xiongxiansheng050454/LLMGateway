@@ -29,12 +29,12 @@ func (a *Server) handleModels(w http.ResponseWriter, r *http.Request) {
 		writeOpenAIError(w, http.StatusMethodNotAllowed, "invalid_request_error", "method not allowed")
 		return
 	}
-	auth, err := a.proxy.Authenticate(r.Header.Get("Authorization"))
+	auth, err := a.proxy.Authenticate(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		writeProxyError(w, err)
 		return
 	}
-	models, err := a.proxy.Models(auth)
+	models, err := a.proxy.Models(r.Context(), auth)
 	if err != nil {
 		writeProxyError(w, err)
 		return
@@ -51,7 +51,7 @@ func (a *Server) handleChatCompletions(w http.ResponseWriter, r *http.Request) {
 		writeOpenAIError(w, http.StatusMethodNotAllowed, "invalid_request_error", "method not allowed")
 		return
 	}
-	auth, err := a.proxy.Authenticate(r.Header.Get("Authorization"))
+	auth, err := a.proxy.Authenticate(r.Context(), r.Header.Get("Authorization"))
 	if err != nil {
 		writeProxyError(w, err)
 		return

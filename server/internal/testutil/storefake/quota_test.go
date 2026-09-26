@@ -13,15 +13,15 @@ func TestQuotaReaperReleasesExpiredReservation(t *testing.T) {
 	st := NewWithClock(func() time.Time { return now })
 	q := newQuota(st, func() time.Time { return now })
 	acc := newAccounts(st)
-	if _, err := acc.CreateUser(domain.UserInput{Nickname: "quota"}); err != nil {
+	if _, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "quota"}); err != nil {
 		t.Fatal(err)
 	}
-	key, err := acc.CreateKey(1, domain.KeyInput{KeyName: "quota"})
+	key, err := acc.CreateKey(context.Background(), 1, domain.KeyInput{KeyName: "quota"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	name, scope, period, scopeID, limit := "daily", "user", "day", 1, int64(100)
-	if _, err := q.CreateQuotaPolicy(domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
+	if _, err := q.CreateQuotaPolicy(context.Background(), domain.QuotaPolicyInput{PolicyName: &name, ScopeType: &scope, ScopeID: &scopeID, PeriodType: &period, TokenLimit: &limit}); err != nil {
 		t.Fatal(err)
 	}
 	reservation, err := q.ReserveQuota(context.Background(), domain.QuotaReserveInput{RequestID: "expired", UserID: 1, APIKeyID: key.ID, EstimatedTokens: 40, EstimatedCost: "0.000000", ExpiresAt: now.Add(time.Minute)})

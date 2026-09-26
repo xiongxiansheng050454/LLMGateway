@@ -29,13 +29,13 @@ func (a *Server) models(r *http.Request) httpcommon.AdminResult {
 	if r.Method != http.MethodGet {
 		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
-	return httpcommon.Result(a.ListCatalogModels(r.URL.Query().Get("status") == "1"))
+	return httpcommon.Result(a.ListCatalogModels(r.Context(), r.URL.Query().Get("status") == "1"))
 }
 
 func (a *Server) channels(r *http.Request) httpcommon.AdminResult {
 	switch r.Method {
 	case http.MethodGet:
-		return httpcommon.Result(a.ListChannels())
+		return httpcommon.Result(a.ListChannels(r.Context()))
 	case http.MethodPost:
 		return a.createChannel(r)
 	default:
@@ -52,7 +52,7 @@ func (a *Server) channel(r *http.Request) httpcommon.AdminResult {
 	case http.MethodPut:
 		return a.updateChannel(r, id)
 	case http.MethodDelete:
-		return httpcommon.NoBody(a.DeleteChannel(id))
+		return httpcommon.NoBody(a.DeleteChannel(r.Context(), id))
 	default:
 		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
@@ -88,10 +88,10 @@ func (a *Server) channelHealth(r *http.Request) httpcommon.AdminResult {
 	if result.Status != 0 {
 		return result
 	}
-	if _, err := a.GetChannelSecret(id); err != nil {
+	if _, err := a.GetChannelSecret(r.Context(), id); err != nil {
 		return httpcommon.Result(nil, err)
 	}
-	health, err := a.GetChannelHealth(id)
+	health, err := a.GetChannelHealth(r.Context(), id)
 	if err != nil {
 		return httpcommon.Result(nil, err)
 	}
@@ -106,10 +106,10 @@ func (a *Server) channelHealthReset(r *http.Request) httpcommon.AdminResult {
 	if result.Status != 0 {
 		return result
 	}
-	if _, err := a.GetChannelSecret(id); err != nil {
+	if _, err := a.GetChannelSecret(r.Context(), id); err != nil {
 		return httpcommon.NoBody(err)
 	}
-	return httpcommon.NoBody(a.ResetChannelHealth(id))
+	return httpcommon.NoBody(a.ResetChannelHealth(r.Context(), id))
 }
 
 func (a *Server) channelTest(r *http.Request) httpcommon.AdminResult {
@@ -131,7 +131,7 @@ func (a *Server) channelRemoteModels(r *http.Request) httpcommon.AdminResult {
 	if result.Status != 0 {
 		return result
 	}
-	return a.remoteModels(id)
+	return a.remoteModels(r.Context(), id)
 }
 
 func (a *Server) channelModels(r *http.Request) httpcommon.AdminResult {
@@ -140,14 +140,14 @@ func (a *Server) channelModels(r *http.Request) httpcommon.AdminResult {
 		return result
 	}
 	if r.Method == http.MethodGet {
-		return httpcommon.Result(a.ListChannelModels(id))
+		return httpcommon.Result(a.ListChannelModels(r.Context(), id))
 	}
 	if r.Method == http.MethodPost {
 		var req ChannelModel
 		if err := httpcommon.ReadJSON(r, &req); err != nil {
 			return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 		}
-		return httpcommon.Result(a.CreateChannelModel(id, req))
+		return httpcommon.Result(a.CreateChannelModel(r.Context(), id, req))
 	}
 	return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 }
@@ -170,9 +170,9 @@ func (a *Server) channelModel(r *http.Request) httpcommon.AdminResult {
 		if err := httpcommon.ReadJSON(r, &req); err != nil {
 			return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 		}
-		return httpcommon.Result(a.UpdateChannelModel(id, modelID, req.UpstreamModel, req.Enabled))
+		return httpcommon.Result(a.UpdateChannelModel(r.Context(), id, modelID, req.UpstreamModel, req.Enabled))
 	case http.MethodDelete:
-		return httpcommon.NoBody(a.DeleteChannelModel(id, modelID))
+		return httpcommon.NoBody(a.DeleteChannelModel(r.Context(), id, modelID))
 	default:
 		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
@@ -182,7 +182,7 @@ func (a *Server) channelHealthList(r *http.Request) httpcommon.AdminResult {
 	if r.Method != http.MethodGet {
 		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
-	return httpcommon.Result(a.ListChannelHealth())
+	return httpcommon.Result(a.ListChannelHealth(r.Context()))
 }
 
 func parseID(value, name string) (int, httpcommon.AdminResult) {
@@ -196,19 +196,19 @@ func parseID(value, name string) (int, httpcommon.AdminResult) {
 func (a *Server) pricingData(r *http.Request) httpcommon.AdminResult {
 	switch r.Method {
 	case http.MethodGet:
-		return httpcommon.Result(a.ListPricing())
+		return httpcommon.Result(a.ListPricing(r.Context()))
 	case http.MethodPost:
 		var req PricingInput
 		if err := httpcommon.ReadJSON(r, &req); err != nil {
 			return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 		}
-		return httpcommon.Result(a.UpsertPricing(req))
+		return httpcommon.Result(a.UpsertPricing(r.Context(), req))
 	case http.MethodDelete:
 		var req DeletePricingInput
 		if err := httpcommon.ReadJSON(r, &req); err != nil && err != io.EOF {
 			return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 		}
-		return httpcommon.NoBody(a.DeletePricing(req))
+		return httpcommon.NoBody(a.DeletePricing(r.Context(), req))
 	default:
 		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}

@@ -9,7 +9,7 @@ import (
 	"LLMGateway/server/internal/store"
 )
 
-func (s *Store) GetChannelHealthRow(channelID int) (domain.ChannelHealth, bool, error) {
+func (s *Store) GetChannelHealthRow(_ context.Context, channelID int) (domain.ChannelHealth, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	current, ok := s.channelHealth[channelID]
@@ -19,7 +19,7 @@ func (s *Store) GetChannelHealthRow(channelID int) (domain.ChannelHealth, bool, 
 	return *current, true, nil
 }
 
-func (s *Store) ListChannelHealthRows() ([]domain.ChannelHealth, error) {
+func (s *Store) ListChannelHealthRows(_ context.Context) ([]domain.ChannelHealth, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

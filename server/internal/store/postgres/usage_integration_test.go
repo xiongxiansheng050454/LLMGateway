@@ -16,25 +16,25 @@ func TestPGUsageLogsAndStats(t *testing.T) {
 	acc := accounts.New(st, st.AccountsTx())
 	ctx := context.Background()
 
-	if _, err := cat.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1}); err != nil {
+	if _, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := acc.CreateUser(domain.UserInput{Nickname: "A"}); err != nil {
+	if _, err := acc.CreateUser(ctx, domain.UserInput{Nickname: "A"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := acc.CreateUser(domain.UserInput{Nickname: "B"}); err != nil {
+	if _, err := acc.CreateUser(ctx, domain.UserInput{Nickname: "B"}); err != nil {
 		t.Fatal(err)
 	}
 
-	first, err := st.InsertUsageLog(domain.UsageLogInput{RequestID: "req-1", UserID: intp(1), ChannelID: intp(1), Model: "gpt", Status: "success", TotalTokens: 100, TotalCost: "0.001000", UnitPriceInputPer1M: "0.10000000", UnitPriceOutputPer1M: "0.20000000"})
+	first, err := st.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "req-1", UserID: intp(1), ChannelID: intp(1), Model: "gpt", Status: "success", TotalTokens: 100, TotalCost: "0.001000", UnitPriceInputPer1M: "0.10000000", UnitPriceOutputPer1M: "0.20000000"})
 	if err != nil {
 		t.Fatalf("InsertUsageLog: %v", err)
 	}
-	second, err := st.InsertUsageLog(domain.UsageLogInput{RequestID: "req-2", UserID: intp(1), ChannelID: intp(1), Model: "gpt-4o", Status: "error", TotalTokens: 200, TotalCost: "0.002000"})
+	second, err := st.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "req-2", UserID: intp(1), ChannelID: intp(1), Model: "gpt-4o", Status: "error", TotalTokens: 200, TotalCost: "0.002000"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	third, err := st.InsertUsageLog(domain.UsageLogInput{RequestID: "req-3", UserID: intp(2), ChannelID: intp(1), Model: "gpt", Status: "success", TotalTokens: 300, TotalCost: "0.003000"})
+	third, err := st.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "req-3", UserID: intp(2), ChannelID: intp(1), Model: "gpt", Status: "success", TotalTokens: 300, TotalCost: "0.003000"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -51,7 +51,7 @@ func TestPGUsageLogsAndStats(t *testing.T) {
 	}
 
 	// List + filter.
-	all, err := st.ListUsageLogs(domain.UsageLogFilter{Page: 1, PageSize: 20})
+	all, err := st.ListUsageLogs(context.Background(), domain.UsageLogFilter{Page: 1, PageSize: 20})
 	if err != nil {
 		t.Fatalf("ListUsageLogs: %v", err)
 	}
@@ -63,27 +63,27 @@ func TestPGUsageLogsAndStats(t *testing.T) {
 		t.Fatalf("unexpected row: %+v", row)
 	}
 
-	filtered, _ := st.ListUsageLogs(domain.UsageLogFilter{Status: "error", Model: "gpt-4o", Page: 1, PageSize: 20})
+	filtered, _ := st.ListUsageLogs(context.Background(), domain.UsageLogFilter{Status: "error", Model: "gpt-4o", Page: 1, PageSize: 20})
 	if filtered.Total != 1 {
 		t.Fatalf("filtered total = %d, want 1", filtered.Total)
 	}
-	byUser, _ := st.ListUsageLogs(domain.UsageLogFilter{UserID: intp(1), Page: 1, PageSize: 20})
+	byUser, _ := st.ListUsageLogs(context.Background(), domain.UsageLogFilter{UserID: intp(1), Page: 1, PageSize: 20})
 	if byUser.Total != 2 {
 		t.Fatalf("user filter total = %d, want 2", byUser.Total)
 	}
-	byRange, _ := st.ListUsageLogs(domain.UsageLogFilter{StartTime: "2026-09-16T00:00:00Z", EndTime: "2026-09-16T23:59:59Z", Page: 1, PageSize: 20})
+	byRange, _ := st.ListUsageLogs(context.Background(), domain.UsageLogFilter{StartTime: "2026-09-16T00:00:00Z", EndTime: "2026-09-16T23:59:59Z", Page: 1, PageSize: 20})
 	if byRange.Total != 2 {
 		t.Fatalf("range filter total = %d, want 2", byRange.Total)
 	}
 
-	if _, err := st.GetUsageLog(first); err != nil {
+	if _, err := st.GetUsageLog(context.Background(), first); err != nil {
 		t.Fatalf("GetUsageLog: %v", err)
 	}
-	if _, err := st.GetUsageLog(404); !errors.Is(err, store.ErrNotFound) {
+	if _, err := st.GetUsageLog(context.Background(), 404); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing log err = %v, want ErrNotFound", err)
 	}
 
-	overview, err := st.StatsOverview("2026-09-16T00:00:00Z", "2026-09-16T23:59:59Z")
+	overview, err := st.StatsOverview(context.Background(), "2026-09-16T00:00:00Z", "2026-09-16T23:59:59Z")
 	if err != nil {
 		t.Fatalf("StatsOverview: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestPGUsageLogsAndStats(t *testing.T) {
 		t.Fatalf("unexpected overview aggregates: %+v", overview)
 	}
 
-	daily, err := st.StatsDaily("2026-09-16", "2026-09-17", 1, 100)
+	daily, err := st.StatsDaily(context.Background(), "2026-09-16", "2026-09-17", 1, 100)
 	if err != nil {
 		t.Fatalf("StatsDaily: %v", err)
 	}
@@ -106,7 +106,7 @@ func TestPGUsageLogsAndStats(t *testing.T) {
 		t.Fatalf("unexpected day: %+v", day)
 	}
 
-	channels, err := st.StatsChannels("2026-09-16T00:00:00Z", "2026-09-16T23:59:59Z")
+	channels, err := st.StatsChannels(context.Background(), "2026-09-16T00:00:00Z", "2026-09-16T23:59:59Z")
 	if err != nil {
 		t.Fatalf("StatsChannels: %v", err)
 	}
@@ -119,11 +119,11 @@ func TestPGUsageLogsAndStats(t *testing.T) {
 	}
 
 	for index, ttft := range []int{100, 200, 500} {
-		if _, err := st.InsertUsageLog(domain.UsageLogInput{RequestID: "ttft-" + string(rune('a'+index)), UserID: intp(1), ChannelID: intp(1), Model: "gpt", Status: "success", TTFTMs: &ttft}); err != nil {
+		if _, err := st.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "ttft-" + string(rune('a'+index)), UserID: intp(1), ChannelID: intp(1), Model: "gpt", Status: "success", TTFTMs: &ttft}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	ttft, err := st.StatsTTFT(domain.TTFTStatsFilter{UserID: intp(1), ChannelID: intp(1), Model: "gpt", StartTime: "1970-01-01T00:00:00Z", EndTime: "2100-01-01T00:00:00Z"})
+	ttft, err := st.StatsTTFT(context.Background(), domain.TTFTStatsFilter{UserID: intp(1), ChannelID: intp(1), Model: "gpt", StartTime: "1970-01-01T00:00:00Z", EndTime: "2100-01-01T00:00:00Z"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -136,32 +136,32 @@ func TestPGCountRequestsSinceFiltersByModelAndChannel(t *testing.T) {
 	st := testStore(t)
 	cat := testCatalog(t, st)
 	acc := accounts.New(st, st.AccountsTx())
-	if _, err := cat.CreateChannel(domain.ChannelInput{Name: "A", BaseURL: "https://a.test", APIKey: "sk", Status: 1}); err != nil {
+	if _, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "A", BaseURL: "https://a.test", APIKey: "sk", Status: 1}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cat.CreateChannel(domain.ChannelInput{Name: "B", BaseURL: "https://b.test", APIKey: "sk", Status: 1}); err != nil {
+	if _, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "B", BaseURL: "https://b.test", APIKey: "sk", Status: 1}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := acc.CreateUser(domain.UserInput{Nickname: "A"}); err != nil {
+	if _, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "A"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := acc.CreateUser(domain.UserInput{Nickname: "B"}); err != nil {
+	if _, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "B"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.InsertUsageLog(domain.UsageLogInput{RequestID: "count-1", UserID: intp(1), ChannelID: intp(1), Model: "gpt", Status: "success"}); err != nil {
+	if _, err := st.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "count-1", UserID: intp(1), ChannelID: intp(1), Model: "gpt", Status: "success"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.InsertUsageLog(domain.UsageLogInput{RequestID: "count-2", UserID: intp(1), ChannelID: intp(2), Model: "gpt", Status: "error"}); err != nil {
+	if _, err := st.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "count-2", UserID: intp(1), ChannelID: intp(2), Model: "gpt", Status: "error"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.InsertUsageLog(domain.UsageLogInput{RequestID: "count-3", UserID: intp(1), ChannelID: intp(1), Model: "other", Status: "success"}); err != nil {
+	if _, err := st.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "count-3", UserID: intp(1), ChannelID: intp(1), Model: "other", Status: "success"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.InsertUsageLog(domain.UsageLogInput{RequestID: "count-4", UserID: intp(2), ChannelID: intp(1), Model: "gpt", Status: "success"}); err != nil {
+	if _, err := st.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "count-4", UserID: intp(2), ChannelID: intp(1), Model: "gpt", Status: "success"}); err != nil {
 		t.Fatal(err)
 	}
 
-	count, err := st.CountRequestsSince(domain.UsageCountFilter{UserID: 1, Since: "1970-01-01T00:00:00Z", Model: "gpt", ChannelID: intp(1)})
+	count, err := st.CountRequestsSince(context.Background(), domain.UsageCountFilter{UserID: 1, Since: "1970-01-01T00:00:00Z", Model: "gpt", ChannelID: intp(1)})
 	if err != nil {
 		t.Fatalf("CountRequestsSince: %v", err)
 	}
@@ -173,14 +173,14 @@ func TestPGCountRequestsSinceFiltersByModelAndChannel(t *testing.T) {
 func TestPGAggregateUsageFiltersByAPIKey(t *testing.T) {
 	st := testStore(t)
 	acc := accounts.New(st, st.AccountsTx())
-	if _, err := acc.CreateUser(domain.UserInput{Nickname: "A"}); err != nil {
+	if _, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "A"}); err != nil {
 		t.Fatal(err)
 	}
-	keyA, err := acc.CreateKey(1, domain.KeyInput{KeyName: "A"})
+	keyA, err := acc.CreateKey(context.Background(), 1, domain.KeyInput{KeyName: "A"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	keyB, err := acc.CreateKey(1, domain.KeyInput{KeyName: "B"})
+	keyB, err := acc.CreateKey(context.Background(), 1, domain.KeyInput{KeyName: "B"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,16 +190,16 @@ func TestPGAggregateUsageFiltersByAPIKey(t *testing.T) {
 		{RequestID: "aggregate-a-other", UserID: intp(1), APIKeyID: intp(keyA.ID), Model: "other", Status: "success", TotalTokens: 5, TotalCost: "0.003000", DurationMs: 10},
 		{RequestID: "aggregate-b-gpt", UserID: intp(1), APIKeyID: intp(keyB.ID), Model: "gpt", Status: "success", TotalTokens: 999, TotalCost: "9.000000", DurationMs: 99},
 	} {
-		if _, err := st.InsertUsageLog(input); err != nil {
+		if _, err := st.InsertUsageLog(context.Background(), input); err != nil {
 			t.Fatal(err)
 		}
 	}
 
-	logs, err := st.ListUsageLogs(domain.UsageLogFilter{APIKeyID: intp(keyA.ID), Page: 1, PageSize: 20})
+	logs, err := st.ListUsageLogs(context.Background(), domain.UsageLogFilter{APIKeyID: intp(keyA.ID), Page: 1, PageSize: 20})
 	if err != nil || logs.Total != 3 {
 		t.Fatalf("key-filtered logs = %+v, %v", logs, err)
 	}
-	aggregates, err := st.AggregateUsage(domain.UsageAggregateFilter{GroupBy: "model", APIKeyID: intp(keyA.ID), StartTime: "1970-01-01T00:00:00Z", EndTime: "2100-01-01T00:00:00Z", Page: 1, PageSize: 20})
+	aggregates, err := st.AggregateUsage(context.Background(), domain.UsageAggregateFilter{GroupBy: "model", APIKeyID: intp(keyA.ID), StartTime: "1970-01-01T00:00:00Z", EndTime: "2100-01-01T00:00:00Z", Page: 1, PageSize: 20})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -207,7 +207,7 @@ func TestPGAggregateUsageFiltersByAPIKey(t *testing.T) {
 		t.Fatalf("aggregates = %+v", aggregates)
 	}
 	for _, groupBy := range []string{"user", "api_key", "channel"} {
-		result, err := st.AggregateUsage(domain.UsageAggregateFilter{GroupBy: groupBy, APIKeyID: intp(keyA.ID), StartTime: "1970-01-01T00:00:00Z", EndTime: "2100-01-01T00:00:00Z", Page: 1, PageSize: 20})
+		result, err := st.AggregateUsage(context.Background(), domain.UsageAggregateFilter{GroupBy: groupBy, APIKeyID: intp(keyA.ID), StartTime: "1970-01-01T00:00:00Z", EndTime: "2100-01-01T00:00:00Z", Page: 1, PageSize: 20})
 		if err != nil || result.Total != 1 || result.List[0].RequestCount != 3 || result.List[0].TotalTokens != 35 || result.List[0].TotalCost != "0.006000" {
 			t.Fatalf("%s aggregate = %+v, %v", groupBy, result, err)
 		}
@@ -217,16 +217,16 @@ func TestPGAggregateUsageFiltersByAPIKey(t *testing.T) {
 func TestPGUsageInvalidTimeParams(t *testing.T) {
 	st := testStore(t)
 
-	if _, err := st.ListUsageLogs(domain.UsageLogFilter{StartTime: "abc", Page: 1, PageSize: 20}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := st.ListUsageLogs(context.Background(), domain.UsageLogFilter{StartTime: "abc", Page: 1, PageSize: 20}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid start_time err = %v, want ErrInvalid", err)
 	}
-	if _, err := st.StatsOverview("abc", ""); !errors.Is(err, store.ErrInvalid) {
+	if _, err := st.StatsOverview(context.Background(), "abc", ""); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid overview start err = %v, want ErrInvalid", err)
 	}
-	if _, err := st.StatsChannels("", "abc"); !errors.Is(err, store.ErrInvalid) {
+	if _, err := st.StatsChannels(context.Background(), "", "abc"); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid channels end err = %v, want ErrInvalid", err)
 	}
-	if _, err := st.StatsDaily("abc", "2026-01-01", 1, 100); !errors.Is(err, store.ErrInvalid) {
+	if _, err := st.StatsDaily(context.Background(), "abc", "2026-01-01", 1, 100); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid date_from err = %v, want ErrInvalid", err)
 	}
 }
@@ -234,7 +234,7 @@ func TestPGUsageInvalidTimeParams(t *testing.T) {
 func TestPGStatsEmptyReturnsZeroValues(t *testing.T) {
 	st := testStore(t)
 
-	overview, err := st.StatsOverview("", "")
+	overview, err := st.StatsOverview(context.Background(), "", "")
 	if err != nil {
 		t.Fatalf("StatsOverview: %v", err)
 	}
@@ -242,7 +242,7 @@ func TestPGStatsEmptyReturnsZeroValues(t *testing.T) {
 		t.Fatalf("unexpected empty overview: %+v", overview)
 	}
 
-	daily, err := st.StatsDaily("1970-01-01", "9999-12-31", 1, 100)
+	daily, err := st.StatsDaily(context.Background(), "1970-01-01", "9999-12-31", 1, 100)
 	if err != nil {
 		t.Fatalf("StatsDaily: %v", err)
 	}
@@ -250,7 +250,7 @@ func TestPGStatsEmptyReturnsZeroValues(t *testing.T) {
 		t.Fatalf("unexpected empty daily: %+v", daily)
 	}
 
-	channels, err := st.StatsChannels("", "")
+	channels, err := st.StatsChannels(context.Background(), "", "")
 	if err != nil {
 		t.Fatalf("StatsChannels: %v", err)
 	}

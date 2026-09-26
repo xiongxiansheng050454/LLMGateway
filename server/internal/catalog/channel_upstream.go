@@ -1,6 +1,7 @@
 package catalog
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -9,8 +10,8 @@ import (
 	"LLMGateway/server/internal/httpcommon"
 )
 
-func (a *Server) remoteModels(channelID int) httpcommon.AdminResult {
-	ch, err := a.GetChannelSecret(channelID)
+func (a *Server) remoteModels(ctx context.Context, channelID int) httpcommon.AdminResult {
+	ch, err := a.GetChannelSecret(ctx, channelID)
 	if err != nil {
 		return httpcommon.Result(nil, err)
 	}

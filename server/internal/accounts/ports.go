@@ -9,18 +9,18 @@ import (
 // orchestration. Multistep and rule-bearing operations live on Server and use
 // a TxManager.
 type Port interface {
-	ListUsers(page, pageSize int) (ListResponse[UserDTO], error)
-	GetUserBalance(id int) (BalanceDTO, error)
-	ListBalanceTransactions(userID, page, pageSize int) (ListResponse[BalanceTransactionDTO], error)
+	ListUsers(ctx context.Context, page, pageSize int) (ListResponse[UserDTO], error)
+	GetUserBalance(ctx context.Context, id int) (BalanceDTO, error)
+	ListBalanceTransactions(ctx context.Context, userID, page, pageSize int) (ListResponse[BalanceTransactionDTO], error)
 
-	ListUserKeys(userID, page, pageSize int) (ListResponse[ClientKeyDTO], error)
-	ListKeys(page, pageSize int) (ListResponse[ClientKeyDTO], error)
+	ListUserKeys(ctx context.Context, userID, page, pageSize int) (ListResponse[ClientKeyDTO], error)
+	ListKeys(ctx context.Context, page, pageSize int) (ListResponse[ClientKeyDTO], error)
 
 	// AuthenticateKey looks up a gateway key by its hash and returns the raw
 	// key + user authentication state. Missing keys return ErrNotFound.
-	AuthenticateKey(keyHash string) (*AuthContext, error)
+	AuthenticateKey(ctx context.Context, keyHash string) (*AuthContext, error)
 	// UpdateKeyLastUsed records key usage. Missing keys return ErrNotFound.
-	UpdateKeyLastUsed(keyID int) error
+	UpdateKeyLastUsed(ctx context.Context, keyID int) error
 }
 
 // Tx is the transaction-scoped persistence surface. It exposes only CRUD,

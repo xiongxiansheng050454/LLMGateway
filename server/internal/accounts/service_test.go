@@ -1,6 +1,7 @@
 package accounts_test
 
 import (
+	"context"
 	"errors"
 	"testing"
 
@@ -15,7 +16,7 @@ func TestServiceUserLifecycle(t *testing.T) {
 	deps := app.New()
 	acc := deps.Accounts
 
-	created, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"})
+	created, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "Alice"})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
@@ -25,11 +26,11 @@ func TestServiceUserLifecycle(t *testing.T) {
 	if created.Balance.AvailableBalance != "0.000000" {
 		t.Fatalf("initial balance = %+v", created.Balance)
 	}
-	if _, err := acc.CreateUser(domain.UserInput{Status: "bogus"}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := acc.CreateUser(context.Background(), domain.UserInput{Status: "bogus"}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid status err = %v, want ErrInvalid", err)
 	}
 
-	updated, err := acc.UpdateUser(created.ID, domain.UserInput{Nickname: "Alice2", UserGroup: "vip"})
+	updated, err := acc.UpdateUser(context.Background(), created.ID, domain.UserInput{Nickname: "Alice2", UserGroup: "vip"})
 	if err != nil {
 		t.Fatalf("UpdateUser: %v", err)
 	}
@@ -37,14 +38,14 @@ func TestServiceUserLifecycle(t *testing.T) {
 		t.Fatalf("unexpected update: %+v", updated)
 	}
 
-	suspended, err := acc.UpdateUserStatus(created.ID, "suspended")
+	suspended, err := acc.UpdateUserStatus(context.Background(), created.ID, "suspended")
 	if err != nil || suspended.Status != "suspended" {
 		t.Fatalf("UpdateUserStatus = %+v, %v", suspended, err)
 	}
-	if _, err := acc.UpdateUserStatus(created.ID, "bogus"); !errors.Is(err, store.ErrInvalid) {
+	if _, err := acc.UpdateUserStatus(context.Background(), created.ID, "bogus"); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid status err = %v, want ErrInvalid", err)
 	}
-	if _, err := acc.UpdateUser(404, domain.UserInput{Nickname: "x"}); !errors.Is(err, store.ErrNotFound) {
+	if _, err := acc.UpdateUser(context.Background(), 404, domain.UserInput{Nickname: "x"}); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing user err = %v, want ErrNotFound", err)
 	}
 }
@@ -53,12 +54,12 @@ func TestServiceRechargeAndDebit(t *testing.T) {
 	deps := app.New()
 	acc := deps.Accounts
 
-	user, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"})
+	user, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "Alice"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	recharged, err := acc.RechargeUser(user.ID, domain.RechargeInput{Amount: "50.5"})
+	recharged, err := acc.RechargeUser(context.Background(), user.ID, domain.RechargeInput{Amount: "50.5"})
 	if err != nil {
 		t.Fatalf("RechargeUser: %v", err)
 	}
@@ -67,11 +68,11 @@ func TestServiceRechargeAndDebit(t *testing.T) {
 	}
 
 	// Idempotent by related_order_id.
-	first, err := acc.RechargeUser(user.ID, domain.RechargeInput{Amount: "10.000000", RelatedOrderID: "order-1"})
+	first, err := acc.RechargeUser(context.Background(), user.ID, domain.RechargeInput{Amount: "10.000000", RelatedOrderID: "order-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := acc.RechargeUser(user.ID, domain.RechargeInput{Amount: "10.000000", RelatedOrderID: "order-1"})
+	second, err := acc.RechargeUser(context.Background(), user.ID, domain.RechargeInput{Amount: "10.000000", RelatedOrderID: "order-1"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -79,21 +80,21 @@ func TestServiceRechargeAndDebit(t *testing.T) {
 		t.Fatalf("idempotent recharge mismatch: %v vs %v", first.BalanceAfter, second.BalanceAfter)
 	}
 
-	if _, err := acc.RechargeUser(user.ID, domain.RechargeInput{Amount: "abc"}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := acc.RechargeUser(context.Background(), user.ID, domain.RechargeInput{Amount: "abc"}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid amount err = %v, want ErrInvalid", err)
 	}
 
-	debit, err := acc.DebitUserBalance(user.ID, "3.5", "request")
+	debit, err := acc.DebitUserBalance(context.Background(), user.ID, "3.5", "request")
 	if err != nil {
 		t.Fatalf("DebitUserBalance: %v", err)
 	}
 	if debit.BalanceAfter != "57.000000" {
 		t.Fatalf("balance_after = %v, want 57.000000", debit.BalanceAfter)
 	}
-	if _, err := acc.DebitUserBalance(user.ID, "1000.000000", "too much"); !errors.Is(err, store.ErrInvalid) {
+	if _, err := acc.DebitUserBalance(context.Background(), user.ID, "1000.000000", "too much"); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("insufficient err = %v, want ErrInvalid", err)
 	}
-	if _, err := acc.DebitUserBalance(404, "1.000000", "missing"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := acc.DebitUserBalance(context.Background(), 404, "1.000000", "missing"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing user err = %v, want ErrNotFound", err)
 	}
 }
@@ -102,34 +103,34 @@ func TestServiceKeyLifecycle(t *testing.T) {
 	deps := app.New()
 	acc := deps.Accounts
 
-	user, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"})
+	user, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "Alice"})
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	key, err := acc.CreateKey(user.ID, domain.KeyInput{KeyName: "default", Prefix: "sk-"})
+	key, err := acc.CreateKey(context.Background(), user.ID, domain.KeyInput{KeyName: "default", Prefix: "sk-"})
 	if err != nil {
 		t.Fatalf("CreateKey: %v", err)
 	}
 	if key.FullKey == "" {
 		t.Fatal("full_key missing")
 	}
-	if _, err := acc.CreateKey(404, domain.KeyInput{}); !errors.Is(err, store.ErrNotFound) {
+	if _, err := acc.CreateKey(context.Background(), 404, domain.KeyInput{}); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("CreateKey missing user err = %v, want ErrNotFound", err)
 	}
 
-	updated, err := acc.UpdateKey(user.ID, key.ID, domain.KeyUpdateInput{IsActive: boolPtr(false)})
+	updated, err := acc.UpdateKey(context.Background(), user.ID, key.ID, domain.KeyUpdateInput{IsActive: boolPtr(false)})
 	if err != nil {
 		t.Fatalf("UpdateKey: %v", err)
 	}
 	if updated.IsActive {
 		t.Fatal("key not deactivated")
 	}
-	if _, err := acc.UpdateKey(user.ID, key.ID, domain.KeyUpdateInput{}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := acc.UpdateKey(context.Background(), user.ID, key.ID, domain.KeyUpdateInput{}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("missing is_active err = %v, want ErrInvalid", err)
 	}
 
-	reset, err := acc.ResetKey(user.ID, key.ID)
+	reset, err := acc.ResetKey(context.Background(), user.ID, key.ID)
 	if err != nil {
 		t.Fatalf("ResetKey: %v", err)
 	}
@@ -137,17 +138,17 @@ func TestServiceKeyLifecycle(t *testing.T) {
 		t.Fatal("reset did not rotate the key")
 	}
 
-	if err := acc.DeleteKey(user.ID, key.ID); err != nil {
+	if err := acc.DeleteKey(context.Background(), user.ID, key.ID); err != nil {
 		t.Fatalf("DeleteKey: %v", err)
 	}
-	if err := acc.DeleteKey(user.ID, key.ID); !errors.Is(err, store.ErrNotFound) {
+	if err := acc.DeleteKey(context.Background(), user.ID, key.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("second DeleteKey err = %v, want ErrNotFound", err)
 	}
 
-	if err := acc.DeleteUser(user.ID); err != nil {
+	if err := acc.DeleteUser(context.Background(), user.ID); err != nil {
 		t.Fatalf("DeleteUser: %v", err)
 	}
-	if err := acc.DeleteUser(user.ID); !errors.Is(err, store.ErrNotFound) {
+	if err := acc.DeleteUser(context.Background(), user.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("second DeleteUser err = %v, want ErrNotFound", err)
 	}
 }

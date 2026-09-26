@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"net/http"
 	"testing"
 	"time"
@@ -31,7 +32,7 @@ func seedRoutingStore(t *testing.T) *storefake.Store {
 		if balance != "" {
 			balancePtr = &balance
 		}
-		created, err := cat.CreateChannel(domain.ChannelInput{Name: name, BaseURL: "https://" + name + ".test", APIKey: "sk", Status: 1, Priority: priority, Weight: weight, Balance: balancePtr})
+		created, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: name, BaseURL: "https://" + name + ".test", APIKey: "sk", Status: 1, Priority: priority, Weight: weight, Balance: balancePtr})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -42,7 +43,7 @@ func seedRoutingStore(t *testing.T) *storefake.Store {
 	highB := create("highB", 10, 200, "")
 	zero := create("zero", 20, 500, "0.000000")
 	for _, id := range []int{low, highA, highB, zero} {
-		if _, err := cat.CreateChannelModel(id, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up", Enabled: true}); err != nil {
+		if _, err := cat.CreateChannelModel(context.Background(), id, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up", Enabled: true}); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -55,7 +56,7 @@ func TestSelectChannelUsesHighestPriorityGroup(t *testing.T) {
 	// rand 0 selects the first candidate in the highest priority group, which
 	// is ordered by weight desc (highB weight 200 before highA weight 100).
 	a := newRouteTestApp(st, func(int) int { return 0 })
-	candidate, err := a.selectChannel("gpt")
+	candidate, err := a.selectChannel(context.Background(), "gpt")
 	if err != nil {
 		t.Fatalf("selectChannel: %v", err)
 	}
@@ -72,7 +73,7 @@ func TestSelectChannelWeightedFallback(t *testing.T) {
 
 	// Total weight in the top group is 300; a pick of 299 lands on highA.
 	a := newRouteTestApp(st, func(int) int { return 299 })
-	candidate, err := a.selectChannel("gpt")
+	candidate, err := a.selectChannel(context.Background(), "gpt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,12 +87,12 @@ func TestSelectChannelExcludesNonPositiveBalance(t *testing.T) {
 	cat := newTestCatalog(st)
 
 	// Only the zero-balance channel serves "only-zero".
-	if _, err := cat.CreateChannelModel(4, domain.ChannelModel{ModelName: "only-zero", UpstreamModel: "up", Enabled: true}); err != nil {
+	if _, err := cat.CreateChannelModel(context.Background(), 4, domain.ChannelModel{ModelName: "only-zero", UpstreamModel: "up", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 
 	a := newRouteTestApp(st, func(int) int { return 0 })
-	if _, err := a.selectChannel("only-zero"); err != ErrNoHealthyChannel {
+	if _, err := a.selectChannel(context.Background(), "only-zero"); err != ErrNoHealthyChannel {
 		t.Fatalf("err = %v, want ErrNoHealthyChannel", err)
 	}
 }
@@ -106,18 +107,18 @@ func TestSelectChannelExcludesBalanceBelowConfiguredReserve(t *testing.T) {
 		{Name: "at-reserve", BaseURL: "https://at.test", APIKey: "sk", Status: 1, Priority: 10, Weight: 100, Balance: &highBalance},
 		{Name: "unlimited", BaseURL: "https://unlimited.test", APIKey: "sk", Status: 1, Priority: 10, Weight: 100},
 	} {
-		channel, err := cat.CreateChannel(input)
+		channel, err := cat.CreateChannel(context.Background(), input)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if _, err := cat.CreateChannelModel(channel.ID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "gpt", Enabled: true}); err != nil {
+		if _, err := cat.CreateChannelModel(context.Background(), channel.ID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "gpt", Enabled: true}); err != nil {
 			t.Fatal(err)
 		}
 	}
 
 	a := newRouteTestApp(st, func(int) int { return 0 })
 	a.ConfigureMinimumRouteBalance("1.000000")
-	candidates, err := a.orderedCandidates("gpt")
+	candidates, err := a.orderedCandidates(context.Background(), "gpt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -128,7 +129,7 @@ func TestSelectChannelExcludesBalanceBelowConfiguredReserve(t *testing.T) {
 
 func TestSelectChannelNoCandidates(t *testing.T) {
 	a := newRouteTestApp(storefake.New(), func(int) int { return 0 })
-	if _, err := a.selectChannel("missing"); err != ErrNoHealthyChannel {
+	if _, err := a.selectChannel(context.Background(), "missing"); err != ErrNoHealthyChannel {
 		t.Fatalf("err = %v, want ErrNoHealthyChannel", err)
 	}
 }
@@ -141,19 +142,19 @@ func TestOrderedCandidatesDeduplicateChannelsAndKeepPriorityFallbacks(t *testing
 		{Name: "preferred", BaseURL: "http://preferred", APIKey: "x", Status: 1, Priority: 10, Weight: 10},
 		{Name: "fallback", BaseURL: "http://fallback", APIKey: "x", Status: 1, Priority: 5, Weight: 1},
 	} {
-		created, err := cat.CreateChannel(input)
+		created, err := cat.CreateChannel(context.Background(), input)
 		if err != nil {
 			t.Fatal(err)
 		}
 		ids = append(ids, created.ID)
 	}
 	for _, channelID := range []int{ids[0], ids[1]} {
-		if _, err := cat.CreateChannelModel(channelID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "gpt", Enabled: true}); err != nil {
+		if _, err := cat.CreateChannelModel(context.Background(), channelID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "gpt", Enabled: true}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	service := NewService(st, cat, newTestQuota(st, nil), newTestRateLimit(st, nil), nil, func(int) int { return 0 }, time.Now)
-	candidates, err := service.orderedCandidates("gpt")
+	candidates, err := service.orderedCandidates(context.Background(), "gpt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,18 +166,18 @@ func TestOrderedCandidatesDeduplicateChannelsAndKeepPriorityFallbacks(t *testing
 func TestOrderedCandidatesSticksAPIKeyAndModelToSameChannel(t *testing.T) {
 	st := seedRoutingStore(t)
 	a := newRouteTestApp(st, func(int) int { return 299 })
-	first, err := a.orderedCandidates("gpt", 42)
+	first, err := a.orderedCandidates(context.Background(), "gpt", 42)
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := a.orderedCandidates("gpt", 42)
+	second, err := a.orderedCandidates(context.Background(), "gpt", 42)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if first[0].ChannelID != second[0].ChannelID {
 		t.Fatalf("sticky first candidates = %d,%d, want same channel", first[0].ChannelID, second[0].ChannelID)
 	}
-	otherKey, err := a.orderedCandidates("gpt", 43)
+	otherKey, err := a.orderedCandidates(context.Background(), "gpt", 43)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -12,8 +12,8 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-func (s *Store) GetChannelHealthRow(channelID int) (domain.ChannelHealth, bool, error) {
-	row, err := s.queries.GetChannelHealth(context.Background(), int64(channelID))
+func (s *Store) GetChannelHealthRow(ctx context.Context, channelID int) (domain.ChannelHealth, bool, error) {
+	row, err := s.queries.GetChannelHealth(ctx, int64(channelID))
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return domain.ChannelHealth{}, false, nil
@@ -23,8 +23,8 @@ func (s *Store) GetChannelHealthRow(channelID int) (domain.ChannelHealth, bool, 
 	return channelHealthFromRow(row), true, nil
 }
 
-func (s *Store) ListChannelHealthRows() ([]domain.ChannelHealth, error) {
-	rows, err := s.pool.Query(context.Background(), `SELECT c.id, COALESCE(h.state,'closed'), COALESCE(h.consecutive_failures,0), COALESCE(h.success_count,0), COALESCE(h.failure_count,0), h.opened_at, COALESCE(h.updated_at,c.updated_at) FROM channels c LEFT JOIN channel_health h ON h.channel_id=c.id ORDER BY c.id`)
+func (s *Store) ListChannelHealthRows(ctx context.Context) ([]domain.ChannelHealth, error) {
+	rows, err := s.pool.Query(ctx, `SELECT c.id, COALESCE(h.state,'closed'), COALESCE(h.consecutive_failures,0), COALESCE(h.success_count,0), COALESCE(h.failure_count,0), h.opened_at, COALESCE(h.updated_at,c.updated_at) FROM channels c LEFT JOIN channel_health h ON h.channel_id=c.id ORDER BY c.id`)
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -56,11 +56,11 @@ func (s *Store) AcquireChannelProbe(ctx context.Context, channelID int, lease ti
 }
 
 func (t *Tx) EnsureChannelHealth(channelID int) error {
-	return mapError(t.queries.EnsureChannelHealth(context.Background(), int64(channelID)))
+	return mapError(t.queries.EnsureChannelHealth(t.ctx, int64(channelID)))
 }
 
 func (t *Tx) GetChannelHealthForUpdate(channelID int) (domain.ChannelHealth, error) {
-	row, err := t.queries.GetChannelHealthForUpdate(context.Background(), int64(channelID))
+	row, err := t.queries.GetChannelHealthForUpdate(t.ctx, int64(channelID))
 	if err != nil {
 		return domain.ChannelHealth{}, mapError(err)
 	}
@@ -74,7 +74,7 @@ func (t *Tx) UpdateChannelHealth(health domain.ChannelHealth) (bool, error) {
 			openedAt = pgtype.Timestamptz{Time: parsed, Valid: true}
 		}
 	}
-	affected, err := t.queries.UpdateChannelHealth(context.Background(), sqlc.UpdateChannelHealthParams{
+	affected, err := t.queries.UpdateChannelHealth(t.ctx, sqlc.UpdateChannelHealthParams{
 		State:               string(health.State),
 		ConsecutiveFailures: int32(health.ConsecutiveFailures),
 		SuccessCount:        health.SuccessCount,
@@ -89,7 +89,7 @@ func (t *Tx) UpdateChannelHealth(health domain.ChannelHealth) (bool, error) {
 }
 
 func (t *Tx) DeleteChannelHealth(channelID int) error {
-	ctx := context.Background()
+	ctx := t.ctx
 	for _, table := range []string{"channel_breaker_probes", "channel_breaker_configs", "channel_health_buckets", "channel_health"} {
 		if _, err := t.tx.Exec(ctx, "DELETE FROM "+table+" WHERE channel_id=$1", channelID); err != nil {
 			return mapError(err)

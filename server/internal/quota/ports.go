@@ -9,12 +9,12 @@ import (
 // query primitives: normalization, validation and reservation orchestration
 // live on Server.
 type Port interface {
-	ListQuotaPolicies(QuotaPolicyFilter) (ListResponse[QuotaPolicyDTO], error)
-	GetQuotaPolicy(id int) (QuotaPolicy, error)
-	InsertQuotaPolicy(policy QuotaPolicy) (int, error)
-	UpdateQuotaPolicyRecord(id int, policy QuotaPolicy) (bool, error)
-	DeleteQuotaPolicy(id int) (bool, error)
-	ListQuotaUsage(context.Context, QuotaPolicyFilter) (ListResponse[QuotaUsageDTO], error)
+	ListQuotaPolicies(ctx context.Context, filter QuotaPolicyFilter) (ListResponse[QuotaPolicyDTO], error)
+	GetQuotaPolicy(ctx context.Context, id int) (QuotaPolicy, error)
+	InsertQuotaPolicy(ctx context.Context, policy QuotaPolicy) (int, error)
+	UpdateQuotaPolicyRecord(ctx context.Context, id int, policy QuotaPolicy) (bool, error)
+	DeleteQuotaPolicy(ctx context.Context, id int) (bool, error)
+	ListQuotaUsage(ctx context.Context, filter QuotaPolicyFilter) (ListResponse[QuotaUsageDTO], error)
 }
 
 // Tx is the transaction-scoped persistence surface for quota reservations.

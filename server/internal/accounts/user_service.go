@@ -15,7 +15,7 @@ const (
 
 // CreateUser applies account defaults and validation, then inserts the user and
 // its balance row in one transaction.
-func (a *Server) CreateUser(in UserInput) (UserDTO, error) {
+func (a *Server) CreateUser(ctx context.Context, in UserInput) (UserDTO, error) {
 	if in.UserGroup == "" {
 		in.UserGroup = defaultUserGroup
 	}
@@ -27,7 +27,7 @@ func (a *Server) CreateUser(in UserInput) (UserDTO, error) {
 	}
 
 	var created User
-	err := a.tx.InTx(context.Background(), func(tx Tx) error {
+	err := a.tx.InTx(ctx, func(tx Tx) error {
 		user, err := tx.InsertUser(in.Nickname, in.UserGroup, in.Status)
 		if err != nil {
 			return err
@@ -46,9 +46,9 @@ func (a *Server) CreateUser(in UserInput) (UserDTO, error) {
 
 // UpdateUser merges the requested fields with the current user and returns the
 // updated record.
-func (a *Server) UpdateUser(id int, in UserInput) (UserDTO, error) {
+func (a *Server) UpdateUser(ctx context.Context, id int, in UserInput) (UserDTO, error) {
 	var updated User
-	err := a.tx.InTx(context.Background(), func(tx Tx) error {
+	err := a.tx.InTx(ctx, func(tx Tx) error {
 		current, err := tx.GetUser(id)
 		if err != nil {
 			return err
@@ -74,13 +74,13 @@ func (a *Server) UpdateUser(id int, in UserInput) (UserDTO, error) {
 }
 
 // UpdateUserStatus validates and applies a user status change.
-func (a *Server) UpdateUserStatus(id int, status string) (UserDTO, error) {
+func (a *Server) UpdateUserStatus(ctx context.Context, id int, status string) (UserDTO, error) {
 	if status != "active" && status != "suspended" {
 		return UserDTO{}, fmt.Errorf("%w: invalid status", apperrors.ErrInvalid)
 	}
 
 	var updated User
-	err := a.tx.InTx(context.Background(), func(tx Tx) error {
+	err := a.tx.InTx(ctx, func(tx Tx) error {
 		user, ok, err := tx.UpdateUserStatus(id, status)
 		if err != nil {
 			return err
@@ -99,8 +99,8 @@ func (a *Server) UpdateUserStatus(id int, status string) (UserDTO, error) {
 
 // DeleteUser releases the user's quota reservations and removes the user in one
 // transaction.
-func (a *Server) DeleteUser(id int) error {
-	return a.tx.InTx(context.Background(), func(tx Tx) error {
+func (a *Server) DeleteUser(ctx context.Context, id int) error {
+	return a.tx.InTx(ctx, func(tx Tx) error {
 		if err := tx.DeleteQuotaReservationsForUser(id); err != nil {
 			return err
 		}
@@ -118,14 +118,14 @@ func (a *Server) DeleteUser(id int) error {
 // RechargeUser credits the available balance and records a ledger entry. The
 // balance row lock precedes the idempotency lookup so concurrent repeats of the
 // same related_order_id serialize and return the original result.
-func (a *Server) RechargeUser(id int, in RechargeInput) (BalanceUpdateDTO, error) {
+func (a *Server) RechargeUser(ctx context.Context, id int, in RechargeInput) (BalanceUpdateDTO, error) {
 	amount, err := money.Parse6(in.Amount)
 	if err != nil || amount.Cmp(0) <= 0 {
 		return BalanceUpdateDTO{}, fmt.Errorf("%w: invalid amount", apperrors.ErrInvalid)
 	}
 
 	var balanceAfter string
-	err = a.tx.InTx(context.Background(), func(tx Tx) error {
+	err = a.tx.InTx(ctx, func(tx Tx) error {
 		if err := tx.LockUserBalance(id); err != nil {
 			return err
 		}
@@ -177,14 +177,14 @@ func (a *Server) RechargeUser(id int, in RechargeInput) (BalanceUpdateDTO, error
 // DebitUserBalance deducts amount (6 decimals) from the available balance and
 // records a consume transaction. Insufficient balance returns ErrInvalid; a
 // missing user returns ErrNotFound.
-func (a *Server) DebitUserBalance(userID int, amount string, description string) (BalanceUpdateDTO, error) {
+func (a *Server) DebitUserBalance(ctx context.Context, userID int, amount string, description string) (BalanceUpdateDTO, error) {
 	parsed, err := money.Parse6(amount)
 	if err != nil || parsed.Cmp(0) <= 0 {
 		return BalanceUpdateDTO{}, fmt.Errorf("%w: invalid amount", apperrors.ErrInvalid)
 	}
 
 	var balanceAfter string
-	err = a.tx.InTx(context.Background(), func(tx Tx) error {
+	err = a.tx.InTx(ctx, func(tx Tx) error {
 		if err := tx.LockUserBalance(userID); err != nil {
 			return err
 		}

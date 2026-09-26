@@ -19,7 +19,7 @@ func (a *Service) reserveQuota(ctx context.Context, requestID string, auth *acco
 	if err != nil {
 		return quota.QuotaReservation{}, ErrInvalidRequest
 	}
-	estimatedCost, err := a.estimatedCost(channelID, req.Model, estimate)
+	estimatedCost, err := a.estimatedCost(ctx, channelID, req.Model, estimate)
 	if err != nil {
 		return quota.QuotaReservation{}, err
 	}
@@ -34,8 +34,8 @@ func (a *Service) reserveQuota(ctx context.Context, requestID string, auth *acco
 	return reservation, err
 }
 
-func (a *Service) estimatedCost(channelID int, model string, estimate EstimatedUsage) (string, error) {
-	pricing, err := a.catalog.GetPricing(channelID, model)
+func (a *Service) estimatedCost(ctx context.Context, channelID int, model string, estimate EstimatedUsage) (string, error) {
+	pricing, err := a.catalog.GetPricing(ctx, channelID, model)
 	if err != nil {
 		if errors.Is(err, apperrors.ErrNotFound) {
 			return "0.000000", nil

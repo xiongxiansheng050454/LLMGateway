@@ -32,7 +32,7 @@ func (a *Server) rateLimit(r *http.Request) httpcommon.AdminResult {
 	case http.MethodPut:
 		return a.updateRateLimit(r, id)
 	case http.MethodDelete:
-		return httpcommon.NoBody(a.DeleteRateLimit(id))
+		return httpcommon.NoBody(a.DeleteRateLimit(r.Context(), id))
 	default:
 		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
@@ -50,7 +50,7 @@ func (a *Server) listRateLimits(r *http.Request) httpcommon.AdminResult {
 		value := false
 		enabled = &value
 	}
-	return httpcommon.Result(a.ListRateLimits(enabled, page, pageSize))
+	return httpcommon.Result(a.ListRateLimits(r.Context(), enabled, page, pageSize))
 }
 
 func (a *Server) createRateLimit(r *http.Request) httpcommon.AdminResult {
@@ -58,7 +58,7 @@ func (a *Server) createRateLimit(r *http.Request) httpcommon.AdminResult {
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 	}
-	return httpcommon.Result(a.CreateRateLimit(req))
+	return httpcommon.Result(a.CreateRateLimit(r.Context(), req))
 }
 
 func (a *Server) updateRateLimit(r *http.Request, id int) httpcommon.AdminResult {
@@ -66,5 +66,5 @@ func (a *Server) updateRateLimit(r *http.Request, id int) httpcommon.AdminResult
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 	}
-	return httpcommon.Result(a.UpdateRateLimit(id, req))
+	return httpcommon.Result(a.UpdateRateLimit(r.Context(), id, req))
 }

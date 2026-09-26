@@ -41,7 +41,7 @@ func (a *Server) user(r *http.Request) httpcommon.AdminResult {
 	case http.MethodPut:
 		return a.updateUser(r, id)
 	case http.MethodDelete:
-		return httpcommon.NoBody(a.DeleteUser(id))
+		return httpcommon.NoBody(a.DeleteUser(r.Context(), id))
 	default:
 		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
@@ -77,7 +77,7 @@ func (a *Server) userBalance(r *http.Request) httpcommon.AdminResult {
 	if err != nil {
 		return httpcommon.HTTPError(http.StatusBadRequest, "invalid user id")
 	}
-	return httpcommon.Result(a.store.GetUserBalance(id))
+	return httpcommon.Result(a.store.GetUserBalance(r.Context(), id))
 }
 
 func (a *Server) userBalanceTransactions(r *http.Request) httpcommon.AdminResult {

@@ -1,10 +1,12 @@
 package storefake
 
 import (
+	"context"
+
 	domain "LLMGateway/server/internal/ratelimit"
 )
 
-func (s *Store) InsertRateLimitReservation(in domain.RateLimitReservationInput) (int64, error) {
+func (s *Store) InsertRateLimitReservation(_ context.Context, in domain.RateLimitReservationInput) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	id := s.nextRateLimitReservationID
@@ -13,7 +15,7 @@ func (s *Store) InsertRateLimitReservation(in domain.RateLimitReservationInput) 
 	return id, nil
 }
 
-func (s *Store) FinalizeRateLimitReservation(id int64) (bool, error) {
+func (s *Store) FinalizeRateLimitReservation(_ context.Context, id int64) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.rateLimitReservations[id]; !ok {
@@ -23,7 +25,7 @@ func (s *Store) FinalizeRateLimitReservation(id int64) (bool, error) {
 	return true, nil
 }
 
-func (s *Store) ReleaseRateLimitReservation(id int64) (bool, error) {
+func (s *Store) ReleaseRateLimitReservation(_ context.Context, id int64) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.rateLimitReservations[id]; !ok {
@@ -33,7 +35,7 @@ func (s *Store) ReleaseRateLimitReservation(id int64) (bool, error) {
 	return true, nil
 }
 
-func (s *Store) ReapRateLimitReservations(limit int) (int, error) {
+func (s *Store) ReapRateLimitReservations(_ context.Context, limit int) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	n := 0
@@ -50,7 +52,7 @@ func (s *Store) ReapRateLimitReservations(limit int) (int, error) {
 	return n, nil
 }
 
-func (s *Store) CountActiveRateLimitReservations(userID int, apiKeyID *int, model string, channelID *int) (int64, error) {
+func (s *Store) CountActiveRateLimitReservations(_ context.Context, userID int, apiKeyID *int, model string, channelID *int) (int64, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	var count int64

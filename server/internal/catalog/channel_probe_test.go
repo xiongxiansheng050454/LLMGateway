@@ -2,6 +2,7 @@ package catalog_test
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -40,11 +41,11 @@ func TestChannelTestTimeoutReturnsSafeError(t *testing.T) {
 		<-r.Context().Done()
 		return nil, r.Context().Err()
 	})})
-	channel, err := server.CreateChannel(domain.ChannelInput{Name: "slow", BaseURL: "https://upstream.test", APIKey: "sk-secret", AuthType: "bearer", Status: 1})
+	channel, err := server.CreateChannel(context.Background(), domain.ChannelInput{Name: "slow", BaseURL: "https://upstream.test", APIKey: "sk-secret", AuthType: "bearer", Status: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if _, err := server.CreateChannelModel(channel.ID, domain.ChannelModel{ModelName: "public", UpstreamModel: "upstream", Enabled: true}); err != nil {
+	if _, err := server.CreateChannelModel(context.Background(), channel.ID, domain.ChannelModel{ModelName: "public", UpstreamModel: "upstream", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 	server.ConfigureTestTimeout(10 * time.Millisecond)
@@ -76,12 +77,12 @@ func TestChannelTestCheckAllFalseOnlyTestsFirstEnabledModel(t *testing.T) {
 
 	st := storefake.New()
 	server := newCatalogServer(st, &http.Client{})
-	channel, err := server.CreateChannel(domain.ChannelInput{Name: "test", BaseURL: upstream.URL, APIKey: "sk", AuthType: "bearer", Status: 1})
+	channel, err := server.CreateChannel(context.Background(), domain.ChannelInput{Name: "test", BaseURL: upstream.URL, APIKey: "sk", AuthType: "bearer", Status: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, model := range []domain.ChannelModel{{ModelName: "first", UpstreamModel: "first-upstream", Enabled: true}, {ModelName: "second", UpstreamModel: "second-upstream", Enabled: true}} {
-		if _, err := server.CreateChannelModel(channel.ID, model); err != nil {
+		if _, err := server.CreateChannelModel(context.Background(), channel.ID, model); err != nil {
 			t.Fatal(err)
 		}
 	}

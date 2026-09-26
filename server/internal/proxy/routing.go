@@ -13,8 +13,8 @@ import (
 // ordered by priority desc, weight desc, channel id; channels with a non-nil
 // balance below the configured reserve are excluded. Within the highest priority
 // group the choice is weighted-random using the injected source.
-func (a *Service) selectChannel(model string) (catalog.RouteCandidate, error) {
-	candidates, err := a.orderedCandidates(model)
+func (a *Service) selectChannel(ctx context.Context, model string) (catalog.RouteCandidate, error) {
+	candidates, err := a.orderedCandidates(ctx, model)
 	if err != nil {
 		return catalog.RouteCandidate{}, err
 	}
@@ -24,8 +24,8 @@ func (a *Service) selectChannel(model string) (catalog.RouteCandidate, error) {
 	return candidates[0], nil
 }
 
-func (a *Service) orderedCandidates(model string, stickyKey ...int) ([]catalog.RouteCandidate, error) {
-	result, err := a.catalog.RouteCandidates(model)
+func (a *Service) orderedCandidates(ctx context.Context, model string, stickyKey ...int) ([]catalog.RouteCandidate, error) {
+	result, err := a.catalog.RouteCandidates(ctx, model)
 	if err != nil {
 		return nil, err
 	}
@@ -35,9 +35,9 @@ func (a *Service) orderedCandidates(model string, stickyKey ...int) ([]catalog.R
 		if seen[candidate.ChannelID] {
 			continue
 		}
-		health, healthErr := a.catalog.GetChannelHealth(candidate.ChannelID)
+		health, healthErr := a.catalog.GetChannelHealth(ctx, candidate.ChannelID)
 		if healthErr == nil && health.State == catalog.HealthHalfOpen {
-			allowed, probeErr := a.catalog.AcquireChannelProbe(context.Background(), candidate.ChannelID, a.requestTimeout)
+			allowed, probeErr := a.catalog.AcquireChannelProbe(ctx, candidate.ChannelID, a.requestTimeout)
 			if probeErr != nil || !allowed {
 				continue
 			}

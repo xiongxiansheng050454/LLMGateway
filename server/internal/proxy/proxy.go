@@ -1,12 +1,23 @@
 package proxy
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"time"
 
 	"LLMGateway/server/internal/money"
 	settlement "LLMGateway/server/internal/proxy/settlement"
+)
+
+const (
+	// settleTimeout bounds the settlement transaction. Settlement must survive
+	// a canceled downstream request, so it runs detached from the request
+	// context but still needs an upper bound to avoid hanging on locks.
+	settleTimeout = 5 * time.Second
+	// bestEffortTimeout bounds detached bookkeeping (usage log, channel health,
+	// key last-used) whose failure must not change the response.
+	bestEffortTimeout = 5 * time.Second
 )
 
 var (
@@ -71,4 +82,11 @@ func (a *Service) ConfigureQuota(defaultMaxTokens int, reservationTTL time.Durat
 	if reservationTTL > 0 {
 		a.reservationTTL = reservationTTL
 	}
+}
+
+// detachedCtx returns a time-limited context that does not inherit the parent's
+// cancellation. It is used for settlement and best-effort bookkeeping that must
+// complete even when the downstream request is canceled.
+func detachedCtx(parent context.Context, timeout time.Duration) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(parent), timeout)
 }

@@ -16,8 +16,7 @@ import (
 
 // --- Store reads ---
 
-func (s *Store) ListUsers(page, pageSize int) (domain.ListResponse[domain.UserDTO], error) {
-	ctx := context.Background()
+func (s *Store) ListUsers(ctx context.Context, page, pageSize int) (domain.ListResponse[domain.UserDTO], error) {
 	limit, offset := limitOffset(page, pageSize)
 
 	rows, err := s.queries.ListUsers(ctx, sqlc.ListUsersParams{Limit: limit, Offset: offset})
@@ -36,16 +35,15 @@ func (s *Store) ListUsers(page, pageSize int) (domain.ListResponse[domain.UserDT
 	return domain.ListResponse[domain.UserDTO]{List: list, Total: int(total)}, nil
 }
 
-func (s *Store) GetUserBalance(id int) (domain.BalanceDTO, error) {
-	row, err := s.queries.GetUserBalanceText(context.Background(), int64(id))
+func (s *Store) GetUserBalance(ctx context.Context, id int) (domain.BalanceDTO, error) {
+	row, err := s.queries.GetUserBalanceText(ctx, int64(id))
 	if err != nil {
 		return domain.BalanceDTO{}, mapError(err)
 	}
 	return balanceDTO(textValue(row.AvailableBalance), textValue(row.FrozenBalance)), nil
 }
 
-func (s *Store) ListBalanceTransactions(userID, page, pageSize int) (domain.ListResponse[domain.BalanceTransactionDTO], error) {
-	ctx := context.Background()
+func (s *Store) ListBalanceTransactions(ctx context.Context, userID, page, pageSize int) (domain.ListResponse[domain.BalanceTransactionDTO], error) {
 	if _, err := s.queries.GetUser(ctx, int64(userID)); err != nil {
 		return domain.ListResponse[domain.BalanceTransactionDTO]{}, mapError(err)
 	}
@@ -67,8 +65,7 @@ func (s *Store) ListBalanceTransactions(userID, page, pageSize int) (domain.List
 	return domain.ListResponse[domain.BalanceTransactionDTO]{List: list, Total: int(total)}, nil
 }
 
-func (s *Store) ListUserKeys(userID, page, pageSize int) (domain.ListResponse[domain.ClientKeyDTO], error) {
-	ctx := context.Background()
+func (s *Store) ListUserKeys(ctx context.Context, userID, page, pageSize int) (domain.ListResponse[domain.ClientKeyDTO], error) {
 	if _, err := s.queries.GetUser(ctx, int64(userID)); err != nil {
 		return domain.ListResponse[domain.ClientKeyDTO]{}, mapError(err)
 	}
@@ -90,8 +87,7 @@ func (s *Store) ListUserKeys(userID, page, pageSize int) (domain.ListResponse[do
 	return domain.ListResponse[domain.ClientKeyDTO]{List: list, Total: int(total)}, nil
 }
 
-func (s *Store) ListKeys(page, pageSize int) (domain.ListResponse[domain.ClientKeyDTO], error) {
-	ctx := context.Background()
+func (s *Store) ListKeys(ctx context.Context, page, pageSize int) (domain.ListResponse[domain.ClientKeyDTO], error) {
 	limit, offset := limitOffset(page, pageSize)
 
 	rows, err := s.queries.ListKeys(ctx, sqlc.ListKeysParams{Limit: limit, Offset: offset})
@@ -110,8 +106,8 @@ func (s *Store) ListKeys(page, pageSize int) (domain.ListResponse[domain.ClientK
 	return domain.ListResponse[domain.ClientKeyDTO]{List: list, Total: int(total)}, nil
 }
 
-func (s *Store) AuthenticateKey(keyHash string) (*domain.AuthContext, error) {
-	row, err := s.queries.GetAuthContextByKeyHash(context.Background(), keyHash)
+func (s *Store) AuthenticateKey(ctx context.Context, keyHash string) (*domain.AuthContext, error) {
+	row, err := s.queries.GetAuthContextByKeyHash(ctx, keyHash)
 	if err != nil {
 		return nil, mapError(err)
 	}
@@ -129,8 +125,8 @@ func (s *Store) AuthenticateKey(keyHash string) (*domain.AuthContext, error) {
 	}, nil
 }
 
-func (s *Store) UpdateKeyLastUsed(keyID int) error {
-	affected, err := s.queries.UpdateKeyLastUsed(context.Background(), int64(keyID))
+func (s *Store) UpdateKeyLastUsed(ctx context.Context, keyID int) error {
+	affected, err := s.queries.UpdateKeyLastUsed(ctx, int64(keyID))
 	if err != nil {
 		return mapError(err)
 	}
@@ -143,12 +139,11 @@ func (s *Store) UpdateKeyLastUsed(keyID int) error {
 // --- Tx primitives ---
 
 func (t *Tx) GetUser(id int) (domain.User, error) {
-	ctx := context.Background()
-	row, err := t.queries.GetUser(ctx, int64(id))
+	row, err := t.queries.GetUser(t.ctx, int64(id))
 	if err != nil {
 		return domain.User{}, mapError(err)
 	}
-	balance, err := t.queries.GetUserBalanceText(ctx, int64(id))
+	balance, err := t.queries.GetUserBalanceText(t.ctx, int64(id))
 	if err != nil {
 		return domain.User{}, mapError(err)
 	}
@@ -156,7 +151,7 @@ func (t *Tx) GetUser(id int) (domain.User, error) {
 }
 
 func (t *Tx) InsertUser(nickname, group, status string) (domain.User, error) {
-	id, err := t.queries.CreateUser(context.Background(), sqlc.CreateUserParams{Nickname: nickname, UserGroup: group, Status: status})
+	id, err := t.queries.CreateUser(t.ctx, sqlc.CreateUserParams{Nickname: nickname, UserGroup: group, Status: status})
 	if err != nil {
 		return domain.User{}, mapError(err)
 	}
@@ -164,11 +159,11 @@ func (t *Tx) InsertUser(nickname, group, status string) (domain.User, error) {
 }
 
 func (t *Tx) InsertUserBalance(userID int) error {
-	return mapError(t.queries.CreateUserBalance(context.Background(), int64(userID)))
+	return mapError(t.queries.CreateUserBalance(t.ctx, int64(userID)))
 }
 
 func (t *Tx) UpdateUser(id int, nickname, group string) (domain.User, bool, error) {
-	affected, err := t.queries.UpdateUser(context.Background(), sqlc.UpdateUserParams{Nickname: nickname, UserGroup: group, ID: int64(id)})
+	affected, err := t.queries.UpdateUser(t.ctx, sqlc.UpdateUserParams{Nickname: nickname, UserGroup: group, ID: int64(id)})
 	if err != nil {
 		return domain.User{}, false, mapError(err)
 	}
@@ -183,7 +178,7 @@ func (t *Tx) UpdateUser(id int, nickname, group string) (domain.User, bool, erro
 }
 
 func (t *Tx) UpdateUserStatus(id int, status string) (domain.User, bool, error) {
-	affected, err := t.queries.UpdateUserStatus(context.Background(), sqlc.UpdateUserStatusParams{Status: status, ID: int64(id)})
+	affected, err := t.queries.UpdateUserStatus(t.ctx, sqlc.UpdateUserStatusParams{Status: status, ID: int64(id)})
 	if err != nil {
 		return domain.User{}, false, mapError(err)
 	}
@@ -198,7 +193,7 @@ func (t *Tx) UpdateUserStatus(id int, status string) (domain.User, bool, error) 
 }
 
 func (t *Tx) DeleteUser(id int) (bool, error) {
-	affected, err := t.queries.DeleteUser(context.Background(), int64(id))
+	affected, err := t.queries.DeleteUser(t.ctx, int64(id))
 	if err != nil {
 		return false, mapError(err)
 	}
@@ -206,12 +201,12 @@ func (t *Tx) DeleteUser(id int) (bool, error) {
 }
 
 func (t *Tx) LockUserBalance(userID int) error {
-	_, err := t.queries.LockUserBalance(context.Background(), int64(userID))
+	_, err := t.queries.LockUserBalance(t.ctx, int64(userID))
 	return mapError(err)
 }
 
 func (t *Tx) GetUserBalanceText(userID int) (string, error) {
-	row, err := t.queries.GetUserBalanceText(context.Background(), int64(userID))
+	row, err := t.queries.GetUserBalanceText(t.ctx, int64(userID))
 	if err != nil {
 		return "", mapError(err)
 	}
@@ -219,7 +214,7 @@ func (t *Tx) GetUserBalanceText(userID int) (string, error) {
 }
 
 func (t *Tx) UpdateUserBalance(userID int, available string) (bool, error) {
-	affected, err := t.queries.UpdateUserBalance(context.Background(), sqlc.UpdateUserBalanceParams{AvailableBalance: available, UserID: int64(userID)})
+	affected, err := t.queries.UpdateUserBalance(t.ctx, sqlc.UpdateUserBalanceParams{AvailableBalance: available, UserID: int64(userID)})
 	if err != nil {
 		return false, mapError(err)
 	}
@@ -231,7 +226,7 @@ func (t *Tx) InsertBalanceTransaction(in domain.BalanceTransactionInput) error {
 	if in.RelatedOrderID != "" {
 		orderID = in.RelatedOrderID
 	}
-	_, err := t.queries.CreateBalanceTransaction(context.Background(), sqlc.CreateBalanceTransactionParams{
+	_, err := t.queries.CreateBalanceTransaction(t.ctx, sqlc.CreateBalanceTransactionParams{
 		UserID:         int64(in.UserID),
 		TxType:         in.TxType,
 		Amount:         in.Amount,
@@ -243,7 +238,7 @@ func (t *Tx) InsertBalanceTransaction(in domain.BalanceTransactionInput) error {
 }
 
 func (t *Tx) GetBalanceTransactionByOrder(userID int, orderID string) (string, bool, error) {
-	row, err := t.queries.GetBalanceTransactionByOrder(context.Background(), sqlc.GetBalanceTransactionByOrderParams{
+	row, err := t.queries.GetBalanceTransactionByOrder(t.ctx, sqlc.GetBalanceTransactionByOrderParams{
 		UserID:         int64(userID),
 		RelatedOrderID: pgtype.Text{String: orderID, Valid: true},
 	})
@@ -257,7 +252,7 @@ func (t *Tx) GetBalanceTransactionByOrder(userID int, orderID string) (string, b
 }
 
 func (t *Tx) GetKey(keyID, userID int) (domain.ClientKey, error) {
-	row, err := t.queries.GetKey(context.Background(), sqlc.GetKeyParams{ID: int64(keyID), UserID: int64(userID)})
+	row, err := t.queries.GetKey(t.ctx, sqlc.GetKeyParams{ID: int64(keyID), UserID: int64(userID)})
 	if err != nil {
 		return domain.ClientKey{}, mapError(err)
 	}
@@ -273,7 +268,7 @@ func (t *Tx) GetKey(keyID, userID int) (domain.ClientKey, error) {
 }
 
 func (t *Tx) InsertKey(in domain.KeyInsert) (int, error) {
-	id, err := t.queries.CreateKey(context.Background(), sqlc.CreateKeyParams{
+	id, err := t.queries.CreateKey(t.ctx, sqlc.CreateKeyParams{
 		UserID:             int64(in.UserID),
 		KeyName:            in.KeyName,
 		Prefix:             in.Prefix,
@@ -290,7 +285,7 @@ func (t *Tx) InsertKey(in domain.KeyInsert) (int, error) {
 }
 
 func (t *Tx) UpdateKeyActive(keyID, userID int, active bool) (domain.ClientKey, bool, error) {
-	affected, err := t.queries.UpdateKeyActive(context.Background(), sqlc.UpdateKeyActiveParams{IsActive: active, ID: int64(keyID), UserID: int64(userID)})
+	affected, err := t.queries.UpdateKeyActive(t.ctx, sqlc.UpdateKeyActiveParams{IsActive: active, ID: int64(keyID), UserID: int64(userID)})
 	if err != nil {
 		return domain.ClientKey{}, false, mapError(err)
 	}
@@ -305,7 +300,7 @@ func (t *Tx) UpdateKeyActive(keyID, userID int, active bool) (domain.ClientKey, 
 }
 
 func (t *Tx) UpdateKeySecret(keyID, userID int, keyHash, prefix string) (bool, error) {
-	affected, err := t.queries.UpdateKeySecret(context.Background(), sqlc.UpdateKeySecretParams{KeyHash: keyHash, Prefix: prefix, ID: int64(keyID), UserID: int64(userID)})
+	affected, err := t.queries.UpdateKeySecret(t.ctx, sqlc.UpdateKeySecretParams{KeyHash: keyHash, Prefix: prefix, ID: int64(keyID), UserID: int64(userID)})
 	if err != nil {
 		return false, mapError(err)
 	}
@@ -313,7 +308,7 @@ func (t *Tx) UpdateKeySecret(keyID, userID int, keyHash, prefix string) (bool, e
 }
 
 func (t *Tx) DeleteKey(keyID, userID int) (bool, error) {
-	affected, err := t.queries.DeleteKey(context.Background(), sqlc.DeleteKeyParams{ID: int64(keyID), UserID: int64(userID)})
+	affected, err := t.queries.DeleteKey(t.ctx, sqlc.DeleteKeyParams{ID: int64(keyID), UserID: int64(userID)})
 	if err != nil {
 		return false, mapError(err)
 	}
@@ -321,11 +316,11 @@ func (t *Tx) DeleteKey(keyID, userID int) (bool, error) {
 }
 
 func (t *Tx) DeleteQuotaReservationsForUser(userID int) error {
-	return cleanupQuotaReservationsTx(context.Background(), t.tx, userID, 0)
+	return cleanupQuotaReservationsTx(t.ctx, t.tx, userID, 0)
 }
 
 func (t *Tx) DeleteQuotaReservationsForKey(userID, keyID int) error {
-	return cleanupQuotaReservationsTx(context.Background(), t.tx, userID, keyID)
+	return cleanupQuotaReservationsTx(t.ctx, t.tx, userID, keyID)
 }
 
 // --- mappings ---

@@ -14,16 +14,20 @@ import (
 // user debit, optional channel debit and the success usage log. It returns the
 // created usage log id.
 //
-// The transaction runs on a background context so a canceled downstream request
-// cannot abort a charge for work the upstream already performed.
-func (a *Service) Settle(in settlement.Input) (int, error) {
+// The transaction runs detached from the request context so a canceled
+// downstream request cannot abort a charge for work the upstream already
+// performed. It is bounded by settleTimeout so it cannot hang on locks.
+func (a *Service) Settle(ctx context.Context, in settlement.Input) (int, error) {
 	cost, err := money.Parse6(in.Cost)
 	if err != nil || cost.Cmp(0) < 0 {
 		return 0, fmt.Errorf("%w: invalid cost", apperrors.ErrInvalid)
 	}
 
+	settleCtx, cancel := detachedCtx(ctx, settleTimeout)
+	defer cancel()
+
 	var usageID int
-	err = a.settleTx.InTx(context.Background(), func(tx settlement.Tx) error {
+	err = a.settleTx.InTx(settleCtx, func(tx settlement.Tx) error {
 		if err := tx.SettleQuotaReservation(in.ReservationID, in.UsageLog.RequestID, in.UserID, in.APIKeyID, int64(in.UsageLog.TotalTokens), money.Format6(cost)); err != nil {
 			return err
 		}

@@ -17,6 +17,7 @@ import (
 // primitive interfaces. It must stay free of business rules and multi-step
 // orchestration; those live in the business modules.
 type Tx struct {
+	ctx     context.Context
 	tx      pgx.Tx
 	queries *sqlc.Queries
 	now     func() time.Time
@@ -34,8 +35,8 @@ func (m accountsTxManager) InTx(ctx context.Context, fn func(accounts.Tx) error)
 	if err != nil {
 		return mapError(err)
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if err := fn(m.store.newTx(tx)); err != nil {
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	if err := fn(m.store.newTx(ctx, tx)); err != nil {
 		return err
 	}
 	return mapError(tx.Commit(ctx))
@@ -54,8 +55,8 @@ func (m settlementTxManager) InTx(ctx context.Context, fn func(settlement.Tx) er
 	if err != nil {
 		return mapError(err)
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if err := fn(m.store.newTx(tx)); err != nil {
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	if err := fn(m.store.newTx(ctx, tx)); err != nil {
 		return err
 	}
 	return mapError(tx.Commit(ctx))
@@ -74,8 +75,8 @@ func (m catalogTxManager) InTx(ctx context.Context, fn func(catalog.Tx) error) e
 	if err != nil {
 		return mapError(err)
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if err := fn(m.store.newTx(tx)); err != nil {
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	if err := fn(m.store.newTx(ctx, tx)); err != nil {
 		return err
 	}
 	return mapError(tx.Commit(ctx))
@@ -94,8 +95,8 @@ func (m quotaTxManager) InTx(ctx context.Context, fn func(quota.Tx) error) error
 	if err != nil {
 		return mapError(err)
 	}
-	defer func() { _ = tx.Rollback(ctx) }()
-	if err := fn(m.store.newTx(tx)); err != nil {
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+	if err := fn(m.store.newTx(ctx, tx)); err != nil {
 		return err
 	}
 	return mapError(tx.Commit(ctx))
@@ -104,6 +105,6 @@ func (m quotaTxManager) InTx(ctx context.Context, fn func(quota.Tx) error) error
 // QuotaTx exposes transaction-scoped quota primitives.
 func (s *Store) QuotaTx() quota.TxManager { return quotaTxManager{store: s} }
 
-func (s *Store) newTx(tx pgx.Tx) *Tx {
-	return &Tx{tx: tx, queries: sqlc.New(tx), now: s.now}
+func (s *Store) newTx(ctx context.Context, tx pgx.Tx) *Tx {
+	return &Tx{ctx: ctx, tx: tx, queries: sqlc.New(tx), now: s.now}
 }

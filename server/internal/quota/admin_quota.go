@@ -1,7 +1,6 @@
 package quota
 
 import (
-	"context"
 	"net/http"
 	"strconv"
 
@@ -41,7 +40,7 @@ func (a *Server) quotaPolicy(r *http.Request) httpcommon.AdminResult {
 	case http.MethodPut:
 		return a.updatePolicy(r, id)
 	case http.MethodDelete:
-		return httpcommon.NoBody(a.DeleteQuotaPolicy(id))
+		return httpcommon.NoBody(a.DeleteQuotaPolicy(r.Context(), id))
 	default:
 		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
@@ -55,14 +54,14 @@ func (a *Server) listPolicies(r *http.Request) httpcommon.AdminResult {
 		enabled := value == "true"
 		filter.Enabled = &enabled
 	}
-	return httpcommon.Result(a.ListQuotaPolicies(filter))
+	return httpcommon.Result(a.ListQuotaPolicies(r.Context(), filter))
 }
 
 func (a *Server) listUsage(r *http.Request) httpcommon.AdminResult {
 	page, pageSize := httpcommon.ParsePagination(r)
 	filter := QuotaPolicyFilter{ScopeType: r.URL.Query().Get("scope_type"), Page: page, PageSize: pageSize}
 	filter.ScopeID, _ = strconv.Atoi(r.URL.Query().Get("scope_id"))
-	return httpcommon.Result(a.ListQuotaUsage(context.Background(), filter))
+	return httpcommon.Result(a.ListQuotaUsage(r.Context(), filter))
 }
 
 func (a *Server) createPolicy(r *http.Request) httpcommon.AdminResult {
@@ -70,7 +69,7 @@ func (a *Server) createPolicy(r *http.Request) httpcommon.AdminResult {
 	if err := httpcommon.ReadJSON(r, &input); err != nil {
 		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 	}
-	return httpcommon.Result(a.CreateQuotaPolicy(input))
+	return httpcommon.Result(a.CreateQuotaPolicy(r.Context(), input))
 }
 
 func (a *Server) updatePolicy(r *http.Request, id int) httpcommon.AdminResult {
@@ -78,5 +77,5 @@ func (a *Server) updatePolicy(r *http.Request, id int) httpcommon.AdminResult {
 	if err := httpcommon.ReadJSON(r, &input); err != nil {
 		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 	}
-	return httpcommon.Result(a.UpdateQuotaPolicy(id, input))
+	return httpcommon.Result(a.UpdateQuotaPolicy(r.Context(), id, input))
 }

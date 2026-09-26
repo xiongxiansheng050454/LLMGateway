@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 )
 
-func (s *Store) ListChannels() (domain.ListResponse[domain.ChannelDTO], error) {
-	rows, err := s.queries.ListChannels(context.Background())
+func (s *Store) ListChannels(ctx context.Context) (domain.ListResponse[domain.ChannelDTO], error) {
+	rows, err := s.queries.ListChannels(ctx)
 	if err != nil {
 		return domain.ListResponse[domain.ChannelDTO]{}, mapError(err)
 	}
@@ -22,16 +22,16 @@ func (s *Store) ListChannels() (domain.ListResponse[domain.ChannelDTO], error) {
 	return domain.ListResponse[domain.ChannelDTO]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) GetChannelDTO(id int) (domain.ChannelDTO, error) {
-	row, err := s.queries.GetChannel(context.Background(), int64(id))
+func (s *Store) GetChannelDTO(ctx context.Context, id int) (domain.ChannelDTO, error) {
+	row, err := s.queries.GetChannel(ctx, int64(id))
 	if err != nil {
 		return domain.ChannelDTO{}, mapError(err)
 	}
 	return channelDTO(row.ID, row.Name, row.BaseUrl, row.AuthType, row.Status, row.Weight, row.Priority, textValue(row.Balance), row.ModelCount), nil
 }
 
-func (s *Store) GetChannelRecord(id int) (domain.ChannelRecord, error) {
-	row, err := s.queries.GetChannelSecret(context.Background(), int64(id))
+func (s *Store) GetChannelRecord(ctx context.Context, id int) (domain.ChannelRecord, error) {
+	row, err := s.queries.GetChannelSecret(ctx, int64(id))
 	if err != nil {
 		return domain.ChannelRecord{}, mapError(err)
 	}
@@ -48,12 +48,12 @@ func (s *Store) GetChannelRecord(id int) (domain.ChannelRecord, error) {
 	}, nil
 }
 
-func (s *Store) InsertChannel(in domain.ChannelInsert) (int, error) {
+func (s *Store) InsertChannel(ctx context.Context, in domain.ChannelInsert) (int, error) {
 	var balance any
 	if in.Balance != nil {
 		balance = *in.Balance
 	}
-	id, err := s.queries.CreateChannel(context.Background(), sqlc.CreateChannelParams{
+	id, err := s.queries.CreateChannel(ctx, sqlc.CreateChannelParams{
 		Name:             in.Name,
 		BaseUrl:          in.BaseURL,
 		ApiKeyCiphertext: in.APIKeyCiphertext,
@@ -69,12 +69,12 @@ func (s *Store) InsertChannel(in domain.ChannelInsert) (int, error) {
 	return int(id), nil
 }
 
-func (s *Store) UpdateChannelRecord(id int, in domain.ChannelUpdate) (bool, error) {
+func (s *Store) UpdateChannelRecord(ctx context.Context, id int, in domain.ChannelUpdate) (bool, error) {
 	var balance any
 	if in.Balance != nil {
 		balance = *in.Balance
 	}
-	affected, err := s.queries.UpdateChannel(context.Background(), sqlc.UpdateChannelParams{
+	affected, err := s.queries.UpdateChannel(ctx, sqlc.UpdateChannelParams{
 		Name:             in.Name,
 		BaseUrl:          in.BaseURL,
 		AuthType:         in.AuthType,
@@ -91,24 +91,24 @@ func (s *Store) UpdateChannelRecord(id int, in domain.ChannelUpdate) (bool, erro
 	return affected > 0, nil
 }
 
-func (s *Store) UpdateChannelStatusRecord(id, status int) (bool, error) {
-	affected, err := s.queries.UpdateChannelStatus(context.Background(), sqlc.UpdateChannelStatusParams{Status: int32(status), ID: int64(id)})
+func (s *Store) UpdateChannelStatusRecord(ctx context.Context, id, status int) (bool, error) {
+	affected, err := s.queries.UpdateChannelStatus(ctx, sqlc.UpdateChannelStatusParams{Status: int32(status), ID: int64(id)})
 	if err != nil {
 		return false, mapError(err)
 	}
 	return affected > 0, nil
 }
 
-func (s *Store) DeleteChannel(id int) (bool, error) {
-	affected, err := s.queries.DeleteChannel(context.Background(), int64(id))
+func (s *Store) DeleteChannel(ctx context.Context, id int) (bool, error) {
+	affected, err := s.queries.DeleteChannel(ctx, int64(id))
 	if err != nil {
 		return false, mapError(err)
 	}
 	return affected > 0, nil
 }
 
-func (s *Store) ListChannelModels(channelID int) (domain.ListResponse[domain.ChannelModel], error) {
-	rows, err := s.queries.ListChannelModels(context.Background(), int64(channelID))
+func (s *Store) ListChannelModels(ctx context.Context, channelID int) (domain.ListResponse[domain.ChannelModel], error) {
+	rows, err := s.queries.ListChannelModels(ctx, int64(channelID))
 	if err != nil {
 		return domain.ListResponse[domain.ChannelModel]{}, mapError(err)
 	}
@@ -119,8 +119,8 @@ func (s *Store) ListChannelModels(channelID int) (domain.ListResponse[domain.Cha
 	return domain.ListResponse[domain.ChannelModel]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) InsertChannelModel(channelID int, in domain.ChannelModel) (domain.ChannelModel, error) {
-	row, err := s.queries.CreateChannelModel(context.Background(), sqlc.CreateChannelModelParams{
+func (s *Store) InsertChannelModel(ctx context.Context, channelID int, in domain.ChannelModel) (domain.ChannelModel, error) {
+	row, err := s.queries.CreateChannelModel(ctx, sqlc.CreateChannelModelParams{
 		ChannelID:     int64(channelID),
 		ModelName:     in.ModelName,
 		UpstreamModel: in.UpstreamModel,
@@ -132,8 +132,8 @@ func (s *Store) InsertChannelModel(channelID int, in domain.ChannelModel) (domai
 	return domain.ChannelModel{ID: int(row.ID), ModelName: row.ModelName, UpstreamModel: row.UpstreamModel, Enabled: row.Enabled}, nil
 }
 
-func (s *Store) UpdateChannelModelRecord(channelID, modelID int, upstreamModel string, enabled bool) (domain.ChannelModel, bool, error) {
-	row, err := s.queries.UpdateChannelModel(context.Background(), sqlc.UpdateChannelModelParams{
+func (s *Store) UpdateChannelModelRecord(ctx context.Context, channelID, modelID int, upstreamModel string, enabled bool) (domain.ChannelModel, bool, error) {
+	row, err := s.queries.UpdateChannelModel(ctx, sqlc.UpdateChannelModelParams{
 		UpstreamModel: upstreamModel,
 		Enabled:       enabled,
 		ChannelID:     int64(channelID),
@@ -148,16 +148,16 @@ func (s *Store) UpdateChannelModelRecord(channelID, modelID int, upstreamModel s
 	return domain.ChannelModel{ID: int(row.ID), ModelName: row.ModelName, UpstreamModel: row.UpstreamModel, Enabled: row.Enabled}, true, nil
 }
 
-func (s *Store) DeleteChannelModel(channelID, modelID int) (bool, error) {
-	affected, err := s.queries.DeleteChannelModel(context.Background(), sqlc.DeleteChannelModelParams{ChannelID: int64(channelID), ID: int64(modelID)})
+func (s *Store) DeleteChannelModel(ctx context.Context, channelID, modelID int) (bool, error) {
+	affected, err := s.queries.DeleteChannelModel(ctx, sqlc.DeleteChannelModelParams{ChannelID: int64(channelID), ID: int64(modelID)})
 	if err != nil {
 		return false, mapError(err)
 	}
 	return affected > 0, nil
 }
 
-func (s *Store) ChannelModelExists(channelID int, modelName string) (bool, error) {
-	_, err := s.queries.GetChannelModel(context.Background(), sqlc.GetChannelModelParams{ChannelID: int64(channelID), ModelName: modelName})
+func (s *Store) ChannelModelExists(ctx context.Context, channelID int, modelName string) (bool, error) {
+	_, err := s.queries.GetChannelModel(ctx, sqlc.GetChannelModelParams{ChannelID: int64(channelID), ModelName: modelName})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return false, nil
@@ -167,8 +167,8 @@ func (s *Store) ChannelModelExists(channelID int, modelName string) (bool, error
 	return true, nil
 }
 
-func (s *Store) ListCatalogModels(enabledOnly bool) (domain.ListResponse[domain.CatalogModelDTO], error) {
-	rows, err := s.queries.ListCatalogModels(context.Background(), enabledOnly)
+func (s *Store) ListCatalogModels(ctx context.Context, enabledOnly bool) (domain.ListResponse[domain.CatalogModelDTO], error) {
+	rows, err := s.queries.ListCatalogModels(ctx, enabledOnly)
 	if err != nil {
 		return domain.ListResponse[domain.CatalogModelDTO]{}, mapError(err)
 	}
@@ -192,8 +192,8 @@ func (s *Store) ListCatalogModels(enabledOnly bool) (domain.ListResponse[domain.
 	return domain.ListResponse[domain.CatalogModelDTO]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) ListPricing() (domain.ListResponse[domain.PricingDTO], error) {
-	rows, err := s.queries.ListPricing(context.Background())
+func (s *Store) ListPricing(ctx context.Context) (domain.ListResponse[domain.PricingDTO], error) {
+	rows, err := s.queries.ListPricing(ctx)
 	if err != nil {
 		return domain.ListResponse[domain.PricingDTO]{}, mapError(err)
 	}
@@ -204,8 +204,7 @@ func (s *Store) ListPricing() (domain.ListResponse[domain.PricingDTO], error) {
 	return domain.ListResponse[domain.PricingDTO]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) UpsertPricingRecord(in domain.PricingRecord) (domain.PricingDTO, error) {
-	ctx := context.Background()
+func (s *Store) UpsertPricingRecord(ctx context.Context, in domain.PricingRecord) (domain.PricingDTO, error) {
 	var cached any
 	if in.CachedInputPricePer1M != "" {
 		cached = in.CachedInputPricePer1M
@@ -228,8 +227,8 @@ func (s *Store) UpsertPricingRecord(in domain.PricingRecord) (domain.PricingDTO,
 	return pricingDTO(row.ID, row.ChannelID, row.ChannelName, row.ModelName, textOrEmpty(row.UpstreamModel), row.InputPricePer1m, row.OutputPricePer1m, textValue(row.CachedInputPricePer1m), row.Currency), nil
 }
 
-func (s *Store) DeletePricing(in domain.DeletePricingInput) error {
-	if err := s.queries.DeletePricing(context.Background(), sqlc.DeletePricingParams{
+func (s *Store) DeletePricing(ctx context.Context, in domain.DeletePricingInput) error {
+	if err := s.queries.DeletePricing(ctx, sqlc.DeletePricingParams{
 		ChannelID: int64(in.ChannelID),
 		ModelName: in.ModelName,
 	}); err != nil {
@@ -238,16 +237,16 @@ func (s *Store) DeletePricing(in domain.DeletePricingInput) error {
 	return nil
 }
 
-func (s *Store) GetPricing(channelID int, modelName string) (domain.PricingDTO, error) {
-	row, err := s.queries.GetPricing(context.Background(), sqlc.GetPricingParams{ChannelID: int64(channelID), ModelName: modelName})
+func (s *Store) GetPricing(ctx context.Context, channelID int, modelName string) (domain.PricingDTO, error) {
+	row, err := s.queries.GetPricing(ctx, sqlc.GetPricingParams{ChannelID: int64(channelID), ModelName: modelName})
 	if err != nil {
 		return domain.PricingDTO{}, mapError(err)
 	}
 	return pricingDTO(row.ID, row.ChannelID, row.ChannelName, row.ModelName, textOrEmpty(row.UpstreamModel), row.InputPricePer1m, row.OutputPricePer1m, textValue(row.CachedInputPricePer1m), row.Currency), nil
 }
 
-func (s *Store) RouteCandidates(modelName string, cooldownSeconds int) (domain.ListResponse[domain.RouteCandidate], error) {
-	rows, err := s.queries.ListRouteCandidates(context.Background(), sqlc.ListRouteCandidatesParams{
+func (s *Store) RouteCandidates(ctx context.Context, modelName string, cooldownSeconds int) (domain.ListResponse[domain.RouteCandidate], error) {
+	rows, err := s.queries.ListRouteCandidates(ctx, sqlc.ListRouteCandidatesParams{
 		ModelName:       modelName,
 		CooldownSeconds: int32(cooldownSeconds),
 	})

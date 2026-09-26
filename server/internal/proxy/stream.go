@@ -41,7 +41,9 @@ func (s *completionStream) Close() error {
 		s.cancel()
 	}
 	if s.rateReservationID != 0 {
-		_ = s.service.ratelimit.ReleaseRateLimit(context.Background(), s.rateReservationID)
+		relCtx, cancel := detachedCtx(s.ctx, bestEffortTimeout)
+		_ = s.service.ratelimit.ReleaseRateLimit(relCtx, s.rateReservationID)
+		cancel()
 	}
 	return s.body.Close()
 }
@@ -61,7 +63,9 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 	settled := false
 	defer func() {
 		if !settled && s.reservationID != 0 {
-			_ = s.service.quota.ReleaseQuota(context.Background(), s.reservationID)
+			relCtx, cancel := detachedCtx(s.ctx, bestEffortTimeout)
+			_ = s.service.quota.ReleaseQuota(relCtx, s.reservationID)
+			cancel()
 		}
 	}()
 
@@ -102,7 +106,7 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 			code = "upstream_stream_protocol_error"
 			message = "upstream stream contained invalid data"
 		}
-		s.service.recordChannelHealth(s.candidate.ChannelID, false, reason)
+		s.service.recordChannelHealth(s.ctx, s.candidate.ChannelID, false, reason)
 		if s.settlePartial(forwardedText.String(), ttft, "partial_estimated_"+code) {
 			settled = true
 		}
@@ -116,7 +120,7 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 			}
 			return s.ctx.Err()
 		}
-		s.service.recordChannelHealth(s.candidate.ChannelID, false, catalog.FailureUpstreamProtocol)
+		s.service.recordChannelHealth(s.ctx, s.candidate.ChannelID, false, catalog.FailureUpstreamProtocol)
 		if s.settlePartial(forwardedText.String(), ttft, "partial_estimated_upstream_stream_interrupted") {
 			settled = true
 		}
@@ -124,23 +128,23 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 		return ErrUpstream
 	}
 	if usage == nil {
-		s.service.recordChannelHealth(s.candidate.ChannelID, false, catalog.FailureUpstreamProtocol)
+		s.service.recordChannelHealth(s.ctx, s.candidate.ChannelID, false, catalog.FailureUpstreamProtocol)
 		s.logError(nil, ttft, "upstream_usage_missing")
 		s.emitError(emit, "upstream_usage_missing", "upstream stream did not include usage")
 		return ErrUpstream
 	}
 
 	durationMs := elapsedMs(s.start, s.service.now())
-	cost, inputPrice, outputPrice, err := s.service.priceFor(s.candidate.ChannelID, s.publicModel, usage)
+	cost, inputPrice, outputPrice, err := s.service.priceFor(s.ctx, s.candidate.ChannelID, s.publicModel, usage)
 	if err != nil {
 		s.logError(usage, ttft, "pricing_error")
 		s.emitError(emit, "pricing_error", "unable to price completion")
 		return err
 	}
-	s.service.recordChannelHealth(s.candidate.ChannelID, true, "")
+	s.service.recordChannelHealth(s.ctx, s.candidate.ChannelID, true, "")
 	usageLog := s.service.usageLogInput(s.requestID, s.auth, &s.candidate.ChannelID, s.candidate.UpstreamModel, s.publicModel, usage, cost, inputPrice, outputPrice, durationMs, s.clientIP, "success", "")
 	usageLog.TTFTMs = ttft
-	_, err = s.service.Settle(settlement.Input{
+	_, err = s.service.Settle(s.ctx, settlement.Input{
 		ReservationID: s.reservationID,
 		UserID:        s.auth.UserID, APIKeyID: s.auth.KeyID, ChannelID: &s.candidate.ChannelID, Cost: cost,
 		DebitChannel: s.candidate.Balance != nil, Description: "chat completion " + s.requestID, UsageLog: usageLog,
@@ -158,10 +162,14 @@ func (s *completionStream) Forward(emit func([]byte) error) error {
 	}
 	settled = true
 	if s.rateReservationID != 0 {
-		_ = s.service.ratelimit.FinalizeRateLimit(context.Background(), s.rateReservationID, int64(usage.TotalTokens))
+		finCtx, cancel := detachedCtx(s.ctx, bestEffortTimeout)
+		_ = s.service.ratelimit.FinalizeRateLimit(finCtx, s.rateReservationID, int64(usage.TotalTokens))
+		cancel()
 		s.rateReservationID = 0
 	}
-	_ = s.service.store.UpdateKeyLastUsed(s.auth.KeyID)
+	lastUsedCtx, lastUsedCancel := detachedCtx(s.ctx, bestEffortTimeout)
+	_ = s.service.store.UpdateKeyLastUsed(lastUsedCtx, s.auth.KeyID)
+	lastUsedCancel()
 	if err := emit([]byte("data: [DONE]\n\n")); err != nil {
 		return fmt.Errorf("%w: %v", errDownstreamWrite, err)
 	}
@@ -172,7 +180,9 @@ func (s *completionStream) logError(usage *Usage, ttft *int, code string) {
 	durationMs := elapsedMs(s.start, s.service.now())
 	input := s.service.usageLogInput(s.requestID, s.auth, &s.candidate.ChannelID, s.candidate.UpstreamModel, s.publicModel, usage, "0.000000", "", "", durationMs, s.clientIP, "error", code)
 	input.TTFTMs = ttft
-	_, _ = s.service.store.InsertUsageLog(input)
+	logCtx, cancel := detachedCtx(s.ctx, bestEffortTimeout)
+	_, _ = s.service.store.InsertUsageLog(logCtx, input)
+	cancel()
 }
 
 // settlePartial charges only text frames confirmed written to the downstream
@@ -193,14 +203,14 @@ func (s *completionStream) settlePartial(text string, ttft *int, code string) bo
 		CompletionTokens: completionTokens,
 		TotalTokens:      s.estimatedPromptTokens + completionTokens,
 	}
-	cost, inputPrice, outputPrice, err := s.service.priceFor(s.candidate.ChannelID, s.publicModel, usage)
+	cost, inputPrice, outputPrice, err := s.service.priceFor(s.ctx, s.candidate.ChannelID, s.publicModel, usage)
 	if err != nil {
 		s.logError(usage, ttft, code)
 		return false
 	}
 	input := s.service.usageLogInput(s.requestID, s.auth, &s.candidate.ChannelID, s.candidate.UpstreamModel, s.publicModel, usage, cost, inputPrice, outputPrice, elapsedMs(s.start, s.service.now()), s.clientIP, "error", code)
 	input.TTFTMs = ttft
-	if _, err := s.service.Settle(settlement.Input{
+	if _, err := s.service.Settle(s.ctx, settlement.Input{
 		ReservationID: s.reservationID,
 		UserID:        s.auth.UserID,
 		APIKeyID:      s.auth.KeyID,
@@ -217,14 +227,20 @@ func (s *completionStream) settlePartial(text string, ttft *int, code string) bo
 		input.UnitPriceInputPer1M = ""
 		input.UnitPriceOutputPer1M = ""
 		input.ErrorCode = "partial_estimated_settlement_failed"
-		_, _ = s.service.store.InsertUsageLog(input)
+		logCtx, cancel := detachedCtx(s.ctx, bestEffortTimeout)
+		_, _ = s.service.store.InsertUsageLog(logCtx, input)
+		cancel()
 		return false
 	}
 	if s.rateReservationID != 0 {
-		_ = s.service.ratelimit.FinalizeRateLimit(context.Background(), s.rateReservationID, int64(usage.TotalTokens))
+		finCtx, cancel := detachedCtx(s.ctx, bestEffortTimeout)
+		_ = s.service.ratelimit.FinalizeRateLimit(finCtx, s.rateReservationID, int64(usage.TotalTokens))
+		cancel()
 		s.rateReservationID = 0
 	}
-	_ = s.service.store.UpdateKeyLastUsed(s.auth.KeyID)
+	lastUsedCtx, lastUsedCancel := detachedCtx(s.ctx, bestEffortTimeout)
+	_ = s.service.store.UpdateKeyLastUsed(lastUsedCtx, s.auth.KeyID)
+	lastUsedCancel()
 	return true
 }
 

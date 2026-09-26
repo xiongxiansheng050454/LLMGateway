@@ -1,6 +1,7 @@
 package storefake
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
@@ -10,7 +11,7 @@ import (
 	"LLMGateway/server/internal/store"
 )
 
-func (s *Store) ListChannels() (domain.ListResponse[domain.ChannelDTO], error) {
+func (s *Store) ListChannels(_ context.Context) (domain.ListResponse[domain.ChannelDTO], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	list := []domain.ChannelDTO{}
@@ -20,7 +21,7 @@ func (s *Store) ListChannels() (domain.ListResponse[domain.ChannelDTO], error) {
 	return domain.ListResponse[domain.ChannelDTO]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) GetChannelDTO(id int) (domain.ChannelDTO, error) {
+func (s *Store) GetChannelDTO(_ context.Context, id int) (domain.ChannelDTO, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ch, ok := s.channels[id]
@@ -30,7 +31,7 @@ func (s *Store) GetChannelDTO(id int) (domain.ChannelDTO, error) {
 	return s.channelDTO(ch), nil
 }
 
-func (s *Store) GetChannelRecord(id int) (domain.ChannelRecord, error) {
+func (s *Store) GetChannelRecord(_ context.Context, id int) (domain.ChannelRecord, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ch, ok := s.channels[id]
@@ -50,7 +51,7 @@ func (s *Store) GetChannelRecord(id int) (domain.ChannelRecord, error) {
 	}, nil
 }
 
-func (s *Store) InsertChannel(in domain.ChannelInsert) (int, error) {
+func (s *Store) InsertChannel(_ context.Context, in domain.ChannelInsert) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ch := &domain.Channel{
@@ -69,7 +70,7 @@ func (s *Store) InsertChannel(in domain.ChannelInsert) (int, error) {
 	return ch.ID, nil
 }
 
-func (s *Store) UpdateChannelRecord(id int, in domain.ChannelUpdate) (bool, error) {
+func (s *Store) UpdateChannelRecord(_ context.Context, id int, in domain.ChannelUpdate) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ch, ok := s.channels[id]
@@ -84,7 +85,7 @@ func (s *Store) UpdateChannelRecord(id int, in domain.ChannelUpdate) (bool, erro
 	return true, nil
 }
 
-func (s *Store) UpdateChannelStatusRecord(id, status int) (bool, error) {
+func (s *Store) UpdateChannelStatusRecord(_ context.Context, id, status int) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ch, ok := s.channels[id]
@@ -95,7 +96,7 @@ func (s *Store) UpdateChannelStatusRecord(id, status int) (bool, error) {
 	return true, nil
 }
 
-func (s *Store) DeleteChannel(id int) (bool, error) {
+func (s *Store) DeleteChannel(_ context.Context, id int) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.channels[id]; !ok {
@@ -111,7 +112,7 @@ func (s *Store) DeleteChannel(id int) (bool, error) {
 	return true, nil
 }
 
-func (s *Store) ListChannelModels(channelID int) (domain.ListResponse[domain.ChannelModel], error) {
+func (s *Store) ListChannelModels(_ context.Context, channelID int) (domain.ListResponse[domain.ChannelModel], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	list := []domain.ChannelModel{}
@@ -122,7 +123,7 @@ func (s *Store) ListChannelModels(channelID int) (domain.ListResponse[domain.Cha
 	return domain.ListResponse[domain.ChannelModel]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) InsertChannelModel(channelID int, in domain.ChannelModel) (domain.ChannelModel, error) {
+func (s *Store) InsertChannelModel(_ context.Context, channelID int, in domain.ChannelModel) (domain.ChannelModel, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.channels[channelID]; !ok {
@@ -141,7 +142,7 @@ func (s *Store) InsertChannelModel(channelID int, in domain.ChannelModel) (domai
 	return m, nil
 }
 
-func (s *Store) UpdateChannelModelRecord(channelID, modelID int, upstreamModel string, enabled bool) (domain.ChannelModel, bool, error) {
+func (s *Store) UpdateChannelModelRecord(_ context.Context, channelID, modelID int, upstreamModel string, enabled bool) (domain.ChannelModel, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	m, ok := s.models[channelID][modelID]
@@ -152,7 +153,7 @@ func (s *Store) UpdateChannelModelRecord(channelID, modelID int, upstreamModel s
 	return *m, true, nil
 }
 
-func (s *Store) DeleteChannelModel(channelID, modelID int) (bool, error) {
+func (s *Store) DeleteChannelModel(_ context.Context, channelID, modelID int) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.models[channelID][modelID]; !ok {
@@ -162,13 +163,13 @@ func (s *Store) DeleteChannelModel(channelID, modelID int) (bool, error) {
 	return true, nil
 }
 
-func (s *Store) ChannelModelExists(channelID int, modelName string) (bool, error) {
+func (s *Store) ChannelModelExists(_ context.Context, channelID int, modelName string) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.hasChannelModelLocked(channelID, modelName), nil
 }
 
-func (s *Store) ListCatalogModels(enabledOnly bool) (domain.ListResponse[domain.CatalogModelDTO], error) {
+func (s *Store) ListCatalogModels(_ context.Context, enabledOnly bool) (domain.ListResponse[domain.CatalogModelDTO], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	byName := map[string]*domain.CatalogModelDTO{}
@@ -199,7 +200,7 @@ func (s *Store) ListCatalogModels(enabledOnly bool) (domain.ListResponse[domain.
 	return domain.ListResponse[domain.CatalogModelDTO]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) ListPricing() (domain.ListResponse[domain.PricingDTO], error) {
+func (s *Store) ListPricing(_ context.Context) (domain.ListResponse[domain.PricingDTO], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	list := []domain.PricingDTO{}
@@ -209,7 +210,7 @@ func (s *Store) ListPricing() (domain.ListResponse[domain.PricingDTO], error) {
 	return domain.ListResponse[domain.PricingDTO]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) UpsertPricingRecord(in domain.PricingRecord) (domain.PricingDTO, error) {
+func (s *Store) UpsertPricingRecord(_ context.Context, in domain.PricingRecord) (domain.PricingDTO, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.channels[in.ChannelID]; !ok {
@@ -230,14 +231,14 @@ func (s *Store) UpsertPricingRecord(in domain.PricingRecord) (domain.PricingDTO,
 	return s.pricingDTO(p), nil
 }
 
-func (s *Store) DeletePricing(in domain.DeletePricingInput) error {
+func (s *Store) DeletePricing(_ context.Context, in domain.DeletePricingInput) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	delete(s.pricing, pricingKey(in.ChannelID, in.ModelName))
 	return nil
 }
 
-func (s *Store) GetPricing(channelID int, modelName string) (domain.PricingDTO, error) {
+func (s *Store) GetPricing(_ context.Context, channelID int, modelName string) (domain.PricingDTO, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	pricing, ok := s.pricing[pricingKey(channelID, modelName)]
@@ -247,7 +248,7 @@ func (s *Store) GetPricing(channelID int, modelName string) (domain.PricingDTO, 
 	return s.pricingDTO(pricing), nil
 }
 
-func (s *Store) RouteCandidates(modelName string, cooldownSeconds int) (domain.ListResponse[domain.RouteCandidate], error) {
+func (s *Store) RouteCandidates(_ context.Context, modelName string, cooldownSeconds int) (domain.ListResponse[domain.RouteCandidate], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 

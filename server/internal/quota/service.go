@@ -7,21 +7,21 @@ import (
 	"LLMGateway/server/internal/money"
 )
 
-func (a *Server) ListQuotaPolicies(filter QuotaPolicyFilter) (ListResponse[QuotaPolicyDTO], error) {
-	return a.store.ListQuotaPolicies(filter)
+func (a *Server) ListQuotaPolicies(ctx context.Context, filter QuotaPolicyFilter) (ListResponse[QuotaPolicyDTO], error) {
+	return a.store.ListQuotaPolicies(ctx, filter)
 }
 
 // CreateQuotaPolicy normalizes the input and persists the policy.
-func (a *Server) CreateQuotaPolicy(in QuotaPolicyInput) (QuotaPolicyDTO, error) {
+func (a *Server) CreateQuotaPolicy(ctx context.Context, in QuotaPolicyInput) (QuotaPolicyDTO, error) {
 	policy, err := NormalizeQuotaPolicy(in, nil)
 	if err != nil {
 		return QuotaPolicyDTO{}, err
 	}
-	id, err := a.store.InsertQuotaPolicy(policy)
+	id, err := a.store.InsertQuotaPolicy(ctx, policy)
 	if err != nil {
 		return QuotaPolicyDTO{}, err
 	}
-	stored, err := a.store.GetQuotaPolicy(id)
+	stored, err := a.store.GetQuotaPolicy(ctx, id)
 	if err != nil {
 		return QuotaPolicyDTO{}, err
 	}
@@ -30,8 +30,8 @@ func (a *Server) CreateQuotaPolicy(in QuotaPolicyInput) (QuotaPolicyDTO, error) 
 
 // UpdateQuotaPolicy normalizes the input over the stored policy and rejects
 // changes to the scope or period.
-func (a *Server) UpdateQuotaPolicy(id int, in QuotaPolicyInput) (QuotaPolicyDTO, error) {
-	existing, err := a.store.GetQuotaPolicy(id)
+func (a *Server) UpdateQuotaPolicy(ctx context.Context, id int, in QuotaPolicyInput) (QuotaPolicyDTO, error) {
+	existing, err := a.store.GetQuotaPolicy(ctx, id)
 	if err != nil {
 		return QuotaPolicyDTO{}, err
 	}
@@ -44,22 +44,22 @@ func (a *Server) UpdateQuotaPolicy(id int, in QuotaPolicyInput) (QuotaPolicyDTO,
 			return QuotaPolicyDTO{}, fmt.Errorf("%w: quota scope and period cannot be changed", ErrInvalid)
 		}
 	}
-	ok, err := a.store.UpdateQuotaPolicyRecord(id, policy)
+	ok, err := a.store.UpdateQuotaPolicyRecord(ctx, id, policy)
 	if err != nil {
 		return QuotaPolicyDTO{}, err
 	}
 	if !ok {
 		return QuotaPolicyDTO{}, ErrNotFound
 	}
-	stored, err := a.store.GetQuotaPolicy(id)
+	stored, err := a.store.GetQuotaPolicy(ctx, id)
 	if err != nil {
 		return QuotaPolicyDTO{}, err
 	}
 	return QuotaPolicyToDTO(stored), nil
 }
 
-func (a *Server) DeleteQuotaPolicy(id int) error {
-	ok, err := a.store.DeleteQuotaPolicy(id)
+func (a *Server) DeleteQuotaPolicy(ctx context.Context, id int) error {
+	ok, err := a.store.DeleteQuotaPolicy(ctx, id)
 	if err != nil {
 		return err
 	}

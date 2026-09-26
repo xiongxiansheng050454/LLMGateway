@@ -9,8 +9,7 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-func (s *Store) ListRateLimits(enabled *bool, page, pageSize int) (domain.ListResponse[domain.RateLimitRuleDTO], error) {
-	ctx := context.Background()
+func (s *Store) ListRateLimits(ctx context.Context, enabled *bool, page, pageSize int) (domain.ListResponse[domain.RateLimitRuleDTO], error) {
 	limit, offset := limitOffset(page, pageSize)
 
 	var enabledArg pgtype.Bool
@@ -34,16 +33,16 @@ func (s *Store) ListRateLimits(enabled *bool, page, pageSize int) (domain.ListRe
 	return domain.ListResponse[domain.RateLimitRuleDTO]{List: list, Total: int(total)}, nil
 }
 
-func (s *Store) GetRateLimit(id int) (domain.RateLimitRule, error) {
-	row, err := s.queries.GetRateLimitRule(context.Background(), int64(id))
+func (s *Store) GetRateLimit(ctx context.Context, id int) (domain.RateLimitRule, error) {
+	row, err := s.queries.GetRateLimitRule(ctx, int64(id))
 	if err != nil {
 		return domain.RateLimitRule{}, mapError(err)
 	}
 	return rateLimitRule(row.ID, row.RuleName, row.TargetType, row.TargetValue, row.Metric, row.LimitValue, row.WindowSeconds, row.Action, row.Priority, row.Enabled, row.Extras), nil
 }
 
-func (s *Store) InsertRateLimit(rule domain.RateLimitRule) (int, error) {
-	id, err := s.queries.CreateRateLimitRule(context.Background(), sqlc.CreateRateLimitRuleParams{
+func (s *Store) InsertRateLimit(ctx context.Context, rule domain.RateLimitRule) (int, error) {
+	id, err := s.queries.CreateRateLimitRule(ctx, sqlc.CreateRateLimitRuleParams{
 		RuleName:      rule.RuleName,
 		TargetType:    rule.TargetType,
 		TargetValue:   rule.TargetValue,
@@ -61,8 +60,8 @@ func (s *Store) InsertRateLimit(rule domain.RateLimitRule) (int, error) {
 	return int(id), nil
 }
 
-func (s *Store) UpdateRateLimitRecord(id int, rule domain.RateLimitRule) (bool, error) {
-	affected, err := s.queries.UpdateRateLimitRule(context.Background(), sqlc.UpdateRateLimitRuleParams{
+func (s *Store) UpdateRateLimitRecord(ctx context.Context, id int, rule domain.RateLimitRule) (bool, error) {
+	affected, err := s.queries.UpdateRateLimitRule(ctx, sqlc.UpdateRateLimitRuleParams{
 		RuleName:      rule.RuleName,
 		TargetType:    rule.TargetType,
 		TargetValue:   rule.TargetValue,
@@ -81,8 +80,8 @@ func (s *Store) UpdateRateLimitRecord(id int, rule domain.RateLimitRule) (bool, 
 	return affected > 0, nil
 }
 
-func (s *Store) DeleteRateLimit(id int) (bool, error) {
-	affected, err := s.queries.DeleteRateLimitRule(context.Background(), int64(id))
+func (s *Store) DeleteRateLimit(ctx context.Context, id int) (bool, error) {
+	affected, err := s.queries.DeleteRateLimitRule(ctx, int64(id))
 	if err != nil {
 		return false, mapError(err)
 	}

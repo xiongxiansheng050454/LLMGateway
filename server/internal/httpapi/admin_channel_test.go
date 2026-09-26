@@ -2,6 +2,7 @@ package httpapi
 
 import (
 	domain "LLMGateway/server/internal/testutil/testtypes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -212,7 +213,7 @@ func TestChannelHealthSubresourcesAndReset(t *testing.T) {
 	adminDo(t, handler, http.MethodPost, "/admin/channels", map[string]any{"name": "Healthy", "base_url": "https://healthy.test", "api_key": "secret", "auth_type": "bearer", "status": 1})
 	adminDo(t, handler, http.MethodPost, "/admin/channels", map[string]any{"name": "NoHealth", "base_url": "https://no-health.test", "api_key": "secret", "auth_type": "bearer", "status": 0})
 	for i := 0; i < 5; i++ {
-		if _, err := handler.catalog.RecordChannelFailure(1, domain.FailureUpstream5xx); err != nil {
+		if _, err := handler.catalog.RecordChannelFailure(context.Background(), 1, domain.FailureUpstream5xx); err != nil {
 			t.Fatal(err)
 		}
 	}

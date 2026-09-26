@@ -17,7 +17,7 @@ func TestChatCompletionSettlementStaysInProxy(t *testing.T) {
 		t.Fatal(err)
 	}
 	source := string(orchestration)
-	if !strings.Contains(source, "a.Settle(") {
+	if !strings.Contains(source, "a.Settle(ctx, ") {
 		t.Fatal("chat completion success path must call proxy settlement")
 	}
 	if strings.Contains(source, "DebitUserBalance") || strings.Contains(source, "UpdateChannelBalance") {

@@ -40,7 +40,7 @@ func (a *Server) usageLog(r *http.Request) httpcommon.AdminResult {
 	if err != nil {
 		return httpcommon.HTTPError(http.StatusBadRequest, "invalid log id")
 	}
-	return httpcommon.Result(a.store.GetUsageLog(id))
+	return httpcommon.Result(a.store.GetUsageLog(r.Context(), id))
 }
 
 func (a *Server) listUsageLogs(r *http.Request) httpcommon.AdminResult {
@@ -76,23 +76,23 @@ func (a *Server) listUsageLogs(r *http.Request) httpcommon.AdminResult {
 		}
 		filter.APIKeyID = &id
 	}
-	return httpcommon.Result(a.store.ListUsageLogs(filter))
+	return httpcommon.Result(a.store.ListUsageLogs(r.Context(), filter))
 }
 
 func (a *Server) statsOverview(r *http.Request) httpcommon.AdminResult {
 	query := r.URL.Query()
-	return httpcommon.Result(a.store.StatsOverview(orDefault(query.Get("start_time"), defaultStartTime), orDefault(query.Get("end_time"), defaultEndTime)))
+	return httpcommon.Result(a.store.StatsOverview(r.Context(), orDefault(query.Get("start_time"), defaultStartTime), orDefault(query.Get("end_time"), defaultEndTime)))
 }
 
 func (a *Server) statsDaily(r *http.Request) httpcommon.AdminResult {
 	query := r.URL.Query()
 	page, pageSize := httpcommon.ParsePagination(r)
-	return httpcommon.Result(a.store.StatsDaily(orDefault(query.Get("date_from"), defaultDateFrom), orDefault(query.Get("date_to"), defaultDateTo), page, pageSize))
+	return httpcommon.Result(a.store.StatsDaily(r.Context(), orDefault(query.Get("date_from"), defaultDateFrom), orDefault(query.Get("date_to"), defaultDateTo), page, pageSize))
 }
 
 func (a *Server) statsChannels(r *http.Request) httpcommon.AdminResult {
 	query := r.URL.Query()
-	return httpcommon.Result(a.store.StatsChannels(orDefault(query.Get("start_time"), defaultStartTime), orDefault(query.Get("end_time"), defaultEndTime)))
+	return httpcommon.Result(a.store.StatsChannels(r.Context(), orDefault(query.Get("start_time"), defaultStartTime), orDefault(query.Get("end_time"), defaultEndTime)))
 }
 
 func (a *Server) statsTTFT(r *http.Request) httpcommon.AdminResult {
@@ -107,7 +107,7 @@ func (a *Server) statsTTFT(r *http.Request) httpcommon.AdminResult {
 			*target = &id
 		}
 	}
-	return httpcommon.Result(a.store.StatsTTFT(filter))
+	return httpcommon.Result(a.store.StatsTTFT(r.Context(), filter))
 }
 
 func (a *Server) aggregateUsage(r *http.Request) httpcommon.AdminResult {
@@ -143,7 +143,7 @@ func (a *Server) aggregateUsage(r *http.Request) httpcommon.AdminResult {
 			*target = &id
 		}
 	}
-	return httpcommon.Result(a.store.AggregateUsage(filter))
+	return httpcommon.Result(a.store.AggregateUsage(r.Context(), filter))
 }
 
 func orDefault(value, fallback string) string {

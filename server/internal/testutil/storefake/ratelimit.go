@@ -1,13 +1,14 @@
 package storefake
 
 import (
+	"context"
 	"sort"
 
 	domain "LLMGateway/server/internal/ratelimit"
 	"LLMGateway/server/internal/store"
 )
 
-func (s *Store) ListRateLimits(enabled *bool, page, pageSize int) (domain.ListResponse[domain.RateLimitRuleDTO], error) {
+func (s *Store) ListRateLimits(_ context.Context, enabled *bool, page, pageSize int) (domain.ListResponse[domain.RateLimitRuleDTO], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -33,7 +34,7 @@ func (s *Store) ListRateLimits(enabled *bool, page, pageSize int) (domain.ListRe
 	return domain.ListResponse[domain.RateLimitRuleDTO]{List: list, Total: len(rules)}, nil
 }
 
-func (s *Store) GetRateLimit(id int) (domain.RateLimitRule, error) {
+func (s *Store) GetRateLimit(_ context.Context, id int) (domain.RateLimitRule, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rule, ok := s.rateLimits[id]
@@ -43,7 +44,7 @@ func (s *Store) GetRateLimit(id int) (domain.RateLimitRule, error) {
 	return *rule, nil
 }
 
-func (s *Store) InsertRateLimit(rule domain.RateLimitRule) (int, error) {
+func (s *Store) InsertRateLimit(_ context.Context, rule domain.RateLimitRule) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	rule.ID = s.nextRateLimitID
@@ -53,7 +54,7 @@ func (s *Store) InsertRateLimit(rule domain.RateLimitRule) (int, error) {
 	return stored.ID, nil
 }
 
-func (s *Store) UpdateRateLimitRecord(id int, rule domain.RateLimitRule) (bool, error) {
+func (s *Store) UpdateRateLimitRecord(_ context.Context, id int, rule domain.RateLimitRule) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.rateLimits[id]; !ok {
@@ -65,7 +66,7 @@ func (s *Store) UpdateRateLimitRecord(id int, rule domain.RateLimitRule) (bool, 
 	return true, nil
 }
 
-func (s *Store) DeleteRateLimit(id int) (bool, error) {
+func (s *Store) DeleteRateLimit(_ context.Context, id int) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.rateLimits[id]; !ok {

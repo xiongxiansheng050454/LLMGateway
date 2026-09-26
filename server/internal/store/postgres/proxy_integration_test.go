@@ -1,6 +1,7 @@
 package postgres
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"sync"
@@ -15,7 +16,7 @@ import (
 
 func createKeyAndHash(t *testing.T, acc *accounts.Server, userID int) (int, string) {
 	t.Helper()
-	created, err := acc.CreateKey(userID, domain.KeyInput{KeyName: "default", Prefix: "sk-"})
+	created, err := acc.CreateKey(context.Background(), userID, domain.KeyInput{KeyName: "default", Prefix: "sk-"})
 	if err != nil {
 		t.Fatalf("CreateKey: %v", err)
 	}
@@ -27,15 +28,15 @@ func TestPGProxyStoreCapabilities(t *testing.T) {
 	cat := testCatalog(t, st)
 	acc := accounts.New(st, st.AccountsTx())
 
-	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
+	if _, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "25.000000"}); err != nil {
+	if _, err := acc.RechargeUser(context.Background(), 1, domain.RechargeInput{Amount: "25.000000"}); err != nil {
 		t.Fatal(err)
 	}
 	keyID, keyHash := createKeyAndHash(t, acc, 1)
 
-	auth, err := st.AuthenticateKey(keyHash)
+	auth, err := st.AuthenticateKey(context.Background(), keyHash)
 	if err != nil {
 		t.Fatalf("AuthenticateKey: %v", err)
 	}
@@ -48,34 +49,34 @@ func TestPGProxyStoreCapabilities(t *testing.T) {
 	if string(auth.Permissions) != `{"models":["*"]}` {
 		t.Fatalf("permissions = %s", auth.Permissions)
 	}
-	if _, err := st.AuthenticateKey(crypto.HashKey("sk-unknown")); !errors.Is(err, store.ErrNotFound) {
+	if _, err := st.AuthenticateKey(context.Background(), crypto.HashKey("sk-unknown")); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("unknown key err = %v, want ErrNotFound", err)
 	}
 
-	if err := st.UpdateKeyLastUsed(keyID); err != nil {
+	if err := st.UpdateKeyLastUsed(context.Background(), keyID); err != nil {
 		t.Fatalf("UpdateKeyLastUsed: %v", err)
 	}
-	if err := st.UpdateKeyLastUsed(404); !errors.Is(err, store.ErrNotFound) {
+	if err := st.UpdateKeyLastUsed(context.Background(), 404); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing key err = %v, want ErrNotFound", err)
 	}
 
-	result, err := acc.DebitUserBalance(1, "3.5", "request")
+	result, err := acc.DebitUserBalance(context.Background(), 1, "3.5", "request")
 	if err != nil {
 		t.Fatalf("DebitUserBalance: %v", err)
 	}
 	if result.BalanceAfter != "21.500000" {
 		t.Fatalf("balance_after = %v, want 21.500000", result.BalanceAfter)
 	}
-	if _, err := acc.DebitUserBalance(1, "100.000000", "too much"); !errors.Is(err, store.ErrInvalid) {
+	if _, err := acc.DebitUserBalance(context.Background(), 1, "100.000000", "too much"); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("insufficient err = %v, want ErrInvalid", err)
 	}
-	if _, err := acc.DebitUserBalance(404, "1.000000", "missing"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := acc.DebitUserBalance(context.Background(), 404, "1.000000", "missing"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing user err = %v, want ErrNotFound", err)
 	}
 
 	// Pricing + route candidates.
 	create := func(name string, status, priority, weight int, balance string) int {
-		created, err := cat.CreateChannel(domain.ChannelInput{Name: name, BaseURL: "https://" + name + ".test", APIKey: "sk", Status: status, Priority: priority, Weight: weight, Balance: strPtr(balance)})
+		created, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: name, BaseURL: "https://" + name + ".test", APIKey: "sk", Status: status, Priority: priority, Weight: weight, Balance: strPtr(balance)})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -86,25 +87,25 @@ func TestPGProxyStoreCapabilities(t *testing.T) {
 	channelC := create("C", 1, 5, 100, "")
 	disabledChannel := create("D", 0, 99, 999, "")
 	for _, id := range []int{channelA, channelB, channelC, disabledChannel} {
-		if _, err := cat.CreateChannelModel(id, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
+		if _, err := cat.CreateChannelModel(context.Background(), id, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := cat.UpsertPricing(domain.PricingInput{ChannelID: channelA, ModelName: "gpt", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000", Currency: "USD"}); err != nil {
+	if _, err := cat.UpsertPricing(context.Background(), domain.PricingInput{ChannelID: channelA, ModelName: "gpt", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000", Currency: "USD"}); err != nil {
 		t.Fatal(err)
 	}
-	pricing, err := st.GetPricing(channelA, "gpt")
+	pricing, err := st.GetPricing(context.Background(), channelA, "gpt")
 	if err != nil {
 		t.Fatalf("GetPricing: %v", err)
 	}
 	if pricing.InputPricePer1M != "0.10000000" || pricing.UpstreamModel != "up-gpt" {
 		t.Fatalf("unexpected pricing: %+v", pricing)
 	}
-	if _, err := st.GetPricing(channelA, "missing"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := st.GetPricing(context.Background(), channelA, "missing"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing pricing err = %v, want ErrNotFound", err)
 	}
 
-	candidates, err := cat.RouteCandidates("gpt")
+	candidates, err := cat.RouteCandidates(context.Background(), "gpt")
 	if err != nil {
 		t.Fatalf("RouteCandidates: %v", err)
 	}
@@ -122,30 +123,30 @@ func TestPGProxyStoreCapabilities(t *testing.T) {
 	}
 
 	// Window counting counts all attempts, including failures.
-	if _, err := st.InsertUsageLog(domain.UsageLogInput{RequestID: "req-1", UserID: intp(1), APIKeyID: intp(keyID), ChannelID: intp(channelA), Model: "gpt", Status: "success"}); err != nil {
+	if _, err := st.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "req-1", UserID: intp(1), APIKeyID: intp(keyID), ChannelID: intp(channelA), Model: "gpt", Status: "success"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := st.InsertUsageLog(domain.UsageLogInput{RequestID: "req-2", UserID: intp(1), APIKeyID: intp(keyID), ChannelID: intp(channelA), Model: "gpt", Status: "error"}); err != nil {
+	if _, err := st.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "req-2", UserID: intp(1), APIKeyID: intp(keyID), ChannelID: intp(channelA), Model: "gpt", Status: "error"}); err != nil {
 		t.Fatal(err)
 	}
-	count, err := st.CountRequestsSince(domain.UsageCountFilter{UserID: 1, Since: "1970-01-01T00:00:00Z"})
+	count, err := st.CountRequestsSince(context.Background(), domain.UsageCountFilter{UserID: 1, Since: "1970-01-01T00:00:00Z"})
 	if err != nil {
 		t.Fatalf("CountRequestsSince: %v", err)
 	}
 	if count != 2 {
 		t.Fatalf("count = %d, want 2", count)
 	}
-	scoped, err := st.CountRequestsSince(domain.UsageCountFilter{UserID: 1, APIKeyID: intp(keyID), Since: "1970-01-01T00:00:00Z"})
+	scoped, err := st.CountRequestsSince(context.Background(), domain.UsageCountFilter{UserID: 1, APIKeyID: intp(keyID), Since: "1970-01-01T00:00:00Z"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if scoped != 2 {
 		t.Fatalf("key-scoped count = %d, want 2", scoped)
 	}
-	if _, err := st.CountRequestsSince(domain.UsageCountFilter{UserID: 1, Since: "abc"}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := st.CountRequestsSince(context.Background(), domain.UsageCountFilter{UserID: 1, Since: "abc"}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid since err = %v, want ErrInvalid", err)
 	}
-	if _, err := st.CountRequestsSince(domain.UsageCountFilter{UserID: 1}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := st.CountRequestsSince(context.Background(), domain.UsageCountFilter{UserID: 1}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("empty since err = %v, want ErrInvalid", err)
 	}
 }
@@ -154,10 +155,10 @@ func TestPGDebitUserBalanceConcurrent(t *testing.T) {
 	st := testStore(t)
 	acc := accounts.New(st, st.AccountsTx())
 
-	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
+	if _, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "100.000000"}); err != nil {
+	if _, err := acc.RechargeUser(context.Background(), 1, domain.RechargeInput{Amount: "100.000000"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -168,7 +169,7 @@ func TestPGDebitUserBalanceConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := acc.DebitUserBalance(1, "1.000000", "concurrent"); err != nil {
+			if _, err := acc.DebitUserBalance(context.Background(), 1, "1.000000", "concurrent"); err != nil {
 				errs <- err
 			}
 		}()
@@ -179,7 +180,7 @@ func TestPGDebitUserBalanceConcurrent(t *testing.T) {
 		t.Fatalf("concurrent debit: %v", err)
 	}
 
-	balance, err := st.GetUserBalance(1)
+	balance, err := st.GetUserBalance(context.Background(), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,15 +213,15 @@ func runProxyScenario(t *testing.T, st *Store) proxySnapshot {
 	cat := testCatalog(t, st)
 	acc := accounts.New(st, st.AccountsTx())
 
-	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
+	if _, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "25.000000"}); err != nil {
+	if _, err := acc.RechargeUser(context.Background(), 1, domain.RechargeInput{Amount: "25.000000"}); err != nil {
 		t.Fatal(err)
 	}
 	_, keyHash := createKeyAndHash(t, acc, 1)
 
-	auth, err := st.AuthenticateKey(keyHash)
+	auth, err := st.AuthenticateKey(context.Background(), keyHash)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -230,7 +231,7 @@ func runProxyScenario(t *testing.T, st *Store) proxySnapshot {
 		if balance != "" {
 			balancePtr = &balance
 		}
-		created, err := cat.CreateChannel(domain.ChannelInput{Name: name, BaseURL: "https://" + name + ".test", APIKey: "sk", Status: 1, Priority: priority, Weight: weight, Balance: balancePtr})
+		created, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: name, BaseURL: "https://" + name + ".test", APIKey: "sk", Status: 1, Priority: priority, Weight: weight, Balance: balancePtr})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -239,21 +240,21 @@ func runProxyScenario(t *testing.T, st *Store) proxySnapshot {
 	channelA := create("A", 10, 100, "5.000000")
 	channelB := create("B", 10, 200, "")
 	for _, id := range []int{channelA, channelB} {
-		if _, err := cat.CreateChannelModel(id, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
+		if _, err := cat.CreateChannelModel(context.Background(), id, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
 			t.Fatal(err)
 		}
 	}
-	if _, err := cat.UpsertPricing(domain.PricingInput{ChannelID: channelA, ModelName: "gpt", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000", CachedInputPricePer1M: "0.05000000", Currency: "USD"}); err != nil {
+	if _, err := cat.UpsertPricing(context.Background(), domain.PricingInput{ChannelID: channelA, ModelName: "gpt", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000", CachedInputPricePer1M: "0.05000000", Currency: "USD"}); err != nil {
 		t.Fatal(err)
 	}
 
-	pricing, err := st.GetPricing(channelA, "gpt")
+	pricing, err := st.GetPricing(context.Background(), channelA, "gpt")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, missingPricingErr := st.GetPricing(channelA, "missing")
+	_, missingPricingErr := st.GetPricing(context.Background(), channelA, "missing")
 
-	candidates, err := cat.RouteCandidates("gpt")
+	candidates, err := cat.RouteCandidates(context.Background(), "gpt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -268,16 +269,16 @@ func runProxyScenario(t *testing.T, st *Store) proxySnapshot {
 		}
 	}
 
-	debit, err := acc.DebitUserBalance(1, "3.5", "request")
+	debit, err := acc.DebitUserBalance(context.Background(), 1, "3.5", "request")
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, insufficientErr := acc.DebitUserBalance(1, "100.000000", "too much")
+	_, insufficientErr := acc.DebitUserBalance(context.Background(), 1, "100.000000", "too much")
 
-	if _, err := st.InsertUsageLog(domain.UsageLogInput{RequestID: "req-1", UserID: intp(1), Model: "gpt", Status: "success"}); err != nil {
+	if _, err := st.InsertUsageLog(context.Background(), domain.UsageLogInput{RequestID: "req-1", UserID: intp(1), Model: "gpt", Status: "success"}); err != nil {
 		t.Fatal(err)
 	}
-	countAll, err := st.CountRequestsSince(domain.UsageCountFilter{UserID: 1, Since: "1970-01-01T00:00:00Z"})
+	countAll, err := st.CountRequestsSince(context.Background(), domain.UsageCountFilter{UserID: 1, Since: "1970-01-01T00:00:00Z"})
 	if err != nil {
 		t.Fatal(err)
 	}

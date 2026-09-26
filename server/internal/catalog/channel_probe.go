@@ -23,11 +23,11 @@ func (a *Server) testChannel(r *http.Request, channelID int) httpcommon.AdminRes
 		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 	}
 	checkAll := request.CheckAll == nil || *request.CheckAll
-	channel, err := a.GetChannelSecret(channelID)
+	channel, err := a.GetChannelSecret(r.Context(), channelID)
 	if err != nil {
 		return httpcommon.Result(nil, err)
 	}
-	models, err := a.ListChannelModels(channelID)
+	models, err := a.ListChannelModels(r.Context(), channelID)
 	if err != nil {
 		return httpcommon.Result(nil, err)
 	}

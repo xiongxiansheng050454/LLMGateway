@@ -29,7 +29,7 @@ type fakeQuotaReservation struct {
 	items           []string
 }
 
-func (s *Store) ListQuotaPolicies(filter domain.QuotaPolicyFilter) (domain.ListResponse[domain.QuotaPolicyDTO], error) {
+func (s *Store) ListQuotaPolicies(_ context.Context, filter domain.QuotaPolicyFilter) (domain.ListResponse[domain.QuotaPolicyDTO], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	list := []domain.QuotaPolicyDTO{}
@@ -43,7 +43,7 @@ func (s *Store) ListQuotaPolicies(filter domain.QuotaPolicyFilter) (domain.ListR
 	return domain.ListResponse[domain.QuotaPolicyDTO]{List: list, Total: len(list)}, nil
 }
 
-func (s *Store) GetQuotaPolicy(id int) (domain.QuotaPolicy, error) {
+func (s *Store) GetQuotaPolicy(_ context.Context, id int) (domain.QuotaPolicy, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	policy, ok := s.quotaPolicies[id]
@@ -53,7 +53,7 @@ func (s *Store) GetQuotaPolicy(id int) (domain.QuotaPolicy, error) {
 	return *policy, nil
 }
 
-func (s *Store) InsertQuotaPolicy(policy domain.QuotaPolicy) (int, error) {
+func (s *Store) InsertQuotaPolicy(_ context.Context, policy domain.QuotaPolicy) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for _, current := range s.quotaPolicies {
@@ -68,7 +68,7 @@ func (s *Store) InsertQuotaPolicy(policy domain.QuotaPolicy) (int, error) {
 	return stored.ID, nil
 }
 
-func (s *Store) UpdateQuotaPolicyRecord(id int, policy domain.QuotaPolicy) (bool, error) {
+func (s *Store) UpdateQuotaPolicyRecord(_ context.Context, id int, policy domain.QuotaPolicy) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.quotaPolicies[id]; !ok {
@@ -80,7 +80,7 @@ func (s *Store) UpdateQuotaPolicyRecord(id int, policy domain.QuotaPolicy) (bool
 	return true, nil
 }
 
-func (s *Store) DeleteQuotaPolicy(id int) (bool, error) {
+func (s *Store) DeleteQuotaPolicy(_ context.Context, id int) (bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.quotaPolicies[id]; !ok {

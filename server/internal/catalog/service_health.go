@@ -5,8 +5,8 @@ import (
 	"time"
 )
 
-func (a *Server) GetChannelHealth(channelID int) (ChannelHealth, error) {
-	row, found, err := a.health.GetChannelHealthRow(channelID)
+func (a *Server) GetChannelHealth(ctx context.Context, channelID int) (ChannelHealth, error) {
+	row, found, err := a.health.GetChannelHealthRow(ctx, channelID)
 	if err != nil {
 		return ChannelHealth{}, err
 	}
@@ -16,36 +16,36 @@ func (a *Server) GetChannelHealth(channelID int) (ChannelHealth, error) {
 	return EvaluateChannelHealth(row, a.now(), a.breaker), nil
 }
 
-func (a *Server) RecordChannelSuccess(channelID int) (ChannelHealth, error) {
-	return a.recordChannelHealth(channelID, func(current ChannelHealth) ChannelHealth {
+func (a *Server) RecordChannelSuccess(ctx context.Context, channelID int) (ChannelHealth, error) {
+	return a.recordChannelHealth(ctx, channelID, func(current ChannelHealth) ChannelHealth {
 		return ApplyChannelSuccess(current, a.now())
 	})
 }
 
-func (a *Server) RecordChannelFailure(channelID int, reason FailureReason) (ChannelHealth, error) {
+func (a *Server) RecordChannelFailure(ctx context.Context, channelID int, reason FailureReason) (ChannelHealth, error) {
 	if !reason.CountsAsChannelFailure() {
-		return a.GetChannelHealth(channelID)
+		return a.GetChannelHealth(ctx, channelID)
 	}
-	return a.recordChannelHealth(channelID, func(current ChannelHealth) ChannelHealth {
+	return a.recordChannelHealth(ctx, channelID, func(current ChannelHealth) ChannelHealth {
 		return ApplyChannelFailure(current, reason, a.now(), a.breaker)
 	})
 }
 
 func (a *Server) RecordChannelAttempt(ctx context.Context, channelID int, success bool, reason FailureReason) (ChannelHealth, error) {
 	if success {
-		return a.RecordChannelSuccess(channelID)
+		return a.RecordChannelSuccess(ctx, channelID)
 	}
-	return a.RecordChannelFailure(channelID, reason)
+	return a.RecordChannelFailure(ctx, channelID, reason)
 }
 
-func (a *Server) ResetChannelHealth(channelID int) error {
-	return a.tx.InTx(context.Background(), func(tx Tx) error {
+func (a *Server) ResetChannelHealth(ctx context.Context, channelID int) error {
+	return a.tx.InTx(ctx, func(tx Tx) error {
 		return tx.DeleteChannelHealth(channelID)
 	})
 }
 
-func (a *Server) ListChannelHealth() (ListResponse[ChannelHealthDTO], error) {
-	rows, err := a.health.ListChannelHealthRows()
+func (a *Server) ListChannelHealth(ctx context.Context) (ListResponse[ChannelHealthDTO], error) {
+	rows, err := a.health.ListChannelHealthRows(ctx)
 	if err != nil {
 		return ListResponse[ChannelHealthDTO]{}, err
 	}
@@ -63,9 +63,9 @@ func (a *Server) AcquireChannelProbe(ctx context.Context, channelID int, lease t
 
 // recordChannelHealth applies a state transition inside a transaction, holding
 // the row lock so concurrent recordings cannot lose updates.
-func (a *Server) recordChannelHealth(channelID int, apply func(ChannelHealth) ChannelHealth) (ChannelHealth, error) {
+func (a *Server) recordChannelHealth(ctx context.Context, channelID int, apply func(ChannelHealth) ChannelHealth) (ChannelHealth, error) {
 	var next ChannelHealth
-	err := a.tx.InTx(context.Background(), func(tx Tx) error {
+	err := a.tx.InTx(ctx, func(tx Tx) error {
 		if err := tx.EnsureChannelHealth(channelID); err != nil {
 			return err
 		}

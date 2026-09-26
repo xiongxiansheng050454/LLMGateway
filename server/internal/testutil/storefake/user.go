@@ -18,7 +18,7 @@ func nowRFC3339() string {
 
 // --- Port reads ---
 
-func (s *Store) ListUsers(page, pageSize int) (domain.ListResponse[domain.UserDTO], error) {
+func (s *Store) ListUsers(_ context.Context, page, pageSize int) (domain.ListResponse[domain.UserDTO], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -36,7 +36,7 @@ func (s *Store) ListUsers(page, pageSize int) (domain.ListResponse[domain.UserDT
 	return domain.ListResponse[domain.UserDTO]{List: list, Total: len(ids)}, nil
 }
 
-func (s *Store) GetUserBalance(id int) (domain.BalanceDTO, error) {
+func (s *Store) GetUserBalance(_ context.Context, id int) (domain.BalanceDTO, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	user, ok := s.users[id]
@@ -46,7 +46,7 @@ func (s *Store) GetUserBalance(id int) (domain.BalanceDTO, error) {
 	return balanceDTO(user.AvailableBalance, user.FrozenBalance), nil
 }
 
-func (s *Store) ListBalanceTransactions(userID, page, pageSize int) (domain.ListResponse[domain.BalanceTransactionDTO], error) {
+func (s *Store) ListBalanceTransactions(_ context.Context, userID, page, pageSize int) (domain.ListResponse[domain.BalanceTransactionDTO], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.users[userID]; !ok {
@@ -63,7 +63,7 @@ func (s *Store) ListBalanceTransactions(userID, page, pageSize int) (domain.List
 	return domain.ListResponse[domain.BalanceTransactionDTO]{List: list, Total: len(rows)}, nil
 }
 
-func (s *Store) ListUserKeys(userID, page, pageSize int) (domain.ListResponse[domain.ClientKeyDTO], error) {
+func (s *Store) ListUserKeys(_ context.Context, userID, page, pageSize int) (domain.ListResponse[domain.ClientKeyDTO], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.users[userID]; !ok {
@@ -78,7 +78,7 @@ func (s *Store) ListUserKeys(userID, page, pageSize int) (domain.ListResponse[do
 	return domain.ListResponse[domain.ClientKeyDTO]{List: list, Total: len(keys)}, nil
 }
 
-func (s *Store) ListKeys(page, pageSize int) (domain.ListResponse[domain.ClientKeyDTO], error) {
+func (s *Store) ListKeys(_ context.Context, page, pageSize int) (domain.ListResponse[domain.ClientKeyDTO], error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	keys := s.sortedKeysLocked(0)
@@ -90,7 +90,7 @@ func (s *Store) ListKeys(page, pageSize int) (domain.ListResponse[domain.ClientK
 	return domain.ListResponse[domain.ClientKeyDTO]{List: list, Total: len(keys)}, nil
 }
 
-func (s *Store) AuthenticateKey(keyHash string) (*domain.AuthContext, error) {
+func (s *Store) AuthenticateKey(_ context.Context, keyHash string) (*domain.AuthContext, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
@@ -118,7 +118,7 @@ func (s *Store) AuthenticateKey(keyHash string) (*domain.AuthContext, error) {
 	return nil, store.ErrNotFound
 }
 
-func (s *Store) UpdateKeyLastUsed(keyID int) error {
+func (s *Store) UpdateKeyLastUsed(_ context.Context, keyID int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	key, ok := s.keys[keyID]

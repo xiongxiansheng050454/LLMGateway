@@ -38,7 +38,7 @@ func (a *Server) userKey(r *http.Request) httpcommon.AdminResult {
 	case http.MethodPut:
 		return a.updateKey(r, userID, keyID)
 	case http.MethodDelete:
-		return httpcommon.NoBody(a.DeleteKey(userID, keyID))
+		return httpcommon.NoBody(a.DeleteKey(r.Context(), userID, keyID))
 	default:
 		return httpcommon.HTTPError(http.StatusMethodNotAllowed, "method not allowed")
 	}
@@ -52,7 +52,7 @@ func (a *Server) userKeyReset(r *http.Request) httpcommon.AdminResult {
 	if result.Status != 0 {
 		return result
 	}
-	return httpcommon.Result(a.ResetKey(userID, keyID))
+	return httpcommon.Result(a.ResetKey(r.Context(), userID, keyID))
 }
 
 func (a *Server) keyPathIDs(r *http.Request) (int, int, httpcommon.AdminResult) {
@@ -69,12 +69,12 @@ func (a *Server) keyPathIDs(r *http.Request) (int, int, httpcommon.AdminResult) 
 
 func (a *Server) listKeys(r *http.Request) httpcommon.AdminResult {
 	page, pageSize := httpcommon.ParsePagination(r)
-	return httpcommon.Result(a.store.ListKeys(page, pageSize))
+	return httpcommon.Result(a.store.ListKeys(r.Context(), page, pageSize))
 }
 
 func (a *Server) listUserKeys(r *http.Request, userID int) httpcommon.AdminResult {
 	page, pageSize := httpcommon.ParsePagination(r)
-	return httpcommon.Result(a.store.ListUserKeys(userID, page, pageSize))
+	return httpcommon.Result(a.store.ListUserKeys(r.Context(), userID, page, pageSize))
 }
 
 func (a *Server) createKey(r *http.Request, userID int) httpcommon.AdminResult {
@@ -82,7 +82,7 @@ func (a *Server) createKey(r *http.Request, userID int) httpcommon.AdminResult {
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 	}
-	return httpcommon.Result(a.CreateKey(userID, req))
+	return httpcommon.Result(a.CreateKey(r.Context(), userID, req))
 }
 
 func (a *Server) updateKey(r *http.Request, userID, keyID int) httpcommon.AdminResult {
@@ -90,5 +90,5 @@ func (a *Server) updateKey(r *http.Request, userID, keyID int) httpcommon.AdminR
 	if err := httpcommon.ReadJSON(r, &req); err != nil {
 		return httpcommon.HTTPError(http.StatusBadRequest, "invalid json")
 	}
-	return httpcommon.Result(a.UpdateKey(userID, keyID, req))
+	return httpcommon.Result(a.UpdateKey(r.Context(), userID, keyID, req))
 }

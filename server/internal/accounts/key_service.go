@@ -18,7 +18,7 @@ const (
 
 // CreateKey generates a gateway key, stores only its hash, and returns the
 // plaintext once.
-func (a *Server) CreateKey(userID int, in KeyInput) (KeySecretDTO, error) {
+func (a *Server) CreateKey(ctx context.Context, userID int, in KeyInput) (KeySecretDTO, error) {
 	keyName := in.KeyName
 	if keyName == "" {
 		keyName = defaultKeyName
@@ -38,7 +38,7 @@ func (a *Server) CreateKey(userID int, in KeyInput) (KeySecretDTO, error) {
 	}
 
 	var id int
-	err = a.tx.InTx(context.Background(), func(tx Tx) error {
+	err = a.tx.InTx(ctx, func(tx Tx) error {
 		if _, err := tx.GetUser(userID); err != nil {
 			return err
 		}
@@ -65,13 +65,13 @@ func (a *Server) CreateKey(userID int, in KeyInput) (KeySecretDTO, error) {
 }
 
 // UpdateKey toggles a key's active flag. is_active is required.
-func (a *Server) UpdateKey(userID, keyID int, in KeyUpdateInput) (ClientKeyDTO, error) {
+func (a *Server) UpdateKey(ctx context.Context, userID, keyID int, in KeyUpdateInput) (ClientKeyDTO, error) {
 	if in.IsActive == nil {
 		return ClientKeyDTO{}, fmt.Errorf("%w: is_active is required", apperrors.ErrInvalid)
 	}
 
 	var updated ClientKey
-	err := a.tx.InTx(context.Background(), func(tx Tx) error {
+	err := a.tx.InTx(ctx, func(tx Tx) error {
 		key, ok, err := tx.UpdateKeyActive(keyID, userID, *in.IsActive)
 		if err != nil {
 			return err
@@ -90,8 +90,8 @@ func (a *Server) UpdateKey(userID, keyID int, in KeyUpdateInput) (ClientKeyDTO, 
 
 // DeleteKey releases the key's quota reservations and removes the key in one
 // transaction.
-func (a *Server) DeleteKey(userID, keyID int) error {
-	return a.tx.InTx(context.Background(), func(tx Tx) error {
+func (a *Server) DeleteKey(ctx context.Context, userID, keyID int) error {
+	return a.tx.InTx(ctx, func(tx Tx) error {
 		if err := tx.DeleteQuotaReservationsForKey(userID, keyID); err != nil {
 			return err
 		}
@@ -107,9 +107,9 @@ func (a *Server) DeleteKey(userID, keyID int) error {
 }
 
 // ResetKey rotates the stored hash and returns the new plaintext once.
-func (a *Server) ResetKey(userID, keyID int) (KeySecretDTO, error) {
+func (a *Server) ResetKey(ctx context.Context, userID, keyID int) (KeySecretDTO, error) {
 	var fullKey string
-	err := a.tx.InTx(context.Background(), func(tx Tx) error {
+	err := a.tx.InTx(ctx, func(tx Tx) error {
 		key, err := tx.GetKey(keyID, userID)
 		if err != nil {
 			return err

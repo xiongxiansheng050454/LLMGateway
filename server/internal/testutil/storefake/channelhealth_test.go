@@ -33,7 +33,7 @@ func TestChannelHealthLifecycle(t *testing.T) {
 	cat := newHealthCatalog(st, clock)
 
 	// Missing row is closed.
-	health, err := cat.GetChannelHealth(1)
+	health, err := cat.GetChannelHealth(context.Background(), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestChannelHealthLifecycle(t *testing.T) {
 
 	// Five consecutive failures trip the breaker.
 	for i := 0; i < 5; i++ {
-		health, err = cat.RecordChannelFailure(1, domain.FailureUpstream5xx)
+		health, err = cat.RecordChannelFailure(context.Background(), 1, domain.FailureUpstream5xx)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -56,18 +56,18 @@ func TestChannelHealthLifecycle(t *testing.T) {
 	}
 
 	// Before the cooldown the channel is still open.
-	if got, _ := cat.GetChannelHealth(1); got.State != domain.HealthOpen {
+	if got, _ := cat.GetChannelHealth(context.Background(), 1); got.State != domain.HealthOpen {
 		t.Fatalf("before cooldown state = %s, want open", got.State)
 	}
 
 	// After the cooldown it becomes half-open lazily.
 	*clock = clock.Add(30 * time.Second)
-	if got, _ := cat.GetChannelHealth(1); got.State != domain.HealthHalfOpen {
+	if got, _ := cat.GetChannelHealth(context.Background(), 1); got.State != domain.HealthHalfOpen {
 		t.Fatalf("after cooldown state = %s, want half-open", got.State)
 	}
 
 	// A success closes it again.
-	closed, err := cat.RecordChannelSuccess(1)
+	closed, err := cat.RecordChannelSuccess(context.Background(), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -80,13 +80,13 @@ func TestChannelHealthHalfOpenFailureReopens(t *testing.T) {
 	st, clock := newHealthTestStore()
 	cat := newHealthCatalog(st, clock)
 	for i := 0; i < 5; i++ {
-		if _, err := cat.RecordChannelFailure(1, domain.FailureUpstream5xx); err != nil {
+		if _, err := cat.RecordChannelFailure(context.Background(), 1, domain.FailureUpstream5xx); err != nil {
 			t.Fatal(err)
 		}
 	}
 	*clock = clock.Add(30 * time.Second)
 
-	reopened, err := cat.RecordChannelFailure(1, domain.FailureUpstream5xx)
+	reopened, err := cat.RecordChannelFailure(context.Background(), 1, domain.FailureUpstream5xx)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -98,13 +98,13 @@ func TestChannelHealthHalfOpenFailureReopens(t *testing.T) {
 func TestResetChannelHealth(t *testing.T) {
 	st, clock := newHealthTestStore()
 	cat := newHealthCatalog(st, clock)
-	if _, err := cat.RecordChannelFailure(1, domain.FailureUpstream401); err != nil {
+	if _, err := cat.RecordChannelFailure(context.Background(), 1, domain.FailureUpstream401); err != nil {
 		t.Fatal(err)
 	}
-	if err := cat.ResetChannelHealth(1); err != nil {
+	if err := cat.ResetChannelHealth(context.Background(), 1); err != nil {
 		t.Fatal(err)
 	}
-	health, _ := cat.GetChannelHealth(1)
+	health, _ := cat.GetChannelHealth(context.Background(), 1)
 	if health.State != domain.HealthClosed || health.FailureCount != 0 {
 		t.Fatalf("after reset: %+v", health)
 	}
@@ -113,13 +113,13 @@ func TestResetChannelHealth(t *testing.T) {
 func TestListChannelHealth(t *testing.T) {
 	st, clock := newHealthTestStore()
 	cat := newHealthCatalog(st, clock)
-	if _, err := cat.CreateChannel(domain.ChannelInput{Name: "channel", BaseURL: "https://channel.test", APIKey: "secret", Status: 1}); err != nil {
+	if _, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "channel", BaseURL: "https://channel.test", APIKey: "secret", Status: 1}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := cat.RecordChannelFailure(1, domain.FailureUpstream5xx); err != nil {
+	if _, err := cat.RecordChannelFailure(context.Background(), 1, domain.FailureUpstream5xx); err != nil {
 		t.Fatal(err)
 	}
-	list, err := cat.ListChannelHealth()
+	list, err := cat.ListChannelHealth(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -143,7 +143,7 @@ func TestChannelHealthConcurrentFailures(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := cat.RecordChannelFailure(1, domain.FailureUpstream5xx); err != nil {
+			if _, err := cat.RecordChannelFailure(context.Background(), 1, domain.FailureUpstream5xx); err != nil {
 				errs <- err
 			}
 		}()
@@ -154,7 +154,7 @@ func TestChannelHealthConcurrentFailures(t *testing.T) {
 		t.Fatalf("concurrent RecordChannelFailure: %v", err)
 	}
 
-	health, err := cat.GetChannelHealth(1)
+	health, err := cat.GetChannelHealth(context.Background(), 1)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -178,16 +178,16 @@ func TestChannelProbeLeaseAllowsOnlyOneConcurrentProbe(t *testing.T) {
 func TestRouteCandidatesExcludeOpenChannel(t *testing.T) {
 	st, clock := newHealthTestStore()
 	cat := newHealthCatalog(st, clock)
-	created, err := cat.CreateChannel(domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
+	created, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: "OpenAI", BaseURL: "https://api.test", APIKey: "sk", Status: 1})
 	if err != nil {
 		t.Fatal(err)
 	}
 	channelID := created.ID
-	if _, err := cat.CreateChannelModel(channelID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up", Enabled: true}); err != nil {
+	if _, err := cat.CreateChannelModel(context.Background(), channelID, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up", Enabled: true}); err != nil {
 		t.Fatal(err)
 	}
 
-	candidates, err := cat.RouteCandidates("gpt")
+	candidates, err := cat.RouteCandidates(context.Background(), "gpt")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -196,11 +196,11 @@ func TestRouteCandidatesExcludeOpenChannel(t *testing.T) {
 	}
 
 	for i := 0; i < 5; i++ {
-		if _, err := cat.RecordChannelFailure(channelID, domain.FailureUpstream5xx); err != nil {
+		if _, err := cat.RecordChannelFailure(context.Background(), channelID, domain.FailureUpstream5xx); err != nil {
 			t.Fatal(err)
 		}
 	}
-	candidates, err = cat.RouteCandidates("gpt")
+	candidates, err = cat.RouteCandidates(context.Background(), "gpt")
 	if err != nil {
 		t.Fatal(err)
 	}

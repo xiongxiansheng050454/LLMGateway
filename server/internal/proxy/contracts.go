@@ -30,7 +30,7 @@ type Quota interface {
 
 // RateLimit is the rate-limit surface proxy orchestration needs.
 type RateLimit interface {
-	ListRateLimits(enabled *bool, page, pageSize int) (ratelimit.ListResponse[ratelimit.RateLimitRuleDTO], error)
+	ListRateLimits(ctx context.Context, enabled *bool, page, pageSize int) (ratelimit.ListResponse[ratelimit.RateLimitRuleDTO], error)
 	ReserveRateLimit(ctx context.Context, in ratelimit.RateLimitReservationInput) (ratelimit.RateLimitReservation, error)
 	FinalizeRateLimit(ctx context.Context, id int64, tokens int64) error
 	ReleaseRateLimit(ctx context.Context, id int64) error
@@ -40,13 +40,13 @@ type RateLimit interface {
 // Catalog is the catalog surface proxy orchestration needs. catalog.Server
 // implements it, so proxy depends on catalog rules rather than raw primitives.
 type Catalog interface {
-	ListCatalogModels(enabledOnly bool) (catalog.ListResponse[catalog.CatalogModelDTO], error)
-	RouteCandidates(modelName string) (catalog.ListResponse[catalog.RouteCandidate], error)
-	GetChannelHealth(channelID int) (catalog.ChannelHealth, error)
+	ListCatalogModels(ctx context.Context, enabledOnly bool) (catalog.ListResponse[catalog.CatalogModelDTO], error)
+	RouteCandidates(ctx context.Context, modelName string) (catalog.ListResponse[catalog.RouteCandidate], error)
+	GetChannelHealth(ctx context.Context, channelID int) (catalog.ChannelHealth, error)
 	AcquireChannelProbe(ctx context.Context, channelID int, lease time.Duration) (bool, error)
-	GetChannelSecret(channelID int) (*catalog.Channel, error)
+	GetChannelSecret(ctx context.Context, channelID int) (*catalog.Channel, error)
 	RecordChannelAttempt(ctx context.Context, channelID int, success bool, reason catalog.FailureReason) (catalog.ChannelHealth, error)
-	GetPricing(channelID int, modelName string) (catalog.PricingDTO, error)
+	GetPricing(ctx context.Context, channelID int, modelName string) (catalog.PricingDTO, error)
 }
 
 // ChatRequest is the protocol-neutral input needed by proxy orchestration.

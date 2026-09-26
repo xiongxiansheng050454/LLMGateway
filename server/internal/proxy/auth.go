@@ -1,6 +1,7 @@
 package proxy
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"strings"
@@ -12,13 +13,13 @@ import (
 )
 
 // Authenticate validates the Bearer gateway key and returns the raw auth state.
-func (a *Service) Authenticate(authorization string) (*accounts.AuthContext, error) {
+func (a *Service) Authenticate(ctx context.Context, authorization string) (*accounts.AuthContext, error) {
 	token, ok := bearerToken(authorization)
 	if !ok {
 		return nil, ErrUnauthorized
 	}
 
-	auth, err := a.store.AuthenticateKey(crypto.HashKey(token))
+	auth, err := a.store.AuthenticateKey(ctx, crypto.HashKey(token))
 	if err != nil {
 		if errors.Is(err, apperrors.ErrNotFound) {
 			return nil, ErrUnauthorized

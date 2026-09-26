@@ -10,9 +10,9 @@ import (
 // on the next recorded success/failure. The breaker state machine is
 // catalog-owned pure business logic.
 type HealthPort interface {
-	ListChannelHealthRows() ([]ChannelHealth, error)
+	ListChannelHealthRows(ctx context.Context) ([]ChannelHealth, error)
 	// GetChannelHealthRow returns the stored row and whether it exists.
-	GetChannelHealthRow(channelID int) (ChannelHealth, bool, error)
+	GetChannelHealthRow(ctx context.Context, channelID int) (ChannelHealth, bool, error)
 	AcquireChannelProbe(ctx context.Context, channelID int, lease time.Duration) (bool, error)
 }
 

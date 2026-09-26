@@ -1,6 +1,7 @@
 package storefake
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"time"
@@ -10,7 +11,7 @@ import (
 	domain "LLMGateway/server/internal/usage"
 )
 
-func (s *Store) InsertUsageLog(in domain.UsageLogInput) (int, error) {
+func (s *Store) InsertUsageLog(_ context.Context, in domain.UsageLogInput) (int, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.insertUsageLogLocked(in)
@@ -51,7 +52,7 @@ func (s *Store) insertUsageLogLocked(in domain.UsageLogInput) (int, error) {
 	return log.ID, nil
 }
 
-func (s *Store) ListUsageLogs(filter domain.UsageLogFilter) (domain.ListResponse[domain.UsageLogDTO], error) {
+func (s *Store) ListUsageLogs(_ context.Context, filter domain.UsageLogFilter) (domain.ListResponse[domain.UsageLogDTO], error) {
 	if err := domain.ValidateTimeRange(filter.StartTime, filter.EndTime); err != nil {
 		return domain.ListResponse[domain.UsageLogDTO]{}, err
 	}
@@ -78,7 +79,7 @@ func (s *Store) ListUsageLogs(filter domain.UsageLogFilter) (domain.ListResponse
 	return domain.ListResponse[domain.UsageLogDTO]{List: list, Total: len(rows)}, nil
 }
 
-func (s *Store) GetUsageLog(id int) (domain.UsageLogDTO, error) {
+func (s *Store) GetUsageLog(_ context.Context, id int) (domain.UsageLogDTO, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	for i := range s.usageLogs {
@@ -89,7 +90,7 @@ func (s *Store) GetUsageLog(id int) (domain.UsageLogDTO, error) {
 	return domain.UsageLogDTO{}, store.ErrNotFound
 }
 
-func (s *Store) CountRequestsSince(filter domain.UsageCountFilter) (int, error) {
+func (s *Store) CountRequestsSince(_ context.Context, filter domain.UsageCountFilter) (int, error) {
 	if err := domain.ValidateSince(filter.Since); err != nil {
 		return 0, err
 	}
@@ -125,7 +126,7 @@ func (s *Store) CountRequestsSince(filter domain.UsageCountFilter) (int, error) 
 	return count, nil
 }
 
-func (s *Store) CountTokensSince(filter domain.TokenCountFilter) (int64, error) {
+func (s *Store) CountTokensSince(_ context.Context, filter domain.TokenCountFilter) (int64, error) {
 	if err := domain.ValidateSince(filter.Since); err != nil {
 		return 0, err
 	}
@@ -145,7 +146,7 @@ func (s *Store) CountTokensSince(filter domain.TokenCountFilter) (int64, error) 
 	return total, nil
 }
 
-func (s *Store) StatsOverview(startTime, endTime string) (domain.StatsOverviewDTO, error) {
+func (s *Store) StatsOverview(_ context.Context, startTime, endTime string) (domain.StatsOverviewDTO, error) {
 	start, end, err := parseRange(startTime, endTime)
 	if err != nil {
 		return domain.StatsOverviewDTO{}, err
@@ -179,7 +180,7 @@ func (s *Store) StatsOverview(startTime, endTime string) (domain.StatsOverviewDT
 	return domain.StatsOverviewDTO{RequestCount: int64(requests), SuccessCount: int64(success), ErrorCount: int64(errors), TotalTokens: int64(tokens), TotalCost: money.Format6(cost), ActiveUserCount: int64(len(users))}, nil
 }
 
-func (s *Store) StatsDaily(dateFrom, dateTo string, page, pageSize int) (domain.ListResponse[domain.StatsDailyDTO], error) {
+func (s *Store) StatsDaily(_ context.Context, dateFrom, dateTo string, page, pageSize int) (domain.ListResponse[domain.StatsDailyDTO], error) {
 	if err := domain.ValidateDateRange(dateFrom, dateTo); err != nil {
 		return domain.ListResponse[domain.StatsDailyDTO]{}, err
 	}
@@ -229,7 +230,7 @@ func (s *Store) StatsDaily(dateFrom, dateTo string, page, pageSize int) (domain.
 	return domain.ListResponse[domain.StatsDailyDTO]{List: list, Total: len(dates)}, nil
 }
 
-func (s *Store) StatsChannels(startTime, endTime string) (domain.ListResponse[domain.StatsChannelDTO], error) {
+func (s *Store) StatsChannels(_ context.Context, startTime, endTime string) (domain.ListResponse[domain.StatsChannelDTO], error) {
 	start, end, err := parseRange(startTime, endTime)
 	if err != nil {
 		return domain.ListResponse[domain.StatsChannelDTO]{}, err
@@ -286,7 +287,7 @@ func (s *Store) StatsChannels(startTime, endTime string) (domain.ListResponse[do
 	return domain.ListResponse[domain.StatsChannelDTO]{List: list}, nil
 }
 
-func (s *Store) StatsTTFT(filter domain.TTFTStatsFilter) (domain.TTFTStatsDTO, error) {
+func (s *Store) StatsTTFT(_ context.Context, filter domain.TTFTStatsFilter) (domain.TTFTStatsDTO, error) {
 	start, end, err := parseRange(filter.StartTime, filter.EndTime)
 	if err != nil {
 		return domain.TTFTStatsDTO{}, err
@@ -315,7 +316,7 @@ func (s *Store) StatsTTFT(filter domain.TTFTStatsFilter) (domain.TTFTStatsDTO, e
 	return domain.TTFTStatsDTO{SampleCount: int64(len(values)), AverageMs: sum / int64(len(values)), P50Ms: percentile(values, 50), P95Ms: percentile(values, 95), P99Ms: percentile(values, 99)}, nil
 }
 
-func (s *Store) AggregateUsage(filter domain.UsageAggregateFilter) (domain.ListResponse[domain.UsageAggregateDTO], error) {
+func (s *Store) AggregateUsage(_ context.Context, filter domain.UsageAggregateFilter) (domain.ListResponse[domain.UsageAggregateDTO], error) {
 	start, end, err := parseRange(filter.StartTime, filter.EndTime)
 	if err != nil {
 		return domain.ListResponse[domain.UsageAggregateDTO]{}, err

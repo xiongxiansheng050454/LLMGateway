@@ -31,8 +31,8 @@ type quotaItemRow struct {
 	reservedCost  string
 }
 
-func (s *Store) GetQuotaPolicy(id int) (domain.QuotaPolicy, error) {
-	row, err := s.queries.GetQuotaPolicy(context.Background(), int64(id))
+func (s *Store) GetQuotaPolicy(ctx context.Context, id int) (domain.QuotaPolicy, error) {
+	row, err := s.queries.GetQuotaPolicy(ctx, int64(id))
 	if err != nil {
 		return domain.QuotaPolicy{}, mapError(err)
 	}
@@ -60,7 +60,7 @@ func (s *Store) GetQuotaPolicy(id int) (domain.QuotaPolicy, error) {
 	}, nil
 }
 
-func (s *Store) InsertQuotaPolicy(policy domain.QuotaPolicy) (int, error) {
+func (s *Store) InsertQuotaPolicy(ctx context.Context, policy domain.QuotaPolicy) (int, error) {
 	params := sqlc.CreateQuotaPolicyParams{
 		PolicyName: policy.PolicyName,
 		ScopeType:  string(policy.ScopeType),
@@ -77,14 +77,14 @@ func (s *Store) InsertQuotaPolicy(policy domain.QuotaPolicy) (int, error) {
 	}
 	params.CostLimit = numericValue(policy.CostLimit)
 
-	id, err := s.queries.CreateQuotaPolicy(context.Background(), params)
+	id, err := s.queries.CreateQuotaPolicy(ctx, params)
 	if err != nil {
 		return 0, mapError(err)
 	}
 	return int(id), nil
 }
 
-func (s *Store) UpdateQuotaPolicyRecord(id int, policy domain.QuotaPolicy) (bool, error) {
+func (s *Store) UpdateQuotaPolicyRecord(ctx context.Context, id int, policy domain.QuotaPolicy) (bool, error) {
 	params := sqlc.UpdateQuotaPolicyParams{
 		ID:         int64(id),
 		PolicyName: policy.PolicyName,
@@ -94,23 +94,22 @@ func (s *Store) UpdateQuotaPolicyRecord(id int, policy domain.QuotaPolicy) (bool
 	if policy.TokenLimit != nil {
 		params.TokenLimit = pgtype.Int8{Int64: *policy.TokenLimit, Valid: true}
 	}
-	affected, err := s.queries.UpdateQuotaPolicy(context.Background(), params)
+	affected, err := s.queries.UpdateQuotaPolicy(ctx, params)
 	if err != nil {
 		return false, mapError(err)
 	}
 	return affected > 0, nil
 }
 
-func (s *Store) DeleteQuotaPolicy(id int) (bool, error) {
-	affected, err := s.queries.DeleteQuotaPolicy(context.Background(), int64(id))
+func (s *Store) DeleteQuotaPolicy(ctx context.Context, id int) (bool, error) {
+	affected, err := s.queries.DeleteQuotaPolicy(ctx, int64(id))
 	if err != nil {
 		return false, mapError(err)
 	}
 	return affected > 0, nil
 }
 
-func (s *Store) ListQuotaPolicies(filter domain.QuotaPolicyFilter) (domain.ListResponse[domain.QuotaPolicyDTO], error) {
-	ctx := context.Background()
+func (s *Store) ListQuotaPolicies(ctx context.Context, filter domain.QuotaPolicyFilter) (domain.ListResponse[domain.QuotaPolicyDTO], error) {
 	limit, offset := limitOffset(filter.Page, filter.PageSize)
 	rows, err := s.pool.Query(ctx, `
 SELECT id, policy_name, scope_type, COALESCE(user_id, api_key_id), period_type,
@@ -200,7 +199,7 @@ LIMIT $3 OFFSET $4`, filter.ScopeType, filter.ScopeID, limit, offset)
 // --- Tx primitives ---
 
 func (t *Tx) ApplicablePolicies(userID, keyID int) ([]domain.QuotaPolicy, error) {
-	rows, err := applicableQuotaPolicies(context.Background(), t.tx, userID, keyID)
+	rows, err := applicableQuotaPolicies(t.ctx, t.tx, userID, keyID)
 	if err != nil {
 		return nil, err
 	}
@@ -221,12 +220,12 @@ func (t *Tx) ApplicablePolicies(userID, keyID int) ([]domain.QuotaPolicy, error)
 }
 
 func (t *Tx) ReapExpired(now time.Time, limit, userID, keyID int) (int, error) {
-	return reapExpiredQuotaTx(context.Background(), t.tx, now, limit, userID, keyID)
+	return reapExpiredQuotaTx(t.ctx, t.tx, now, limit, userID, keyID)
 }
 
 func (t *Tx) InsertReservation(in domain.QuotaReservationInsert) (int64, error) {
 	var reservationID int64
-	err := t.tx.QueryRow(context.Background(), `INSERT INTO quota_reservations (request_id, user_id, api_key_id, model, estimated_tokens, estimated_cost, expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`, in.RequestID, in.UserID, in.APIKeyID, in.Model, in.EstimatedTokens, in.EstimatedCost, in.ExpiresAt.UTC()).Scan(&reservationID)
+	err := t.tx.QueryRow(t.ctx, `INSERT INTO quota_reservations (request_id, user_id, api_key_id, model, estimated_tokens, estimated_cost, expires_at) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING id`, in.RequestID, in.UserID, in.APIKeyID, in.Model, in.EstimatedTokens, in.EstimatedCost, in.ExpiresAt.UTC()).Scan(&reservationID)
 	if err != nil {
 		return 0, mapError(err)
 	}
@@ -234,17 +233,17 @@ func (t *Tx) InsertReservation(in domain.QuotaReservationInsert) (int64, error) 
 }
 
 func (t *Tx) UpsertBucket(policyID int, start, end time.Time) error {
-	_, err := t.tx.Exec(context.Background(), `INSERT INTO quota_buckets (policy_id, period_start, period_end) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, policyID, start, end)
+	_, err := t.tx.Exec(t.ctx, `INSERT INTO quota_buckets (policy_id, period_start, period_end) VALUES ($1,$2,$3) ON CONFLICT DO NOTHING`, policyID, start, end)
 	return mapError(err)
 }
 
 func (t *Tx) LockBucket(policyID int, start time.Time) error {
 	var lockedPolicyID int64
-	return mapError(t.tx.QueryRow(context.Background(), `SELECT policy_id FROM quota_buckets WHERE policy_id=$1 AND period_start=$2 FOR UPDATE`, policyID, start).Scan(&lockedPolicyID))
+	return mapError(t.tx.QueryRow(t.ctx, `SELECT policy_id FROM quota_buckets WHERE policy_id=$1 AND period_start=$2 FOR UPDATE`, policyID, start).Scan(&lockedPolicyID))
 }
 
 func (t *Tx) ReserveBucket(policyID int, start time.Time, tokens int64, cost string) (bool, error) {
-	result, err := t.tx.Exec(context.Background(), `
+	result, err := t.tx.Exec(t.ctx, `
 UPDATE quota_buckets b
 SET reserved_tokens = b.reserved_tokens + $3,
     reserved_cost = b.reserved_cost + $4,
@@ -261,12 +260,12 @@ WHERE b.policy_id = $1 AND b.period_start = $2 AND p.id = b.policy_id
 }
 
 func (t *Tx) InsertReservationItem(reservationID int64, policyID int, start time.Time, tokens int64, cost string) error {
-	_, err := t.tx.Exec(context.Background(), `INSERT INTO quota_reservation_items (reservation_id, policy_id, period_start, reserved_tokens, reserved_cost) VALUES ($1,$2,$3,$4,$5)`, reservationID, policyID, start, tokens, cost)
+	_, err := t.tx.Exec(t.ctx, `INSERT INTO quota_reservation_items (reservation_id, policy_id, period_start, reserved_tokens, reserved_cost) VALUES ($1,$2,$3,$4,$5)`, reservationID, policyID, start, tokens, cost)
 	return mapError(err)
 }
 
 func (t *Tx) ReleaseReservation(reservationID int64, status string, now time.Time) error {
-	return releaseQuotaTx(context.Background(), t.tx, reservationID, status, now)
+	return releaseQuotaTx(t.ctx, t.tx, reservationID, status, now)
 }
 
 // --- helpers ---

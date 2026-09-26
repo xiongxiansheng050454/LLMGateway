@@ -1,6 +1,7 @@
 package storefake
 
 import (
+	"context"
 	"errors"
 	"sync"
 	"testing"
@@ -13,7 +14,7 @@ import (
 
 func seedKey(t *testing.T, acc *accounts.Server, userID int) (keyID int, keyHash string) {
 	t.Helper()
-	created, err := acc.CreateKey(userID, domain.KeyInput{KeyName: "default", Prefix: "sk-"})
+	created, err := acc.CreateKey(context.Background(), userID, domain.KeyInput{KeyName: "default", Prefix: "sk-"})
 	if err != nil {
 		t.Fatalf("CreateKey: %v", err)
 	}
@@ -24,15 +25,15 @@ func seedKey(t *testing.T, acc *accounts.Server, userID int) (keyID int, keyHash
 func TestAuthenticateKey(t *testing.T) {
 	st := New()
 	acc := newAccounts(st)
-	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
+	if _, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "25.000000"}); err != nil {
+	if _, err := acc.RechargeUser(context.Background(), 1, domain.RechargeInput{Amount: "25.000000"}); err != nil {
 		t.Fatal(err)
 	}
 	keyID, keyHash := seedKey(t, acc, 1)
 
-	auth, err := st.AuthenticateKey(keyHash)
+	auth, err := st.AuthenticateKey(context.Background(), keyHash)
 	if err != nil {
 		t.Fatalf("AuthenticateKey: %v", err)
 	}
@@ -46,17 +47,17 @@ func TestAuthenticateKey(t *testing.T) {
 		t.Fatalf("permissions = %s", auth.Permissions)
 	}
 
-	if _, err := st.AuthenticateKey(crypto.HashKey("sk-unknown")); !errors.Is(err, store.ErrNotFound) {
+	if _, err := st.AuthenticateKey(context.Background(), crypto.HashKey("sk-unknown")); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("unknown key err = %v, want ErrNotFound", err)
 	}
 
-	if err := st.UpdateKeyLastUsed(keyID); err != nil {
+	if err := st.UpdateKeyLastUsed(context.Background(), keyID); err != nil {
 		t.Fatalf("UpdateKeyLastUsed: %v", err)
 	}
 	if st.keys[keyID].lastUsedAt == nil {
 		t.Fatal("last_used_at not set")
 	}
-	if err := st.UpdateKeyLastUsed(404); !errors.Is(err, store.ErrNotFound) {
+	if err := st.UpdateKeyLastUsed(context.Background(), 404); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing key err = %v, want ErrNotFound", err)
 	}
 }
@@ -64,14 +65,14 @@ func TestAuthenticateKey(t *testing.T) {
 func TestDebitUserBalance(t *testing.T) {
 	st := New()
 	acc := newAccounts(st)
-	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
+	if _, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
+	if _, err := acc.RechargeUser(context.Background(), 1, domain.RechargeInput{Amount: "10.000000"}); err != nil {
 		t.Fatal(err)
 	}
 
-	result, err := acc.DebitUserBalance(1, "3.5", "request")
+	result, err := acc.DebitUserBalance(context.Background(), 1, "3.5", "request")
 	if err != nil {
 		t.Fatalf("DebitUserBalance: %v", err)
 	}
@@ -79,18 +80,18 @@ func TestDebitUserBalance(t *testing.T) {
 		t.Fatalf("balance_after = %v, want 6.500000", result.BalanceAfter)
 	}
 
-	if _, err := acc.DebitUserBalance(1, "100.000000", "too much"); !errors.Is(err, store.ErrInvalid) {
+	if _, err := acc.DebitUserBalance(context.Background(), 1, "100.000000", "too much"); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("insufficient err = %v, want ErrInvalid", err)
 	}
-	if _, err := acc.DebitUserBalance(1, "-1.000000", "bad"); !errors.Is(err, store.ErrInvalid) {
+	if _, err := acc.DebitUserBalance(context.Background(), 1, "-1.000000", "bad"); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("negative err = %v, want ErrInvalid", err)
 	}
-	if _, err := acc.DebitUserBalance(404, "1.000000", "missing"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := acc.DebitUserBalance(context.Background(), 404, "1.000000", "missing"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing user err = %v, want ErrNotFound", err)
 	}
 
 	// Balance must remain unchanged after the rejected debits.
-	balance, _ := st.GetUserBalance(1)
+	balance, _ := st.GetUserBalance(context.Background(), 1)
 	if balance.AvailableBalance != "6.500000" {
 		t.Fatalf("balance changed by rejected debit: %v", balance.AvailableBalance)
 	}
@@ -99,10 +100,10 @@ func TestDebitUserBalance(t *testing.T) {
 func TestDebitUserBalanceConcurrent(t *testing.T) {
 	st := New()
 	acc := newAccounts(st)
-	if _, err := acc.CreateUser(domain.UserInput{Nickname: "Alice"}); err != nil {
+	if _, err := acc.CreateUser(context.Background(), domain.UserInput{Nickname: "Alice"}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := acc.RechargeUser(1, domain.RechargeInput{Amount: "100.000000"}); err != nil {
+	if _, err := acc.RechargeUser(context.Background(), 1, domain.RechargeInput{Amount: "100.000000"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -113,7 +114,7 @@ func TestDebitUserBalanceConcurrent(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			if _, err := acc.DebitUserBalance(1, "1.000000", "concurrent"); err != nil {
+			if _, err := acc.DebitUserBalance(context.Background(), 1, "1.000000", "concurrent"); err != nil {
 				errs <- err
 			}
 		}()
@@ -124,7 +125,7 @@ func TestDebitUserBalanceConcurrent(t *testing.T) {
 		t.Fatalf("concurrent debit: %v", err)
 	}
 
-	balance, _ := st.GetUserBalance(1)
+	balance, _ := st.GetUserBalance(context.Background(), 1)
 	if balance.AvailableBalance != "80.000000" {
 		t.Fatalf("balance = %v, want 80.000000", balance.AvailableBalance)
 	}
@@ -134,7 +135,7 @@ func TestGetPricingAndRouteCandidates(t *testing.T) {
 	st := New()
 	cat := newCatalog(st)
 	create := func(name string, status, priority, weight int, balance string) int {
-		created, err := cat.CreateChannel(domain.ChannelInput{Name: name, BaseURL: "https://" + name + ".test", APIKey: "sk", Status: status, Priority: priority, Weight: weight, Balance: strPtr(balance)})
+		created, err := cat.CreateChannel(context.Background(), domain.ChannelInput{Name: name, BaseURL: "https://" + name + ".test", APIKey: "sk", Status: status, Priority: priority, Weight: weight, Balance: strPtr(balance)})
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -146,31 +147,31 @@ func TestGetPricingAndRouteCandidates(t *testing.T) {
 	channelD := create("D", 0, 99, 999, "")
 
 	for _, id := range []int{channelA, channelB, channelC, channelD} {
-		if _, err := cat.CreateChannelModel(id, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
+		if _, err := cat.CreateChannelModel(context.Background(), id, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: true}); err != nil {
 			t.Fatal(err)
 		}
 	}
 	// Disabled mapping on an enabled channel must be excluded.
 	disabled := create("E", 1, 50, 50, "")
-	if _, err := cat.CreateChannelModel(disabled, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: false}); err != nil {
+	if _, err := cat.CreateChannelModel(context.Background(), disabled, domain.ChannelModel{ModelName: "gpt", UpstreamModel: "up-gpt", Enabled: false}); err != nil {
 		t.Fatal(err)
 	}
 
-	if _, err := cat.UpsertPricing(domain.PricingInput{ChannelID: channelA, ModelName: "gpt", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000", Currency: "USD"}); err != nil {
+	if _, err := cat.UpsertPricing(context.Background(), domain.PricingInput{ChannelID: channelA, ModelName: "gpt", InputPricePer1M: "0.10000000", OutputPricePer1M: "0.20000000", Currency: "USD"}); err != nil {
 		t.Fatal(err)
 	}
-	pricing, err := cat.GetPricing(channelA, "gpt")
+	pricing, err := cat.GetPricing(context.Background(), channelA, "gpt")
 	if err != nil {
 		t.Fatalf("GetPricing: %v", err)
 	}
 	if pricing.InputPricePer1M != "0.10000000" || pricing.UpstreamModel != "up-gpt" {
 		t.Fatalf("unexpected pricing: %+v", pricing)
 	}
-	if _, err := cat.GetPricing(channelA, "missing"); !errors.Is(err, store.ErrNotFound) {
+	if _, err := cat.GetPricing(context.Background(), channelA, "missing"); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("missing pricing err = %v, want ErrNotFound", err)
 	}
 
-	candidates, err := cat.RouteCandidates("gpt")
+	candidates, err := cat.RouteCandidates(context.Background(), "gpt")
 	if err != nil {
 		t.Fatalf("RouteCandidates: %v", err)
 	}
@@ -202,7 +203,7 @@ func TestCountRequestsSince(t *testing.T) {
 	st.usageLogs[0].APIKeyID = intp(1)
 	st.usageLogs[1].APIKeyID = intp(1)
 
-	count, err := st.CountRequestsSince(domain.UsageCountFilter{UserID: 1, Since: "2026-09-16T10:00:15Z"})
+	count, err := st.CountRequestsSince(context.Background(), domain.UsageCountFilter{UserID: 1, Since: "2026-09-16T10:00:15Z"})
 	if err != nil {
 		t.Fatalf("CountRequestsSince: %v", err)
 	}
@@ -210,7 +211,7 @@ func TestCountRequestsSince(t *testing.T) {
 		t.Fatalf("count = %d, want 1 (all attempts after window start)", count)
 	}
 
-	count, err = st.CountRequestsSince(domain.UsageCountFilter{UserID: 1, Since: "2026-09-16T09:59:00Z"})
+	count, err = st.CountRequestsSince(context.Background(), domain.UsageCountFilter{UserID: 1, Since: "2026-09-16T09:59:00Z"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +220,7 @@ func TestCountRequestsSince(t *testing.T) {
 	}
 
 	apiKeyID := 1
-	count, err = st.CountRequestsSince(domain.UsageCountFilter{UserID: 1, APIKeyID: &apiKeyID, Since: "2026-09-16T09:59:00Z"})
+	count, err = st.CountRequestsSince(context.Background(), domain.UsageCountFilter{UserID: 1, APIKeyID: &apiKeyID, Since: "2026-09-16T09:59:00Z"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -227,10 +228,10 @@ func TestCountRequestsSince(t *testing.T) {
 		t.Fatalf("key-scoped count = %d, want 2", count)
 	}
 
-	if _, err := st.CountRequestsSince(domain.UsageCountFilter{UserID: 1, Since: "abc"}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := st.CountRequestsSince(context.Background(), domain.UsageCountFilter{UserID: 1, Since: "abc"}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("invalid since err = %v, want ErrInvalid", err)
 	}
-	if _, err := st.CountRequestsSince(domain.UsageCountFilter{UserID: 1}); !errors.Is(err, store.ErrInvalid) {
+	if _, err := st.CountRequestsSince(context.Background(), domain.UsageCountFilter{UserID: 1}); !errors.Is(err, store.ErrInvalid) {
 		t.Fatalf("empty since err = %v, want ErrInvalid", err)
 	}
 }
